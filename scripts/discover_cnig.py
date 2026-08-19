@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 from blender_terrain.models import DatasetProduct
 from blender_terrain.providers.cnig_portal import BBoxWGS84, CNIGPortalClient
@@ -25,13 +26,32 @@ def main() -> int:
         action="store_true",
         help="Explicitly allow read-only requests to the official CNIG portal.",
     )
+    parser.add_argument(
+        "--download-one",
+        action="store_true",
+        help="Download the single native projected item into --download-directory.",
+    )
+    parser.add_argument(
+        "--download-directory",
+        type=Path,
+        help="Empty directory for the opt-in Phase 0 sample download.",
+    )
     args = parser.parse_args()
     if not args.online:
         parser.error("online access is disabled; pass --online to run discovery")
 
     product = DatasetProduct(args.product)
-    page = CNIGPortalClient().discover(product, VALENCIA_TEST_BBOX)
+    client = CNIGPortalClient()
+    page = client.discover(product, VALENCIA_TEST_BBOX)
     projected_items = [item for item in page.items if item.is_native_projected_variant]
+    if args.download_one:
+        if args.download_directory is None:
+            parser.error("--download-one requires --download-directory")
+        if len(projected_items) != 1:
+            parser.error("test query did not return exactly one native projected item")
+        downloaded_path = client.download_experiment(projected_items[0], args.download_directory)
+    else:
+        downloaded_path = None
     output = {
         "product": product.value,
         "query_bbox_wgs84": asdict(VALENCIA_TEST_BBOX),
@@ -40,6 +60,7 @@ def main() -> int:
         "excluded_items": [
             asdict(item) for item in page.items if not item.is_native_projected_variant
         ],
+        "downloaded_path": str(downloaded_path) if downloaded_path else None,
     }
     print(json.dumps(output, indent=2, sort_keys=True))
     return 0

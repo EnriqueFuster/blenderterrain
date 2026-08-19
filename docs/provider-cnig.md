@@ -46,6 +46,28 @@ the implementation specification. Phase 0B does not call either endpoint. The
 download contract must be researched again, deliberately, in Phase 0C before any
 binary transfer is implemented.
 
+### Phase 0C observation
+
+On 2026-08-19, a form POST to `descargaDirS3` with the observed `secuencial` and
+`codSerie` fields returned an HTML wrapper rather than TIFF bytes. The wrapper
+contains a short-lived, pre-signed object-storage URL and browser JavaScript that
+navigates to it. The object-storage host is outside the original IGN/IDEE/CNIG
+host allowlist proposed in the implementation specification.
+
+No TIFF bytes were transferred during this observation. The experimental client
+correctly rejected the HTML wrapper before writing a `.part` file.
+
+This is an unresolved security decision. The project must explicitly choose one
+of the following before following a pre-signed URL:
+
+1. allow only a narrowly validated, one-hop pre-signed HTTPS URL emitted by a
+   verified CNIG `descargaDirS3` response;
+2. require manual local-file import until CNIG offers a direct first-party host;
+3. find and verify another official delivery endpoint.
+
+The client must never accept an arbitrary external redirect, persist a pre-signed
+URL, or log its query string.
+
 ## Failure semantics
 
 - A 403 or other transport failure is provider unavailability, not no coverage.

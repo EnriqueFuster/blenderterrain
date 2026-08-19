@@ -11,3 +11,7 @@ class ProviderUnavailableError(BlenderTerrainError):
 
 class CatalogContractChanged(BlenderTerrainError):
     """Raised when provider HTML no longer satisfies the observed contract."""
+
+
+class DownloadIntegrityError(BlenderTerrainError):
+    """Raised when a downloaded resource fails safety or format validation."""
