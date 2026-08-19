@@ -19,3 +19,7 @@ class DownloadIntegrityError(BlenderTerrainError):
 
 class DownloadAuthorizationRequired(BlenderTerrainError):
     """Raised when a provider requires an interactive license confirmation."""
+
+
+class RasterFormatError(BlenderTerrainError):
+    """Raised when a raster uses a TIFF layout unsupported by the local reader."""
