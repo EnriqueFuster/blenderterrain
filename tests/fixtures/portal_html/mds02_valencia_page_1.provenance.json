@@ -1,0 +1,8 @@
+{
+  "captured_on": "2026-08-19",
+  "fixture": "mds02_valencia_page_1.html",
+  "query": "Public Phase 0 Valencia bbox [-0.39, 39.46, -0.37, 39.48], page 1, COG format",
+  "sanitization": "Reduced to total count and representative desktop rows; cookies, scripts, duplicate mobile rows, and unrelated layout removed.",
+  "sanitized_sha256": "3338ea28a91e94b1e30ff6b86a06d5a0538e15aeac47fb6d6bcdbc366280d3cf",
+  "source_url": "https://centrodedescargas.cnig.es/CentroDescargas/archivosSerie"
+}

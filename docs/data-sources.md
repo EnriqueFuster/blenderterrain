@@ -8,13 +8,14 @@ URL or observed value appears in the specification.
 
 - Inventory created: 2026-08-19
 - Specification research date: 2026-08-19
-- Live contract verification by this repository: pending Phase 0B and 0E
+- Live CNIG catalog verification by this repository: completed for the Phase 0B
+  Valencia query on 2026-08-19; see `provider-cnig.md`
 - Local sample verification by this repository: pending Phase 0C
 
 | Source | Intended version 1 use | Official reference | Current status |
 |---|---|---|---|
-| CNIG MDT02 second coverage | 2 m terrain elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-terreno-mdt02-segunda-cobertura> | Pending live and sample verification |
-| CNIG MDS02 second coverage | 2 m surface elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-superficies-mds02-segunda-cobertura> | Pending live and sample verification |
+| CNIG MDT02 second coverage | 2 m terrain elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-terreno-mdt02-segunda-cobertura> | Catalog verified; raster sample pending |
+| CNIG MDS02 second coverage | 2 m surface elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-superficies-mds02-segunda-cobertura> | Catalog verified; raster sample pending |
 | PNOA Maximum Actuality WMS | ROI imagery texture | <https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetCapabilities> | Pending capabilities and control-image verification |
 | CNIG data policy | Attribution and permitted use | <https://centrodedescargas.cnig.es/CentroDescargas/politica-datos> | Pending legal-text recheck before release |
 | CNIG FAQ | Anonymous download behavior | <https://centrodedescargas.cnig.es/CentroDescargas/faqs> | Pending current-policy and response verification |
@@ -36,4 +37,3 @@ Every future verification entry must record:
 - response status and relevant sanitized metadata;
 - fixture or test that preserves the observation;
 - contract differences from the previous observation.
-

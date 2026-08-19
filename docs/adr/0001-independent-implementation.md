@@ -1,8 +1,9 @@
 # ADR-0001: Independent implementation and licensing
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-19
 - Decision owners: Enrique Fuster and project maintainers
+- Accepted: 2026-08-19
 
 ## Context
 
@@ -46,4 +47,3 @@ not redistributed and remains subject to provider terms and attribution.
   release.
 - Prior-art documentation records links and consultation dates without copying
   protected implementation material.
-

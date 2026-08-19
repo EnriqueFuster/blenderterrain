@@ -1,0 +1,7 @@
+{
+  "captured_on": "2026-08-19",
+  "fixture": "mdt02_product_page.html",
+  "sanitization": "Reduced to required hidden inputs and format options; scripts, cookies, analytics, and unrelated page content removed.",
+  "sanitized_sha256": "c229af489a75e95d36bca8d4ff5f09c0f10fbbced4e199270448970d1f106d82",
+  "source_url": "https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-terreno-mdt02-segunda-cobertura"
+}

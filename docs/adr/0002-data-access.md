@@ -1,8 +1,9 @@
 # ADR-0002: Elevation and imagery data access
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-19
 - Decision owners: Enrique Fuster and project maintainers
+- Accepted: 2026-08-19
 
 ## Context
 
@@ -59,4 +60,3 @@ second-coverage 2 m products required by version 1.
 - Sanitized contract fixtures and parser tests exist.
 - The raster backend decision is supported by measurements, not preference.
 - Projected WMS control tests demonstrate dimensions and orientation.
-

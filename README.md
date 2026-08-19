@@ -44,8 +44,14 @@ python -m unittest discover -s tests -v
 Optional development tools are declared in `pyproject.toml`. Online tests will
 always be opt-in and must never perform large downloads by default.
 
+The Phase 0 read-only catalog experiment is explicitly enabled with:
+
+```text
+python -m scripts.discover_cnig --product MDT02 --online
+python -m scripts.discover_cnig --product MDS02 --online
+```
+
 ## License
 
 Code is licensed under GPL-3.0-or-later. Official geographic data is not part of
 the code license and retains the terms published by its provider.
-

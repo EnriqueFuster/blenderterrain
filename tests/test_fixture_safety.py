@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import unittest
 from pathlib import Path
@@ -29,7 +31,20 @@ class FixtureSafetyTests(unittest.TestCase):
 
         self.assertEqual(violations, [], "Unsafe fixture content:\n" + "\n".join(violations))
 
+    def test_html_fixtures_have_matching_provenance_digest(self) -> None:
+        violations: list[str] = []
+        for path in FIXTURE_ROOT.rglob("*.html"):
+            provenance_path = path.with_suffix(".provenance.json")
+            if not provenance_path.is_file():
+                violations.append(f"{path.relative_to(FIXTURE_ROOT)}: missing provenance")
+                continue
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if provenance.get("sanitized_sha256", "").lower() != actual_digest:
+                violations.append(f"{path.relative_to(FIXTURE_ROOT)}: digest mismatch")
+
+        self.assertEqual(violations, [], "Invalid fixture provenance:\n" + "\n".join(violations))
+
 
 if __name__ == "__main__":
     unittest.main()
-
