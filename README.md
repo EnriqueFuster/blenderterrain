@@ -51,11 +51,10 @@ python -m scripts.discover_cnig --product MDT02 --online
 python -m scripts.discover_cnig --product MDS02 --online
 ```
 
-An explicit `--download-one` mode exists for controlled provider validation. On
-2026-08-19, CNIG generated structurally valid temporary delivery URLs but the
-advertised objects tested returned `NoSuchKey`; therefore no binary sample has
-yet been accepted. See `docs/provider-cnig.md` before repeating online download
-tests.
+An explicit `--download-one` mode exists for controlled provider validation.
+Complete MDT02 and MDS02 samples were downloaded and validated on 2026-08-19
+through the first-party CNIG initialization and delivery endpoints. See
+`docs/provider-cnig.md` for the observed contract and current limitations.
 
 ## License
 

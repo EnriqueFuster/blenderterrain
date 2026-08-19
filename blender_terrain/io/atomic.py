@@ -8,6 +8,12 @@ from pathlib import Path
 from blender_terrain.errors import DownloadIntegrityError
 
 
+def normalized_server_filename(filename: str) -> str:
+    """Normalize observed case and separator differences between CNIG systems."""
+
+    return filename.replace("_", "-").casefold()
+
+
 def safe_destination(cache_directory: Path, server_filename: str) -> Path:
     """Return a destination inside cache_directory or reject unsafe names."""
 

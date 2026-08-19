@@ -10,4 +10,5 @@ until ADR-0001 and ADR-0002 have been reviewed and accepted by the maintainer.
 |---|---|---|
 | [0001](0001-independent-implementation.md) | Independent implementation and licensing | Accepted |
 | [0002](0002-data-access.md) | Elevation and imagery data access | Accepted |
-| [0003](0003-cnig-presigned-delivery.md) | CNIG-issued pre-signed object delivery | Accepted |
+| [0003](0003-cnig-presigned-delivery.md) | CNIG-issued pre-signed object delivery | Superseded |
+| [0004](0004-cnig-direct-delivery.md) | First-party CNIG direct delivery | Accepted |

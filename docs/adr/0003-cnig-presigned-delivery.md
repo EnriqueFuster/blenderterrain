@@ -1,6 +1,6 @@
 # ADR-0003: CNIG-issued pre-signed object delivery
 
-- Status: Accepted
+- Status: Superseded by ADR-0004
 - Date: 2026-08-19
 - Decision owners: Enrique Fuster and project maintainers
 - Accepted: 2026-08-19
@@ -47,6 +47,13 @@ equivalence between `_` and `-`. All remaining filename components must match.
 - Online checks on 2026-08-19 returned `NoSuchKey` for three advertised objects.
   This is treated as provider inconsistency; it does not relax validation and is
   not reported as no coverage.
+
+## Superseding evidence
+
+The first-party `initDescargaDir` and `descargaDir` flow was subsequently tested
+and returned complete TIFF resources for both MDT02 and MDS02. ADR-0004 replaces
+the S3 capability design as the runtime path. This record is retained to explain
+why `descargaDirS3` is not followed.
 
 ## Rejected alternatives
 

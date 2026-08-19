@@ -31,9 +31,15 @@ class FixtureSafetyTests(unittest.TestCase):
 
         self.assertEqual(violations, [], "Unsafe fixture content:\n" + "\n".join(violations))
 
-    def test_html_fixtures_have_matching_provenance_digest(self) -> None:
+    def test_contract_fixtures_have_matching_provenance_digest(self) -> None:
         violations: list[str] = []
-        for path in FIXTURE_ROOT.rglob("*.html"):
+        contract_fixtures = (
+            path
+            for path in FIXTURE_ROOT.rglob("*")
+            if path.suffix in {".html", ".json"}
+            and not path.name.endswith(".provenance.json")
+        )
+        for path in contract_fixtures:
             provenance_path = path.with_suffix(".provenance.json")
             if not provenance_path.is_file():
                 violations.append(f"{path.relative_to(FIXTURE_ROOT)}: missing provenance")

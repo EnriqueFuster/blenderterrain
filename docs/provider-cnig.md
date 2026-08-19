@@ -57,9 +57,9 @@ host allowlist proposed in the implementation specification.
 No TIFF bytes were transferred during this observation. The experimental client
 correctly rejected the HTML wrapper before writing a `.part` file.
 
-ADR-0003 accepts a narrowly validated, one-hop pre-signed HTTPS URL emitted by a
-verified CNIG `descargaDirS3` response. Manual local-file import remains the
-fallback while the advertised storage objects are unavailable.
+ADR-0003 initially accepted a narrowly validated S3 hand-off. It was superseded
+by ADR-0004 after the working first-party direct endpoint was verified. Runtime
+code no longer follows the S3 URL.
 
 The client must never accept an arbitrary external redirect, persist a pre-signed
 URL, or log its query string.
@@ -72,11 +72,19 @@ component must remain equal. MDT02 delivery for the observed sequential returned
 `NoSuchKey`, which is recorded as provider data inconsistency rather than an
 empty-coverage result.
 
-Further online checks produced the same `NoSuchKey` result for the Valencia
-MDS02 resource and a 2020 MDT02 resource from Sevilla. No TIFF body was received
-and no `.part` file was created in any of these attempts. The delivery mechanism
-is implemented according to ADR-0003, but binary sample inspection remains
-blocked by the provider's current object inventory.
+Further S3 checks produced the same `NoSuchKey` result for the Valencia MDS02
+resource and a 2020 MDT02 resource from Sevilla. The first-party workflow still
+present in the detail page was then verified:
+
+1. `POST initDescargaDir` with `secuencial` returns JSON containing
+   `muestraLic`, `nuevaVentana`, and `secuencialDescDir`;
+2. `POST descargaDir` with the authorized sequence returns `image/tiff` directly
+   from `centrodedescargas.cnig.es`;
+3. the server ignored a `Range: bytes=0-15` probe, so production code does not
+   assume resumable or partial delivery.
+
+Complete MDT02 and MDS02 Valencia resources were downloaded successfully through
+this path. ADR-0004 supersedes the S3 runtime decision in ADR-0003.
 
 ## Failure semantics
 

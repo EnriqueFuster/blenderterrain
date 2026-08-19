@@ -1,0 +1,7 @@
+{
+  "captured_on": "2026-08-19",
+  "fixture": "download_init_mdt02.json",
+  "sanitization": "Response retained because it contains only public workflow state and the catalog sequential identifier; no cookies or headers included.",
+  "sanitized_sha256": "2412002b31dd908eb89afce21a6a1fc6cab6e4f35e5243350d0870d134ac7816",
+  "source_url": "https://centrodedescargas.cnig.es/CentroDescargas/initDescargaDir"
+}

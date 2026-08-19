@@ -12,17 +12,20 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, Request, build_opener
 
-from blender_terrain.errors import DownloadIntegrityError, ProviderUnavailableError
-from blender_terrain.io.atomic import finalize_part, safe_destination
+from blender_terrain.errors import (
+    CatalogContractChanged,
+    DownloadAuthorizationRequired,
+    DownloadIntegrityError,
+    ProviderUnavailableError,
+)
+from blender_terrain.io.atomic import (
+    finalize_part,
+    normalized_server_filename,
+    safe_destination,
+)
 from blender_terrain.io.html_catalog_parser import parse_catalog_page, parse_product_page
-from blender_terrain.io.html_download_parser import parse_presigned_download_url
 from blender_terrain.io.tiff_validation import validate_tiff_header
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
-from blender_terrain.providers.cnig_delivery import (
-    normalized_resource_name,
-    parse_storage_error_code,
-    validate_presigned_download_url,
-)
 
 
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
@@ -32,7 +35,7 @@ PRODUCT_SLUGS = {
     DatasetProduct.MDT02: "modelo-digital-terreno-mdt02-segunda-cobertura",
     DatasetProduct.MDS02: "modelo-digital-superficies-mds02-segunda-cobertura",
 }
-DELIVERY_HANDOFF_MAXIMUM_BYTES = 16_384
+DOWNLOAD_INITIALIZATION_MAXIMUM_BYTES = 4_096
 ACCEPTED_TIFF_CONTENT_TYPES = {
     "application/octet-stream",
     "application/x-geotiff",
@@ -50,7 +53,7 @@ class _ReadableResponse(Protocol):
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
-    """Prevent temporary delivery URLs from redirecting to another host."""
+    """Prevent a download response from redirecting to another endpoint."""
 
     def redirect_request(self, *args: object, **kwargs: object) -> None:
         return None
@@ -93,8 +96,11 @@ class CNIGPortalClient:
 
     def __init__(self, timeout_seconds: float = 30.0) -> None:
         self._timeout_seconds = timeout_seconds
-        self._opener = build_opener(HTTPCookieProcessor(CookieJar()))
-        self._delivery_opener = build_opener(_NoRedirectHandler())
+        self._cookie_jar = CookieJar()
+        self._opener = build_opener(HTTPCookieProcessor(self._cookie_jar))
+        self._download_opener = build_opener(
+            HTTPCookieProcessor(self._cookie_jar), _NoRedirectHandler()
+        )
 
     def discover(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         """Discover the first page of COG resources intersecting a WGS84 bbox."""
@@ -157,34 +163,38 @@ class CNIGPortalClient:
             raise DownloadIntegrityError(f"Partial download already exists: {part_path.name}")
 
         detail_url = BASE_URL + f"detalleArchivo?sec={item.sequential_id}"
+        self._request(detail_url, maximum_bytes=1_048_576)
+        initialization_html = self._request(
+            BASE_URL + "initDescargaDir",
+            data=urlencode({"secuencial": item.sequential_id}).encode("utf-8"),
+            referer=detail_url,
+            maximum_bytes=DOWNLOAD_INITIALIZATION_MAXIMUM_BYTES,
+        )
+        download_sequence = self._parse_download_initialization(
+            initialization_html, item.sequential_id
+        )
         form = {
             "secuencial": item.sequential_id,
-            "secDescDirLA": "",
+            "secDescDirLA": download_sequence,
             "codSerie": item.product.value,
             "urlCart": "",
             "id_productor": "",
             "codNumMD": "",
             "avisoLimiteFiles": "",
         }
-        handoff_html = self._request(
-            BASE_URL + "descargaDirS3",
-            data=urlencode(form).encode("utf-8"),
-            referer=detail_url,
-            maximum_bytes=DELIVERY_HANDOFF_MAXIMUM_BYTES,
-        )
-        temporary_url = validate_presigned_download_url(
-            parse_presigned_download_url(handoff_html), item
-        )
         request = Request(
-            temporary_url,
+            BASE_URL + "descargaDir",
+            data=urlencode(form).encode("utf-8"),
             headers={
                 "User-Agent": USER_AGENT,
                 "Accept": ", ".join(sorted(ACCEPTED_TIFF_CONTENT_TYPES)),
+                "Referer": detail_url,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             },
-            method="GET",
+            method="POST",
         )
         try:
-            with self._delivery_opener.open(
+            with self._download_opener.open(
                 request, timeout=self._timeout_seconds
             ) as response:
                 content_length = response.headers.get("Content-Length")
@@ -206,9 +216,9 @@ class CNIGPortalClient:
                         "Delivery endpoint returned an unsupported content type"
                     )
                 response_filename = response.headers.get_filename()
-                if response_filename and normalized_resource_name(
+                if response_filename and normalized_server_filename(
                     response_filename
-                ) != normalized_resource_name(item.filename):
+                ) != normalized_server_filename(item.filename):
                     raise DownloadIntegrityError(
                         "Delivered filename does not match the catalog item"
                     )
@@ -222,12 +232,10 @@ class CNIGPortalClient:
         except HTTPError as exc:
             if 300 <= exc.code < 400:
                 raise DownloadIntegrityError(
-                    "Temporary delivery URL attempted an unauthorized redirect"
+                    "CNIG download endpoint attempted an unauthorized redirect"
                 ) from None
-            storage_code = parse_storage_error_code(exc.read(8_193))
-            detail = f" ({storage_code})" if storage_code else ""
             raise ProviderUnavailableError(
-                f"CNIG delivery request returned HTTP {exc.code}{detail}"
+                f"CNIG download request returned HTTP {exc.code}"
             ) from None
         except (URLError, TimeoutError, socket.timeout, UnicodeError):
             raise ProviderUnavailableError("CNIG delivery request failed") from None
@@ -235,6 +243,30 @@ class CNIGPortalClient:
         validate_tiff_header(part_path)
         finalize_part(part_path, destination)
         return destination
+
+    @staticmethod
+    def _parse_download_initialization(body: str, expected_sequence: str) -> str:
+        """Validate the small JSON authorization response used by descargaDir."""
+
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise CatalogContractChanged(
+                "CNIG download initialization did not return JSON"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise CatalogContractChanged("CNIG download initialization has invalid structure")
+        license_state = payload.get("muestraLic")
+        sequence = payload.get("secuencialDescDir")
+        if license_state == "SI":
+            raise DownloadAuthorizationRequired(
+                "CNIG requires an interactive license confirmation for this resource"
+            )
+        if license_state != "NO" or sequence != expected_sequence:
+            raise CatalogContractChanged(
+                "CNIG download initialization returned unexpected authorization data"
+            )
+        return sequence
 
     @staticmethod
     def _write_bounded_response(

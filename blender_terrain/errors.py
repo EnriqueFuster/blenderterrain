@@ -15,3 +15,7 @@ class CatalogContractChanged(BlenderTerrainError):
 
 class DownloadIntegrityError(BlenderTerrainError):
     """Raised when a downloaded resource fails safety or format validation."""
+
+
+class DownloadAuthorizationRequired(BlenderTerrainError):
+    """Raised when a provider requires an interactive license confirmation."""

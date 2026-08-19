@@ -10,17 +10,32 @@ URL or observed value appears in the specification.
 - Specification research date: 2026-08-19
 - Live CNIG catalog verification by this repository: completed for the Phase 0B
   Valencia query on 2026-08-19; see `provider-cnig.md`
-- Local sample verification by this repository: blocked on 2026-08-19 by CNIG
-  object-storage `NoSuchKey` responses for three advertised resources
+- Local sample verification by this repository: completed on 2026-08-19 for one
+  MDT02 and one MDS02 delivered through the first-party CNIG endpoint
 
 | Source | Intended version 1 use | Official reference | Current status |
 |---|---|---|---|
-| CNIG MDT02 second coverage | 2 m terrain elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-terreno-mdt02-segunda-cobertura> | Catalog verified; raster sample pending |
-| CNIG MDS02 second coverage | 2 m surface elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-superficies-mds02-segunda-cobertura> | Catalog verified; raster sample pending |
+| CNIG MDT02 second coverage | 2 m terrain elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-terreno-mdt02-segunda-cobertura> | Catalog, direct delivery, and sample verified |
+| CNIG MDS02 second coverage | 2 m surface elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-superficies-mds02-segunda-cobertura> | Catalog, direct delivery, and sample verified |
 | PNOA Maximum Actuality WMS | ROI imagery texture | <https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetCapabilities> | Pending capabilities and control-image verification |
 | CNIG data policy | Attribution and permitted use | <https://centrodedescargas.cnig.es/CentroDescargas/politica-datos> | Pending legal-text recheck before release |
 | CNIG FAQ | Anonymous download behavior | <https://centrodedescargas.cnig.es/CentroDescargas/faqs> | Pending current-policy and response verification |
 | IDEE coverage API | Possible future elevation provider | <https://api-coverages.idee.es/> | Out of version 1 unless it exposes the required product |
+
+## Verified elevation samples
+
+The binary files remain in the ignored local research directory and are not
+redistributed by the repository.
+
+| Product | Bytes | SHA-256 | Shape | Transform origin | CRS |
+|---|---:|---|---:|---|---|
+| MDT02 Valencia 0722-1 | 108243982 | `E6A47A867C6057807805E6D4F8039041322B22FA42B10A13BEAE363C676F618D` | 7355 × 4881 | 713115, 4375657 | EPSG:25830 |
+| MDS02 Valencia 0722-1 | 114851269 | `3C176683099D6F81D8C6107A4192B96D1B86862CD73B7F926430C46CDD52B1DA` | 7163 × 4688 | 713115, 4376093 | EPSG:25830 |
+
+Both are little-endian BigTIFF, single-band Float32, Deflate-compressed, tiled
+512 × 512, with 2 m pixels, NoData `-32767`, and overview factors 2, 4, and 8.
+Their different dimensions and transforms confirm that MDT/MDS alignment must be
+geospatial rather than array-index based.
 
 ## Values that must not become silent constants
 
