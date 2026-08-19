@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+
+# Phase 0 research outputs and downloaded source data must stay local.
+.artifacts/
+.cache/
+*.part
+*.tif
+*.tiff
+
