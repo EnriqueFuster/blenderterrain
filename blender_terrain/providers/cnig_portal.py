@@ -1,4 +1,4 @@
-"""Read-only Phase 0 client for the observed CNIG portal contract."""
+"""Client for the observed CNIG catalog and controlled delivery contracts."""
 
 from __future__ import annotations
 
@@ -10,13 +10,19 @@ from pathlib import Path
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, Request, build_opener
 
 from blender_terrain.errors import DownloadIntegrityError, ProviderUnavailableError
 from blender_terrain.io.atomic import finalize_part, safe_destination
 from blender_terrain.io.html_catalog_parser import parse_catalog_page, parse_product_page
-from blender_terrain.io.tiff_validation import validate_tiff_signature
+from blender_terrain.io.html_download_parser import parse_presigned_download_url
+from blender_terrain.io.tiff_validation import validate_tiff_header
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
+from blender_terrain.providers.cnig_delivery import (
+    normalized_resource_name,
+    parse_storage_error_code,
+    validate_presigned_download_url,
+)
 
 
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
@@ -26,6 +32,14 @@ PRODUCT_SLUGS = {
     DatasetProduct.MDT02: "modelo-digital-terreno-mdt02-segunda-cobertura",
     DatasetProduct.MDS02: "modelo-digital-superficies-mds02-segunda-cobertura",
 }
+DELIVERY_HANDOFF_MAXIMUM_BYTES = 16_384
+ACCEPTED_TIFF_CONTENT_TYPES = {
+    "application/octet-stream",
+    "application/x-geotiff",
+    "binary/octet-stream",
+    "image/geotiff",
+    "image/tiff",
+}
 
 
 class _ReadableResponse(Protocol):
@@ -33,6 +47,13 @@ class _ReadableResponse(Protocol):
 
     def read(self, amount: int = -1) -> bytes:
         """Read up to amount bytes from the response body."""
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Prevent temporary delivery URLs from redirecting to another host."""
+
+    def redirect_request(self, *args: object, **kwargs: object) -> None:
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +89,12 @@ class BBoxWGS84:
 
 
 class CNIGPortalClient:
-    """Minimal session-based client that performs catalog discovery only."""
+    """Session-based client for CNIG discovery and controlled source delivery."""
 
     def __init__(self, timeout_seconds: float = 30.0) -> None:
         self._timeout_seconds = timeout_seconds
         self._opener = build_opener(HTTPCookieProcessor(CookieJar()))
+        self._delivery_opener = build_opener(_NoRedirectHandler())
 
     def discover(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         """Discover the first page of COG resources intersecting a WGS84 bbox."""
@@ -112,25 +134,20 @@ class CNIGPortalClient:
         )
         return parse_catalog_page(result_html, product)
 
-    def download_experiment(
+    def download_item(
         self,
         item: CatalogItem,
         cache_directory: Path,
         maximum_bytes: int = 1_073_741_824,
     ) -> Path:
-        """Download one catalog item through the observed S3 form flow.
-
-        This method is intentionally limited to the Phase 0 experiment. It must
-        only be called by an explicit command-line opt-in and does not implement
-        retries, resuming, or a persistent cache index.
-        """
+        """Download one explicitly selected item through the controlled S3 flow."""
 
         if maximum_bytes <= 0:
             raise ValueError("maximum_bytes must be positive")
         if item.file_format.upper() != "COG" or not item.filename.lower().endswith(
             (".tif", ".tiff")
         ):
-            raise DownloadIntegrityError("Phase 0 downloader only accepts catalog COG TIFF items")
+            raise DownloadIntegrityError("Downloader only accepts catalog COG TIFF items")
         cache_directory.mkdir(parents=True, exist_ok=True)
         destination = safe_destination(cache_directory, item.filename)
         if destination.exists():
@@ -149,20 +166,29 @@ class CNIGPortalClient:
             "codNumMD": "",
             "avisoLimiteFiles": "",
         }
-        request = Request(
+        handoff_html = self._request(
             BASE_URL + "descargaDirS3",
             data=urlencode(form).encode("utf-8"),
+            referer=detail_url,
+            maximum_bytes=DELIVERY_HANDOFF_MAXIMUM_BYTES,
+        )
+        temporary_url = validate_presigned_download_url(
+            parse_presigned_download_url(handoff_html), item
+        )
+        request = Request(
+            temporary_url,
             headers={
                 "User-Agent": USER_AGENT,
-                "Accept": "application/octet-stream, image/tiff, */*; q=0.1",
-                "Referer": detail_url,
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Accept": ", ".join(sorted(ACCEPTED_TIFF_CONTENT_TYPES)),
             },
-            method="POST",
+            method="GET",
         )
         try:
-            with self._opener.open(request, timeout=self._timeout_seconds) as response:
+            with self._delivery_opener.open(
+                request, timeout=self._timeout_seconds
+            ) as response:
                 content_length = response.headers.get("Content-Length")
+                declared_bytes: int | None = None
                 if content_length is not None:
                     try:
                         declared_bytes = int(content_length)
@@ -172,25 +198,48 @@ class CNIGPortalClient:
                         ) from exc
                     if declared_bytes > maximum_bytes:
                         raise DownloadIntegrityError(
-                            "Declared download size exceeds the experiment limit"
+                            "Declared download size exceeds the configured limit"
                         )
                 content_type = response.headers.get_content_type().lower()
-                if content_type == "text/html":
+                if content_type not in ACCEPTED_TIFF_CONTENT_TYPES:
                     raise DownloadIntegrityError(
-                        "Download endpoint returned HTML instead of a TIFF resource"
+                        "Delivery endpoint returned an unsupported content type"
                     )
-                self._write_bounded_response(response, part_path, maximum_bytes)
-        except (HTTPError, URLError, TimeoutError, socket.timeout, UnicodeError) as exc:
-            raise ProviderUnavailableError("CNIG download request failed") from exc
+                response_filename = response.headers.get_filename()
+                if response_filename and normalized_resource_name(
+                    response_filename
+                ) != normalized_resource_name(item.filename):
+                    raise DownloadIntegrityError(
+                        "Delivered filename does not match the catalog item"
+                    )
+                written_bytes = self._write_bounded_response(
+                    response, part_path, maximum_bytes
+                )
+                if declared_bytes is not None and written_bytes != declared_bytes:
+                    raise DownloadIntegrityError(
+                        "Downloaded size does not match the declared response size"
+                    )
+        except HTTPError as exc:
+            if 300 <= exc.code < 400:
+                raise DownloadIntegrityError(
+                    "Temporary delivery URL attempted an unauthorized redirect"
+                ) from None
+            storage_code = parse_storage_error_code(exc.read(8_193))
+            detail = f" ({storage_code})" if storage_code else ""
+            raise ProviderUnavailableError(
+                f"CNIG delivery request returned HTTP {exc.code}{detail}"
+            ) from None
+        except (URLError, TimeoutError, socket.timeout, UnicodeError):
+            raise ProviderUnavailableError("CNIG delivery request failed") from None
 
-        validate_tiff_signature(part_path)
+        validate_tiff_header(part_path)
         finalize_part(part_path, destination)
         return destination
 
     @staticmethod
     def _write_bounded_response(
         response: _ReadableResponse, part_path: Path, maximum_bytes: int
-    ) -> None:
+    ) -> int:
         """Write a response in bounded chunks without promoting incomplete data."""
 
         total_bytes = 0
@@ -200,8 +249,15 @@ class CNIGPortalClient:
                 if total_bytes > maximum_bytes:
                     raise DownloadIntegrityError("Downloaded size exceeds the experiment limit")
                 stream.write(chunk)
+        return total_bytes
 
-    def _request(self, url: str, data: bytes | None = None, referer: str | None = None) -> str:
+    def _request(
+        self,
+        url: str,
+        data: bytes | None = None,
+        referer: str | None = None,
+        maximum_bytes: int | None = None,
+    ) -> str:
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "text/html, */*; q=0.01",
@@ -214,6 +270,12 @@ class CNIGPortalClient:
         try:
             with self._opener.open(request, timeout=self._timeout_seconds) as response:
                 charset = response.headers.get_content_charset() or "utf-8"
-                return response.read().decode(charset, errors="strict")
+                if maximum_bytes is None:
+                    body = response.read()
+                else:
+                    body = response.read(maximum_bytes + 1)
+                if maximum_bytes is not None and len(body) > maximum_bytes:
+                    raise DownloadIntegrityError("CNIG HTML response exceeds its safety limit")
+                return body.decode(charset, errors="strict")
         except (HTTPError, URLError, TimeoutError, socket.timeout, UnicodeError) as exc:
             raise ProviderUnavailableError(f"CNIG request failed for {url}: {exc}") from exc

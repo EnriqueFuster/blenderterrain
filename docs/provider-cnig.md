@@ -57,16 +57,26 @@ host allowlist proposed in the implementation specification.
 No TIFF bytes were transferred during this observation. The experimental client
 correctly rejected the HTML wrapper before writing a `.part` file.
 
-This is an unresolved security decision. The project must explicitly choose one
-of the following before following a pre-signed URL:
-
-1. allow only a narrowly validated, one-hop pre-signed HTTPS URL emitted by a
-   verified CNIG `descargaDirS3` response;
-2. require manual local-file import until CNIG offers a direct first-party host;
-3. find and verify another official delivery endpoint.
+ADR-0003 accepts a narrowly validated, one-hop pre-signed HTTPS URL emitted by a
+verified CNIG `descargaDirS3` response. Manual local-file import remains the
+fallback while the advertised storage objects are unavailable.
 
 The client must never accept an arbitrary external redirect, persist a pre-signed
 URL, or log its query string.
+
+The MDS02 catalog and object storage use different filename separators. For the
+observed Valencia resource, the catalog uses hyphens while storage uses a mixture
+of underscores and hyphens, and the extension case also differs. Identity checks
+therefore normalize ASCII case and treat `_` as `-`; every other filename
+component must remain equal. MDT02 delivery for the observed sequential returned
+`NoSuchKey`, which is recorded as provider data inconsistency rather than an
+empty-coverage result.
+
+Further online checks produced the same `NoSuchKey` result for the Valencia
+MDS02 resource and a 2020 MDT02 resource from Sevilla. No TIFF body was received
+and no `.part` file was created in any of these attempts. The delivery mechanism
+is implemented according to ADR-0003, but binary sample inspection remains
+blocked by the provider's current object inventory.
 
 ## Failure semantics
 

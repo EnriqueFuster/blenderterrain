@@ -1,4 +1,4 @@
-"""Run the opt-in, read-only CNIG Phase 0 discovery experiment."""
+"""Run opt-in CNIG catalog discovery and a controlled sample download."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument(
         "--online",
         action="store_true",
-        help="Explicitly allow read-only requests to the official CNIG portal.",
+        help="Explicitly allow requests to the official CNIG portal.",
     )
     parser.add_argument(
         "--download-one",
@@ -34,7 +34,7 @@ def main() -> int:
     parser.add_argument(
         "--download-directory",
         type=Path,
-        help="Empty directory for the opt-in Phase 0 sample download.",
+        help="Directory for the opt-in sample download.",
     )
     args = parser.parse_args()
     if not args.online:
@@ -49,7 +49,7 @@ def main() -> int:
             parser.error("--download-one requires --download-directory")
         if len(projected_items) != 1:
             parser.error("test query did not return exactly one native projected item")
-        downloaded_path = client.download_experiment(projected_items[0], args.download_directory)
+        downloaded_path = client.download_item(projected_items[0], args.download_directory)
     else:
         downloaded_path = None
     output = {

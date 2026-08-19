@@ -10,7 +10,8 @@ URL or observed value appears in the specification.
 - Specification research date: 2026-08-19
 - Live CNIG catalog verification by this repository: completed for the Phase 0B
   Valencia query on 2026-08-19; see `provider-cnig.md`
-- Local sample verification by this repository: pending Phase 0C
+- Local sample verification by this repository: blocked on 2026-08-19 by CNIG
+  object-storage `NoSuchKey` responses for three advertised resources
 
 | Source | Intended version 1 use | Official reference | Current status |
 |---|---|---|---|

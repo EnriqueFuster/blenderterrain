@@ -1,30 +1,41 @@
-"""Offline safety checks for the Phase 0 single-file download path."""
+"""Offline safety checks for the single-file download path."""
 
 from __future__ import annotations
 
+from io import BytesIO
 import tempfile
 import unittest
 from pathlib import Path
 
 from blender_terrain.errors import DownloadIntegrityError
 from blender_terrain.io.atomic import finalize_part, safe_destination
-from blender_terrain.io.tiff_validation import validate_tiff_signature
+from blender_terrain.io.tiff_validation import validate_tiff_header
+from blender_terrain.providers.cnig_portal import CNIGPortalClient
 
 
 class DownloadSafetyTests(unittest.TestCase):
     def test_rejects_path_traversal_filename(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
+            for filename in ("../escape.tif", "..\\escape.tif", "C:escape.tif"):
+                with self.subTest(filename=filename):
+                    with self.assertRaises(DownloadIntegrityError):
+                        safe_destination(Path(temporary_directory), filename)
+
+    def test_rejects_windows_reserved_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
             with self.assertRaises(DownloadIntegrityError):
-                safe_destination(Path(temporary_directory), "../escape.tif")
+                safe_destination(Path(temporary_directory), "CON.tif")
 
     def test_promotes_valid_bigtiff_part_atomically(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             destination = safe_destination(directory, "sample.tif")
             part = destination.with_name("sample.tif.part")
-            part.write_bytes(b"II+\x00phase-0")
+            part.write_bytes(
+                b"II+\x00\x08\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00"
+            )
 
-            self.assertEqual(validate_tiff_signature(part), "little-endian BigTIFF")
+            self.assertEqual(validate_tiff_header(part), "little-endian BigTIFF")
             finalize_part(part, destination)
 
             self.assertTrue(destination.is_file())
@@ -36,7 +47,38 @@ class DownloadSafetyTests(unittest.TestCase):
             path.write_bytes(b"<html>")
 
             with self.assertRaises(DownloadIntegrityError):
-                validate_tiff_signature(path)
+                validate_tiff_header(path)
+
+    def test_rejects_bigtiff_signature_without_structural_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "truncated.tif"
+            path.write_bytes(b"II+\x00")
+
+            with self.assertRaises(DownloadIntegrityError):
+                validate_tiff_header(path)
+
+    def test_finalization_does_not_overwrite_existing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            part = directory / "sample.tif.part"
+            destination = directory / "sample.tif"
+            part.write_bytes(b"new")
+            destination.write_bytes(b"existing")
+
+            with self.assertRaises(DownloadIntegrityError):
+                finalize_part(part, destination)
+
+            self.assertEqual(destination.read_bytes(), b"existing")
+
+    def test_stream_writer_enforces_actual_byte_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            part = Path(temporary_directory) / "sample.tif.part"
+
+            with self.assertRaises(DownloadIntegrityError):
+                CNIGPortalClient._write_bounded_response(BytesIO(b"1234"), part, 3)
+
+            self.assertTrue(part.exists())
+            self.assertEqual(part.stat().st_size, 0)
 
 
 if __name__ == "__main__":
