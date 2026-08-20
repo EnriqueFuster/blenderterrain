@@ -11,9 +11,9 @@ abstractions.
 
 ## Current status
 
-The portable technical validation outside Blender is complete. All Phase 0
-acceptance criteria have been exercised, and the next implementation block is
-the installable Blender extension skeleton. No production import workflow is
+The portable technical validation outside Blender is complete. The repository
+also contains an installable Blender 4.5 extension skeleton with a sidebar
+panel and a configurable cache directory. No production import workflow is
 available yet.
 
 The current foundation has verified:
@@ -45,9 +45,22 @@ HTTP and parsing behavior will remain isolated from core geospatial models.
 See the proposed decisions in [`docs/adr`](docs/adr) and the verified-source
 inventory in [`docs/data-sources.md`](docs/data-sources.md).
 
+## Install in Blender
+
+Build the extension ZIP with Blender 4.5:
+
+```text
+blender --command extension build --output-dir .artifacts/extension-build
+```
+
+Install the resulting ZIP from Blender through **Edit > Preferences > Get
+Extensions > Install from Disk**. The empty **Terrain** panel appears in the 3D
+View sidebar. This is currently an integration shell, not a usable terrain
+importer.
+
 ## Development
 
-The Phase 0 checks require Python 3.11 or later:
+The portable checks require Python 3.11 or later:
 
 ```text
 python -m unittest discover -s tests -v

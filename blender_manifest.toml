@@ -1,0 +1,41 @@
+schema_version = "1.0.0"
+id = "blender_terrain"
+version = "0.1.0"
+name = "BlenderTerrain"
+tagline = "Import IGN terrain and PNOA imagery by area"
+maintainer = "Enrique Fuster"
+type = "add-on"
+blender_version_min = "4.5.0"
+license = ["SPDX:GPL-3.0-or-later"]
+website = "https://github.com/EnriqueFuster/blenderterrain"
+
+[permissions]
+network = "Download IGN terrain and PNOA imagery"
+files = "Cache geospatial data and generated assets"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  "/.artifacts/",
+  "/.cache/",
+  "/.git/",
+  "/.github/",
+  "/.mypy_cache/",
+  "/.pytest_cache/",
+  "/.ruff_cache/",
+  "/.venv/",
+  "/*.egg-info/",
+  "/build/",
+  "/dist/",
+  "/docs/",
+  "/scripts/",
+  "/tests/",
+  "/.gitattributes",
+  "/.gitignore",
+  "/pyproject.toml",
+  "*.blend",
+  "*.part",
+  "*.tif",
+  "*.tiff",
+  "*.zip",
+]

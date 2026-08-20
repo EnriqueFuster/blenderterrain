@@ -3,33 +3,31 @@
 from __future__ import annotations
 
 import json
-import socket
 from dataclasses import dataclass
 from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
-from blender_terrain.errors import (
+from ..errors import (
     CatalogContractChanged,
     DownloadAuthorizationRequired,
     DownloadIntegrityError,
     ProviderUnavailableError,
 )
-from blender_terrain.io.atomic import (
+from ..io.atomic import (
     finalize_part,
     normalized_server_filename,
     safe_destination,
 )
-from blender_terrain.io.html_catalog_parser import parse_catalog_page, parse_product_page
-from blender_terrain.io.tiff_validation import validate_tiff_header
-from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
-
+from ..io.html_catalog_parser import parse_catalog_page, parse_product_page
+from ..io.tiff_validation import validate_tiff_header
+from ..models import CatalogItem, CatalogPage, DatasetProduct
 
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
-USER_AGENT = "BlenderTerrain/0.0.0 (+https://github.com/EnriqueFuster/blenderterrain)"
+USER_AGENT = "BlenderTerrain/0.1.0 (+https://github.com/EnriqueFuster/blenderterrain)"
 
 
 
@@ -251,7 +249,7 @@ class CNIGPortalClient:
             raise ProviderUnavailableError(
                 f"CNIG download request returned HTTP {exc.code}"
             ) from None
-        except (URLError, TimeoutError, socket.timeout, UnicodeError):
+        except (URLError, TimeoutError, UnicodeError):
             raise ProviderUnavailableError("CNIG delivery request failed") from None
 
         try:
@@ -280,7 +278,11 @@ class CNIGPortalClient:
             raise DownloadAuthorizationRequired(
                 "CNIG requires an interactive license confirmation for this resource"
             )
-        if license_state != "NO" or sequence != expected_sequence:
+        if (
+            license_state != "NO"
+            or not isinstance(sequence, str)
+            or sequence != expected_sequence
+        ):
             raise CatalogContractChanged(
                 "CNIG download initialization returned unexpected authorization data"
             )
@@ -332,6 +334,6 @@ class CNIGPortalClient:
                     body = response.read(maximum_bytes + 1)
                 if maximum_bytes is not None and len(body) > maximum_bytes:
                     raise DownloadIntegrityError("CNIG HTML response exceeds its safety limit")
-                return body.decode(charset, errors="strict")
-        except (HTTPError, URLError, TimeoutError, socket.timeout, UnicodeError) as exc:
+                return bytes(body).decode(charset, errors="strict")
+        except (HTTPError, URLError, TimeoutError, UnicodeError) as exc:
             raise ProviderUnavailableError(f"CNIG request failed for {url}: {exc}") from exc

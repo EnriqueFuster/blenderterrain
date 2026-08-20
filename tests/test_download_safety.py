@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from io import BytesIO
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 
 from blender_terrain.errors import DownloadIntegrityError
@@ -17,14 +17,16 @@ class DownloadSafetyTests(unittest.TestCase):
     def test_rejects_path_traversal_filename(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             for filename in ("../escape.tif", "..\\escape.tif", "C:escape.tif"):
-                with self.subTest(filename=filename):
-                    with self.assertRaises(DownloadIntegrityError):
-                        safe_destination(Path(temporary_directory), filename)
+                with self.subTest(filename=filename), self.assertRaises(
+                    DownloadIntegrityError
+                ):
+                    safe_destination(Path(temporary_directory), filename)
 
     def test_rejects_windows_reserved_filename(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            with self.assertRaises(DownloadIntegrityError):
-                safe_destination(Path(temporary_directory), "CON.tif")
+        with tempfile.TemporaryDirectory() as temporary_directory, self.assertRaises(
+            DownloadIntegrityError
+        ):
+            safe_destination(Path(temporary_directory), "CON.tif")
 
     def test_promotes_valid_bigtiff_part_atomically(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

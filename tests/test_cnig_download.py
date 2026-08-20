@@ -13,7 +13,6 @@ from blender_terrain.errors import CatalogContractChanged, DownloadAuthorization
 from blender_terrain.io.atomic import normalized_server_filename
 from blender_terrain.providers.cnig_portal import CNIGPortalClient, _NoRedirectHandler
 
-
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "portal_json"
 
 

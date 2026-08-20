@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
-from blender_terrain.errors import CatalogContractChanged
-from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProductPage
+from ..errors import CatalogContractChanged
+from ..models import CatalogItem, CatalogPage, DatasetProduct, ProductPage
 
 
 def _attributes(attributes: list[tuple[str, str | None]]) -> dict[str, str]:
@@ -48,7 +49,7 @@ class _ProductPageParser(HTMLParser):
 
 
 class _CatalogResultsParser(HTMLParser):
-    _LABEL_PREFIXES = {
+    _LABEL_PREFIXES: ClassVar[dict[str, str]] = {
         "Nombre": "Archivo",
         "Formato": "Formato",
         "Fecha": "Fecha descarga",

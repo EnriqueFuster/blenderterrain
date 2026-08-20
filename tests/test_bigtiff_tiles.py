@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import struct
 import tempfile
 import unittest
 import zlib
+from pathlib import Path
 
 import numpy as np
 

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import struct
 import zlib
+from pathlib import Path
 
-from blender_terrain.errors import DownloadIntegrityError
+from ..errors import DownloadIntegrityError
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 

@@ -5,18 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
-from blender_terrain.errors import RasterFormatError
-from blender_terrain.io.bigtiff_tiles import BigTiffFloatTileReader, GeoReference
-from blender_terrain.models import ProjectedBounds
+from ..errors import RasterFormatError
+from ..models import ProjectedBounds
+from .bigtiff_tiles import BigTiffFloatTileReader, GeoReference
 
 
 @dataclass(frozen=True, slots=True)
 class ElevationMosaic:
     """An aligned elevation array with per-pixel source and overlap evidence."""
 
-    data: np.ndarray
-    source_index: np.ndarray
+    data: NDArray[np.float32]
+    source_index: NDArray[np.int16]
     bounds: ProjectedBounds
     nodata: float
     overlap_valid_pixels: int

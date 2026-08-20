@@ -1,8 +1,8 @@
 """Portable foundation for the BlenderTerrain project.
 
-This package must remain importable without Blender. The installable extension
-entry point will be introduced only after the Phase 0 technical gates pass.
+This package remains importable without Blender. Blender-specific modules live
+behind the extension entry point and are not imported by portable code.
 """
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-from blender_terrain.errors import DownloadIntegrityError
+from ..errors import DownloadIntegrityError
 
 
 def validate_tiff_header(path: Path) -> str:

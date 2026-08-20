@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import math
 import struct
 import unittest
-from urllib.parse import parse_qs, urlparse
 import zlib
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from urllib.parse import parse_qs, urlparse
 
 from blender_terrain.errors import DownloadIntegrityError, ProviderContractChanged
 from blender_terrain.io.png_validation import validate_png
 from blender_terrain.io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
 from blender_terrain.models import ProjectedBounds
 from blender_terrain.providers.pnoa_wms import PNOAWMSClient, _validate_map_request
-
 
 CAPABILITIES = b"""<?xml version="1.0"?>
 <WMS_Capabilities xmlns="http://www.opengis.net/wms" version="1.3.0">

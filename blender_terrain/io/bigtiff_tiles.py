@@ -7,17 +7,18 @@ Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-from pathlib import Path
 import struct
-from typing import Final
 import zlib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Final
 
 import numpy as np
+from numpy.typing import NDArray
 
-from blender_terrain.errors import RasterFormatError
-from blender_terrain.models import ProjectedBounds
+from ..errors import RasterFormatError
+from ..models import ProjectedBounds
 
 _TYPE_SIZES: Final = {1: 1, 2: 1, 3: 2, 4: 4, 12: 8, 16: 8}
 _NUMERIC_FORMATS: Final = {1: "B", 3: "H", 4: "I", 12: "d", 16: "Q"}
@@ -147,7 +148,7 @@ class BigTiffFloatTileReader:
         ):
             raise RasterFormatError("TIFF tile index does not match its image dimensions")
 
-    def read_tile(self, row: int, column: int) -> np.ndarray:
+    def read_tile(self, row: int, column: int) -> NDArray[np.float32]:
         """Return one image tile cropped to valid pixels at its outer edges."""
 
         if not (
@@ -179,7 +180,9 @@ class BigTiffFloatTileReader:
         )
         return tile[:valid_height, :valid_width].copy()
 
-    def read_window(self, row: int, column: int, height: int, width: int) -> np.ndarray:
+    def read_window(
+        self, row: int, column: int, height: int, width: int
+    ) -> NDArray[np.float32]:
         """Return a pixel window by decoding only the tiles that intersect it."""
 
         if row < 0 or column < 0 or height <= 0 or width <= 0:
@@ -228,7 +231,9 @@ class BigTiffFloatTileReader:
 
         return self.georeference.enclosing_window(bounds)
 
-    def read_bounds(self, bounds: ProjectedBounds) -> tuple[np.ndarray, ProjectedBounds]:
+    def read_bounds(
+        self, bounds: ProjectedBounds
+    ) -> tuple[NDArray[np.float32], ProjectedBounds]:
         """Read enclosing pixels and return their exact projected outer bounds."""
 
         window = self.window_for_bounds(bounds)
@@ -305,7 +310,7 @@ class BigTiffFloatTileReader:
         value = tags.get(tag)
         if not isinstance(value, tuple) or not all(isinstance(item, int) for item in value):
             raise RasterFormatError(f"BigTIFF required tag {tag} is missing or invalid")
-        return tuple(value)
+        return tuple(item for item in value if isinstance(item, int))
 
 
 def _decode_value(value_type: int, count: int, encoded: bytes) -> TagValue:

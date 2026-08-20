@@ -8,7 +8,6 @@ import re
 import unittest
 from pathlib import Path
 
-
 FIXTURE_ROOT = Path(__file__).parent / "fixtures"
 FORBIDDEN_PATTERNS = {
     "authorization header": re.compile(rb"(?im)^\s*authorization\s*:"),

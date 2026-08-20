@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from xml.etree import ElementTree
 
-from blender_terrain.errors import ProviderContractChanged
+from ..errors import ProviderContractChanged
 
 _WMS_NAMESPACE = "http://www.opengis.net/wms"
 

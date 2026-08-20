@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-import socket
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from blender_terrain.errors import (
+from ..errors import (
     DownloadIntegrityError,
     ProviderContractChanged,
     ProviderUnavailableError,
 )
-from blender_terrain.io.atomic import finalize_part, safe_destination
-from blender_terrain.io.png_validation import validate_png
-from blender_terrain.io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
-from blender_terrain.models import ProjectedBounds
+from ..io.atomic import finalize_part, safe_destination
+from ..io.png_validation import validate_png
+from ..io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
+from ..models import ProjectedBounds
 
 WMS_URL = "https://www.ign.es/wms-inspire/pnoa-ma"
 PNOA_LAYER = "OI.OrthoimageCoverage"
@@ -91,7 +90,7 @@ class PNOAWMSClient:
                         stream.write(chunk)
         except HTTPError as exc:
             raise ProviderUnavailableError(f"PNOA WMS returned HTTP {exc.code}") from None
-        except (URLError, TimeoutError, socket.timeout):
+        except (URLError, TimeoutError):
             raise ProviderUnavailableError("PNOA WMS request failed") from None
 
         validate_png(part_path, width, height)
@@ -124,7 +123,7 @@ class PNOAWMSClient:
                 content_type = response.headers.get_content_type().lower()
         except HTTPError as exc:
             raise ProviderUnavailableError(f"PNOA WMS returned HTTP {exc.code}") from None
-        except (URLError, TimeoutError, socket.timeout):
+        except (URLError, TimeoutError):
             raise ProviderUnavailableError("PNOA WMS request failed") from None
         if len(body) > maximum_bytes:
             raise ProviderContractChanged("WMS capabilities response exceeds its size limit")

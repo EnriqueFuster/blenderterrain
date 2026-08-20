@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import math
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class DatasetProduct(str, Enum):
+class DatasetProduct(StrEnum):
     """Geographic products supported by the initial CNIG integration."""
 
     MDT02 = "MDT02"

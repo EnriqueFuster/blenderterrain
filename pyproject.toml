@@ -4,15 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "blenderterrain"
-version = "0.0.0"
+version = "0.1.0"
 description = "Portable research foundation for importing official terrain data into Blender"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Enrique Fuster" }]
+dependencies = [
+  "numpy>=1.26,<2; python_version < '3.13'",
+  "numpy>=2.1,<2.3; python_version >= '3.13'",
+]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
-  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -45,6 +48,15 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 warn_unreachable = true
+explicit_package_bases = true
+exclude = "(^|[\\\\/])blender_terrain[\\\\/](addon\\.py|ui[\\\\/])"
+files = [
+  "blender_terrain/errors.py",
+  "blender_terrain/models.py",
+  "blender_terrain/io",
+  "blender_terrain/providers",
+]
+
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

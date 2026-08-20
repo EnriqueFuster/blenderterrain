@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from blender_terrain.errors import DownloadIntegrityError
+from ..errors import DownloadIntegrityError
 
 
 def normalized_server_filename(filename: str) -> str:
