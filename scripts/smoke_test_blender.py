@@ -29,8 +29,11 @@ def main() -> None:
         assert result == {"FINISHED"}
         assert properties.is_valid
         assert properties.crs_summary == "EPSG:25830"
+        assert properties.product == "MDT02"
+        assert properties.selected_resolution == 2.0
         assert properties.area_square_metres > 0.0
         assert properties.sample_count > 0
+        assert properties.imagery_summary.startswith("PNOA 0.25 m:")
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)
         assert not hasattr(bpy.types.Scene, "blender_terrain_roi")

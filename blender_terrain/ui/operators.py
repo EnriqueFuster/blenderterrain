@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import bpy
 
-from ..core import BBoxWGS84, estimate_bbox, split_bbox_by_utm_zone
+from ..core import BBoxWGS84, create_import_plan
 from ..errors import BlenderTerrainError
+from ..models import DatasetProduct
 
 
 class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
@@ -26,21 +27,46 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 properties.east,
                 properties.north,
             )
-            work_areas = split_bbox_by_utm_zone(bounds)
-            estimate = estimate_bbox(bounds)
+            plan = create_import_plan(
+                bounds=bounds,
+                product=DatasetProduct(properties.product),
+                elevation_resolution_metres=(
+                    None
+                    if properties.elevation_resolution == "AUTO"
+                    else float(properties.elevation_resolution)
+                ),
+                use_imagery=properties.use_imagery,
+                imagery_gsd_metres=(
+                    None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
+                ),
+            )
         except BlenderTerrainError as exc:
             properties.is_valid = False
             properties.validation_message = str(exc)
             properties.crs_summary = ""
             properties.area_square_metres = 0.0
             properties.sample_count = 0
+            properties.selected_resolution = 0.0
+            properties.imagery_summary = ""
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 
         properties.is_valid = True
         properties.validation_message = "ROI is valid for offline planning"
-        properties.crs_summary = ", ".join(f"EPSG:{area.crs.epsg}" for area in work_areas)
-        properties.area_square_metres = estimate.area_square_metres
-        properties.sample_count = estimate.sample_count
+        properties.crs_summary = ", ".join(
+            f"EPSG:{area.crs.epsg}" for area in plan.work_areas
+        )
+        properties.area_square_metres = plan.elevation.area_square_metres
+        properties.sample_count = plan.elevation.sample_count
+        properties.selected_resolution = plan.elevation_resolution_metres
+        properties.imagery_summary = (
+            "PNOA disabled"
+            if plan.imagery is None
+            else (
+                f"PNOA {plan.imagery.gsd_metres:g} m: "
+                f"{plan.imagery.pixel_width:,} x {plan.imagery.pixel_height:,} px, "
+                f"{plan.imagery.tile_count} provisional tile(s)"
+            )
+        )
         self.report({"INFO"}, properties.validation_message)
         return {"FINISHED"}

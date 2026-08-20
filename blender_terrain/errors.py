@@ -13,6 +13,10 @@ class NoCoverageError(BlenderTerrainError):
     """Raised when an area does not intersect supported geographic coverage."""
 
 
+class PlanningLimitExceeded(UserInputError):
+    """Raised when requested output exceeds a hard MVP safety budget."""
+
+
 class ProviderUnavailableError(BlenderTerrainError):
     """Raised when a provider cannot complete a request."""
 
