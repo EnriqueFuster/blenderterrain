@@ -6,6 +6,8 @@ import importlib
 import sys
 from pathlib import Path
 
+import bpy
+
 
 def main() -> None:
     arguments = sys.argv[sys.argv.index("--") + 1 :]
@@ -21,8 +23,17 @@ def main() -> None:
         classes = addon.registered_class_types()
         assert all(class_type.is_registered for class_type in classes)
         assert classes[0].bl_idname == repository.name
+        assert hasattr(bpy.types.Scene, "blender_terrain_roi")
+        result = bpy.ops.blender_terrain.validate_roi()
+        properties = bpy.context.scene.blender_terrain_roi
+        assert result == {"FINISHED"}
+        assert properties.is_valid
+        assert properties.crs_summary == "EPSG:25830"
+        assert properties.area_square_metres > 0.0
+        assert properties.sample_count > 0
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)
+        assert not hasattr(bpy.types.Scene, "blender_terrain_roi")
     print("BlenderTerrain register/unregister smoke test passed")
 
 

@@ -15,7 +15,13 @@ class PortableImportTests(unittest.TestCase):
 
     def test_only_blender_boundary_modules_import_bpy(self) -> None:
         package_root = Path(__file__).parents[1] / "blender_terrain"
-        allowed = {"addon.py", "ui/panels.py", "ui/preferences.py"}
+        allowed = {
+            "addon.py",
+            "ui/operators.py",
+            "ui/panels.py",
+            "ui/preferences.py",
+            "ui/properties.py",
+        }
         offenders: list[str] = []
         for path in package_root.rglob("*.py"):
             relative = path.relative_to(package_root).as_posix()
