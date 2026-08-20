@@ -227,9 +227,11 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         if active.mode == "delivery":
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
+            terrain_count = len(result.get("processed_elevation", []))
             properties.delivery_ready = True
             properties.delivery_summary = (
-                f"Prepared {elevation_count} elevation and {imagery_count} imagery file(s)"
+                f"Prepared {elevation_count} elevation, {imagery_count} imagery and "
+                f"{terrain_count} terrain tile(s)"
             )
             properties.job_message = "Data download completed"
             return

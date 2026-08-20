@@ -6,7 +6,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
-from blender_terrain.core import BBoxWGS84
+import numpy as np
+
+from blender_terrain.core import BBoxWGS84, ProcessedElevationTile
+from blender_terrain.core.grid import tile_grid
 from blender_terrain.errors import CatalogContractChanged, ProviderUnavailableError
 from blender_terrain.jobs.models import DiscoveryJob, JobState
 from blender_terrain.jobs.storage import (
@@ -177,6 +180,7 @@ class DeliveryWorkerTests(unittest.TestCase):
                 job_path,
                 cnig_factory=FakeDeliveryCNIG,
                 imagery_factory=FakeDeliveryImagery,
+                elevation_processor=_fake_elevation_processor,
             )
 
             result = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
@@ -189,6 +193,8 @@ class DeliveryWorkerTests(unittest.TestCase):
             self.assertEqual(state, JobState.COMPLETE)
             self.assertEqual(len(result["elevation_paths"]), 1)
             self.assertEqual(len(result["imagery_paths"]), 1)
+            self.assertEqual(len(result["processed_elevation"]), 1)
+            self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
             self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
             self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])
 
@@ -201,6 +207,14 @@ class DeliveryWorkerTests(unittest.TestCase):
             state = run_delivery_job(job_path, cnig_factory=FakeDeliveryCNIG)
 
             self.assertEqual(state, JobState.CANCELLED)
+
+
+def _fake_elevation_processor(
+    paths: tuple[Path, ...], plan,
+) -> tuple[ProcessedElevationTile, ...]:
+    tile = tile_grid(plan.grids[0])[0]
+    data = np.zeros((tile.rows, tile.columns), dtype=np.float32)
+    return (ProcessedElevationTile(0, tile, data, -9999.0, 0, 0, 0.0),)
 
 
 if __name__ == "__main__":

@@ -8,11 +8,13 @@ from pathlib import Path
 
 from ..core import (
     ImportPlan,
+    ProcessedElevationTile,
     TransferProgress,
     create_import_plan,
     deliver_plan_sources,
     discover_sources,
     plan_imagery_tiles,
+    process_elevation_tiles,
 )
 from ..core.discovery import CatalogDiscoveryProvider
 from ..errors import (
@@ -25,6 +27,7 @@ from ..errors import (
     ProviderUnavailableError,
     UserInputError,
 )
+from ..io.elevation_output import write_elevation_array
 from ..providers.cnig_portal import CNIGPortalClient
 from ..providers.pnoa_wms import PNOAWMSClient
 from .models import DiscoveryJob, JobState, ProgressEvent
@@ -36,6 +39,9 @@ from .storage import (
 )
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
+ElevationProcessor = Callable[
+    [tuple[Path, ...], ImportPlan], tuple[ProcessedElevationTile, ...]
+]
 
 
 def run_discovery_job(
@@ -97,6 +103,7 @@ def run_delivery_job(
     job_path: Path,
     cnig_factory: Callable[[], CNIGPortalClient] = CNIGPortalClient,
     imagery_factory: Callable[[], PNOAWMSClient] = PNOAWMSClient,
+    elevation_processor: ElevationProcessor = process_elevation_tiles,
 ) -> JobState:
     """Discover and download validated elevation and optional PNOA sources."""
 
@@ -153,19 +160,46 @@ def run_delivery_job(
             report,
             cancelled,
         )
+        emit(JobState.PROCESSING_ELEVATION, 0.96, "Processing final elevation tiles")
+        processed_directory = job_path.parents[2] / "processed" / job.job_id
+        processed_tiles = elevation_processor(delivered.elevation_paths, plan)
+        processed_payload: list[dict[str, object]] = []
+        for processed in processed_tiles:
+            if cancelled():
+                raise JobCancelled("Data delivery was cancelled")
+            filename = (
+                f"elevation_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
+                f"r{processed.tile.row}_c{processed.tile.column}.npy"
+            )
+            output_path = processed_directory / filename
+            write_elevation_array(output_path, processed.data)
+            processed_payload.append(
+                {
+                    "path": str(output_path),
+                    "bounds": asdict(processed.tile.bounds),
+                    "rows": processed.tile.rows,
+                    "columns": processed.tile.columns,
+                    "nodata": processed.nodata,
+                    "overlap_valid_pixels": processed.overlap_valid_pixels,
+                    "conflicting_valid_pixels": processed.conflicting_valid_pixels,
+                    "maximum_overlap_difference": processed.maximum_overlap_difference,
+                }
+            )
         payload = {
             "schema_version": 1,
             "job_id": job.job_id,
             "state": JobState.COMPLETE.value,
             "elevation_paths": [str(path) for path in delivered.elevation_paths],
             "imagery_paths": [str(path) for path in delivered.imagery_paths],
+            "processed_elevation": processed_payload,
         }
         write_result(result_path, payload)
         emit(
             JobState.COMPLETE,
             1.0,
             f"Prepared {len(delivered.elevation_paths)} elevation and "
-            f"{len(delivered.imagery_paths)} imagery file(s)",
+            f"{len(delivered.imagery_paths)} imagery and "
+            f"{len(processed_tiles)} processed terrain tile(s)",
         )
         return JobState.COMPLETE
     except JobCancelled as exc:
