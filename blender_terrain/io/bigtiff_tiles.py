@@ -17,8 +17,8 @@ import numpy as np
 
 from blender_terrain.errors import RasterFormatError
 
-_TYPE_SIZES: Final = {1: 1, 2: 1, 3: 2, 4: 4, 16: 8}
-_UNSIGNED_FORMATS: Final = {1: "B", 3: "H", 4: "I", 16: "Q"}
+_TYPE_SIZES: Final = {1: 1, 2: 1, 3: 2, 4: 4, 12: 8, 16: 8}
+_NUMERIC_FORMATS: Final = {1: "B", 3: "H", 4: "I", 12: "d", 16: "Q"}
 
 _IMAGE_WIDTH: Final = 256
 _IMAGE_LENGTH: Final = 257
@@ -32,6 +32,15 @@ _TILE_OFFSETS: Final = 324
 _TILE_BYTE_COUNTS: Final = 325
 _SAMPLE_FORMAT: Final = 339
 _GDAL_NODATA: Final = 42113
+_MODEL_PIXEL_SCALE: Final = 33550
+_MODEL_TIEPOINT: Final = 33922
+_GEO_KEY_DIRECTORY: Final = 34735
+
+_GT_MODEL_TYPE: Final = 1024
+_GT_RASTER_TYPE: Final = 1025
+_PROJECTED_CRS_TYPE: Final = 3072
+
+TagValue = tuple[int | float, ...] | str
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +66,24 @@ class TileLayout:
         return (self.height + self.tile_height - 1) // self.tile_height
 
 
+@dataclass(frozen=True, slots=True)
+class GeoReference:
+    """North-up projected georeferencing expressed at the outer pixel edge."""
+
+    epsg: int
+    origin_x: float
+    origin_y: float
+    pixel_width: float
+    pixel_height: float
+
+    def bounds(self, width: int, height: int) -> tuple[float, float, float, float]:
+        """Return west, south, east, and north bounds for image dimensions."""
+
+        east = self.origin_x + width * self.pixel_width
+        south = self.origin_y + height * self.pixel_height
+        return self.origin_x, south, east, self.origin_y
+
+
 class BigTiffFloatTileReader:
     """Read one compressed Float32 tile at a time from a verified CNIG TIFF."""
 
@@ -66,6 +93,7 @@ class BigTiffFloatTileReader:
         self._byte_order, first_ifd_offset = self._read_header()
         tags = self._read_first_directory(first_ifd_offset)
         self.layout = self._validate_layout(tags)
+        self.georeference = _parse_georeference(tags)
         self._tile_offsets = self._required_values(tags, _TILE_OFFSETS)
         self._tile_byte_counts = self._required_values(tags, _TILE_BYTE_COUNTS)
         expected_tiles = self.layout.tile_columns * self.layout.tile_rows
@@ -150,7 +178,7 @@ class BigTiffFloatTileReader:
             raise RasterFormatError("BigTIFF first directory offset is invalid")
         return "<", first_ifd_offset
 
-    def _read_first_directory(self, offset: int) -> dict[int, tuple[int, ...] | str]:
+    def _read_first_directory(self, offset: int) -> dict[int, TagValue]:
         with self._path.open("rb") as stream:
             stream.seek(offset)
             count_bytes = stream.read(8)
@@ -162,7 +190,7 @@ class BigTiffFloatTileReader:
                 raise RasterFormatError("BigTIFF directory points outside the source file")
             entries = stream.read(entry_count * 20)
 
-        tags: dict[int, tuple[int, ...] | str] = {}
+        tags: dict[int, TagValue] = {}
         for index in range(entry_count):
             entry = entries[index * 20 : (index + 1) * 20]
             tag, value_type, value_count, value_or_offset = struct.unpack("<HHQQ", entry)
@@ -182,7 +210,7 @@ class BigTiffFloatTileReader:
             tags[tag] = _decode_value(value_type, value_count, encoded)
         return tags
 
-    def _validate_layout(self, tags: dict[int, tuple[int, ...] | str]) -> TileLayout:
+    def _validate_layout(self, tags: dict[int, TagValue]) -> TileLayout:
         width = _single_value(tags, _IMAGE_WIDTH)
         height = _single_value(tags, _IMAGE_LENGTH)
         tile_width = _single_value(tags, _TILE_WIDTH)
@@ -204,24 +232,87 @@ class BigTiffFloatTileReader:
         return TileLayout(width, height, tile_width, tile_height, nodata)
 
     @staticmethod
-    def _required_values(tags: dict[int, tuple[int, ...] | str], tag: int) -> tuple[int, ...]:
+    def _required_values(tags: dict[int, TagValue], tag: int) -> tuple[int, ...]:
         value = tags.get(tag)
-        if not isinstance(value, tuple):
+        if not isinstance(value, tuple) or not all(isinstance(item, int) for item in value):
             raise RasterFormatError(f"BigTIFF required tag {tag} is missing or invalid")
-        return value
+        return tuple(value)
 
 
-def _decode_value(value_type: int, count: int, encoded: bytes) -> tuple[int, ...] | str:
+def _decode_value(value_type: int, count: int, encoded: bytes) -> TagValue:
     if value_type == 2:
         return encoded.decode("ascii", errors="strict")
-    return struct.unpack(f"<{count}{_UNSIGNED_FORMATS[value_type]}", encoded)
+    return struct.unpack(f"<{count}{_NUMERIC_FORMATS[value_type]}", encoded)
 
 
-def _single_value(tags: dict[int, tuple[int, ...] | str], tag: int) -> int:
+def _single_value(tags: dict[int, TagValue], tag: int) -> int:
     values = tags.get(tag)
-    if not isinstance(values, tuple) or len(values) != 1:
+    if (
+        not isinstance(values, tuple)
+        or len(values) != 1
+        or not isinstance(values[0], int)
+    ):
         raise RasterFormatError(f"BigTIFF required tag {tag} is missing or invalid")
     return values[0]
+
+
+def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:
+    scale = _numeric_values(tags, _MODEL_PIXEL_SCALE, 3)
+    tiepoint = _numeric_values(tags, _MODEL_TIEPOINT, 6)
+    if scale[0] <= 0 or scale[1] <= 0:
+        raise RasterFormatError("GeoTIFF pixel scale must be positive")
+    if scale[2] != 0 or tiepoint[2] != 0 or tiepoint[5] != 0:
+        raise RasterFormatError("GeoTIFF vertical model coordinates are not supported")
+
+    keys = _parse_geo_keys(tags)
+    if keys.get(_GT_MODEL_TYPE) != 1:
+        raise RasterFormatError("Only projected GeoTIFF coordinate systems are supported")
+    raster_type = keys.get(_GT_RASTER_TYPE)
+    if raster_type not in {1, 2}:
+        raise RasterFormatError("GeoTIFF raster type is missing or unsupported")
+    epsg = keys.get(_PROJECTED_CRS_TYPE)
+    if epsg is None or epsg == 32767:
+        raise RasterFormatError("GeoTIFF has no directly encoded projected EPSG code")
+
+    origin_x = tiepoint[3] - tiepoint[0] * scale[0]
+    origin_y = tiepoint[4] + tiepoint[1] * scale[1]
+    if raster_type == 2:
+        origin_x -= scale[0] / 2
+        origin_y += scale[1] / 2
+    return GeoReference(
+        epsg=epsg,
+        origin_x=origin_x,
+        origin_y=origin_y,
+        pixel_width=scale[0],
+        pixel_height=-scale[1],
+    )
+
+
+def _numeric_values(tags: dict[int, TagValue], tag: int, count: int) -> tuple[int | float, ...]:
+    values = tags.get(tag)
+    if not isinstance(values, tuple) or len(values) != count:
+        raise RasterFormatError(f"GeoTIFF required tag {tag} is missing or invalid")
+    return values
+
+
+def _parse_geo_keys(tags: dict[int, TagValue]) -> dict[int, int]:
+    raw_directory = tags.get(_GEO_KEY_DIRECTORY)
+    if not isinstance(raw_directory, tuple) or not all(
+        isinstance(value, int) for value in raw_directory
+    ):
+        raise RasterFormatError("GeoTIFF key directory is missing or invalid")
+    directory = tuple(raw_directory)
+    if len(directory) < 4 or directory[0:3] != (1, 1, 0):
+        raise RasterFormatError("GeoTIFF key directory header is unsupported")
+    key_count = int(directory[3])
+    if len(directory) != 4 + key_count * 4:
+        raise RasterFormatError("GeoTIFF key directory length is invalid")
+    keys: dict[int, int] = {}
+    for index in range(key_count):
+        key, location, count, value = directory[4 + index * 4 : 8 + index * 4]
+        if location == 0 and count == 1:
+            keys[int(key)] = int(value)
+    return keys
 
 
 def _inflate_exact(compressed: bytes, expected_size: int) -> bytes:

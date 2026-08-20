@@ -25,6 +25,12 @@ class BigTiffTilesTests(unittest.TestCase):
             self.assertEqual(reader.layout.nodata, -9999.0)
             self.assertEqual(reader.layout.tile_rows, 1)
             self.assertEqual(reader.layout.tile_columns, 1)
+            self.assertEqual(reader.georeference.epsg, 25830)
+            self.assertEqual(reader.georeference.origin_x, 99.0)
+            self.assertEqual(reader.georeference.origin_y, 201.0)
+            self.assertEqual(reader.georeference.pixel_width, 2.0)
+            self.assertEqual(reader.georeference.pixel_height, -2.0)
+            self.assertEqual(reader.georeference.bounds(2, 2), (99.0, 197.0, 103.0, 201.0))
 
     def test_rejects_tiles_outside_the_image(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -70,8 +76,34 @@ def _write_minimal_bigtiff(
         for row in range(0, values.shape[0], tile_height)
         for column in range(0, values.shape[1], tile_width)
     ]
-    entry_count = 12
-    index_offset = 16 + 8 + entry_count * 20 + 8
+    entry_count = 15
+    external_values_offset = 16 + 8 + entry_count * 20 + 8
+    pixel_scale = struct.pack("<3d", 2.0, 2.0, 0.0)
+    tiepoint = struct.pack("<6d", 0.0, 0.0, 0.0, 100.0, 200.0, 0.0)
+    geo_keys = struct.pack(
+        "<16H",
+        1,
+        1,
+        0,
+        3,
+        1024,
+        0,
+        1,
+        1,
+        1025,
+        0,
+        1,
+        2,
+        3072,
+        0,
+        1,
+        25830,
+    )
+    external_values = pixel_scale + tiepoint + geo_keys
+    pixel_scale_offset = external_values_offset
+    tiepoint_offset = pixel_scale_offset + len(pixel_scale)
+    geo_keys_offset = tiepoint_offset + len(tiepoint)
+    index_offset = external_values_offset + len(external_values)
     tile_offsets_offset = index_offset
     tile_byte_counts_offset = tile_offsets_offset + len(compressed_tiles) * 8
     data_offset = tile_byte_counts_offset + len(compressed_tiles) * 8
@@ -96,12 +128,18 @@ def _write_minimal_bigtiff(
         (324, 16, len(compressed_tiles), tile_offsets_value),
         (325, 16, len(compressed_tiles), tile_byte_counts_value),
         (339, 3, 1, 3),
+        (33550, 12, 3, pixel_scale_offset),
+        (33922, 12, 6, tiepoint_offset),
+        (34735, 3, 16, geo_keys_offset),
         (42113, 2, 6, int.from_bytes(b"-9999\0\0\0", "little")),
     ]
+    entries.sort(key=lambda entry: entry[0])
     header = b"II" + struct.pack("<HHHQ", 43, 8, 0, 16)
     directory = struct.pack("<Q", entry_count)
     directory += b"".join(struct.pack("<HHQQ", *entry) for entry in entries)
     directory += struct.pack("<Q", 0)
     index = struct.pack(f"<{len(tile_offsets)}Q", *tile_offsets)
     index += struct.pack(f"<{len(compressed_tiles)}Q", *(len(tile) for tile in compressed_tiles))
-    path.write_bytes(header + directory + index + b"".join(compressed_tiles))
+    path.write_bytes(
+        header + directory + external_values + index + b"".join(compressed_tiles)
+    )
