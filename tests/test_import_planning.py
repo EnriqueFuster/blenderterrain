@@ -32,7 +32,7 @@ class ImportPlanningTests(unittest.TestCase):
         )
 
         self.assertEqual(plan.elevation_resolution_metres, 50.0)
-        self.assertLessEqual(plan.elevation.sample_count, 16_777_216)
+        self.assertLessEqual(plan.elevation_sample_count, 16_777_216)
 
     def test_estimates_optional_imagery_tiles(self) -> None:
         plan = create_import_plan(

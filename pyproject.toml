@@ -30,6 +30,7 @@ dev = [
   "ruff>=0.9",
 ]
 oracle = [
+  "pyproj>=3.7",
   "rasterio>=1.4",
   "tifffile>=2025.1",
 ]

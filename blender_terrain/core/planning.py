@@ -9,7 +9,8 @@ from ..errors import PlanningLimitExceeded, UserInputError
 from ..models import DatasetProduct
 from .crs import UTMWorkArea, split_bbox_by_utm_zone
 from .estimates import ROIEstimate, estimate_bbox
-from .grid import DEFAULT_MAX_TILE_CELLS
+from .grid import DEFAULT_MAX_TILE_CELLS, GridSpec, align_projected_grid, tile_grid
+from .projection import project_work_area_bounds
 from .roi import BBoxWGS84
 
 ELEVATION_RESOLUTIONS = (2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
@@ -52,6 +53,7 @@ class ImportPlan:
     elevation_resolution_metres: float
     elevation: ROIEstimate
     imagery: ImageryEstimate | None
+    grids: tuple[GridSpec, ...]
 
     @property
     def crosses_utm_zones(self) -> bool:
@@ -63,19 +65,27 @@ class ImportPlan:
     def terrain_tile_columns(self) -> int:
         """Return the provisional number of terrain objects from west to east."""
 
-        return math.ceil(self.elevation.sample_columns / DEFAULT_MAX_TILE_CELLS)
+        return sum(
+            math.ceil(grid.columns / DEFAULT_MAX_TILE_CELLS) for grid in self.grids
+        )
 
     @property
     def terrain_tile_rows(self) -> int:
         """Return the provisional number of terrain objects from north to south."""
 
-        return math.ceil(self.elevation.sample_rows / DEFAULT_MAX_TILE_CELLS)
+        return max(math.ceil(grid.rows / DEFAULT_MAX_TILE_CELLS) for grid in self.grids)
 
     @property
     def terrain_tile_count(self) -> int:
         """Return the provisional number of terrain objects."""
 
-        return self.terrain_tile_columns * self.terrain_tile_rows
+        return sum(len(tile_grid(grid)) for grid in self.grids)
+
+    @property
+    def elevation_sample_count(self) -> int:
+        """Return the exact cell count after UTM projection and grid alignment."""
+
+        return sum(grid.sample_count for grid in self.grids)
 
 
 def create_import_plan(
@@ -90,8 +100,8 @@ def create_import_plan(
     if product not in (DatasetProduct.MDT02, DatasetProduct.MDS02):
         raise UserInputError("Elevation product must be MDT02 or MDS02")
     work_areas = split_bbox_by_utm_zone(bounds)
-    elevation_resolution, elevation = _select_elevation_resolution(
-        bounds, elevation_resolution_metres
+    elevation_resolution, elevation, grids = _select_elevation_resolution(
+        bounds, work_areas, elevation_resolution_metres
     )
     imagery = (
         _estimate_imagery(bounds, imagery_gsd_metres)
@@ -105,19 +115,26 @@ def create_import_plan(
         elevation_resolution_metres=elevation_resolution,
         elevation=elevation,
         imagery=imagery,
+        grids=grids,
     )
 
 
 def _select_elevation_resolution(
-    bounds: BBoxWGS84, requested: float | None
-) -> tuple[float, ROIEstimate]:
+    bounds: BBoxWGS84,
+    work_areas: tuple[UTMWorkArea, ...],
+    requested: float | None,
+) -> tuple[float, ROIEstimate, tuple[GridSpec, ...]]:
     candidates = ELEVATION_RESOLUTIONS if requested is None else (requested,)
     if requested is not None and requested not in ELEVATION_RESOLUTIONS:
         raise UserInputError("Unsupported elevation resolution")
     for resolution in candidates:
         estimate = estimate_bbox(bounds, resolution)
-        if estimate.sample_count <= MAX_ELEVATION_SAMPLES:
-            return resolution, estimate
+        grids = tuple(
+            align_projected_grid(project_work_area_bounds(work_area), resolution)
+            for work_area in work_areas
+        )
+        if sum(grid.sample_count for grid in grids) <= MAX_ELEVATION_SAMPLES:
+            return resolution, estimate, grids
     raise PlanningLimitExceeded(
         "Elevation output exceeds the safe sample limit even at 100 m"
         if requested is None

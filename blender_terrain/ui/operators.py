@@ -58,7 +58,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             f"EPSG:{area.crs.epsg}" for area in plan.work_areas
         )
         properties.area_square_metres = plan.elevation.area_square_metres
-        properties.sample_count = plan.elevation.sample_count
+        properties.sample_count = plan.elevation_sample_count
         properties.selected_resolution = plan.elevation_resolution_metres
         properties.terrain_tile_count = plan.terrain_tile_count
         properties.imagery_summary = (
