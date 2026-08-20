@@ -31,9 +31,22 @@ from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
 USER_AGENT = "BlenderTerrain/0.0.0 (+https://github.com/EnriqueFuster/blenderterrain)"
 
-PRODUCT_SLUGS = {
-    DatasetProduct.MDT02: "modelo-digital-terreno-mdt02-segunda-cobertura",
-    DatasetProduct.MDS02: "modelo-digital-superficies-mds02-segunda-cobertura",
+
+
+@dataclass(frozen=True, slots=True)
+class _ProductContract:
+    slug: str
+    catalog_series: str
+
+
+PRODUCT_CONTRACTS = {
+    DatasetProduct.MDT02: _ProductContract(
+        "modelo-digital-terreno-mdt02-segunda-cobertura", "MDT02"
+    ),
+    DatasetProduct.MDS02: _ProductContract(
+        "modelo-digital-superficies-mds02-segunda-cobertura", "MDS02"
+    ),
+    DatasetProduct.PNOA_MA: _ProductContract("ortofoto-pnoa-maxima-actualidad", "02211"),
 }
 DOWNLOAD_INITIALIZATION_MAXIMUM_BYTES = 4_096
 ACCEPTED_TIFF_CONTENT_TYPES = {
@@ -105,10 +118,10 @@ class CNIGPortalClient:
     def discover(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         """Discover the first page of COG resources intersecting a WGS84 bbox."""
 
-        slug = PRODUCT_SLUGS[product]
-        page_url = BASE_URL + slug
+        contract = PRODUCT_CONTRACTS[product]
+        page_url = BASE_URL + contract.slug
         product_html = self._request(page_url)
-        product_page = parse_product_page(product_html, product)
+        product_page = parse_product_page(product_html, contract.catalog_series)
         form = {
             "numPagina": "1",
             "codAgr": product_page.catalog_group,
@@ -146,7 +159,7 @@ class CNIGPortalClient:
         cache_directory: Path,
         maximum_bytes: int = 1_073_741_824,
     ) -> Path:
-        """Download one explicitly selected item through the controlled S3 flow."""
+        """Download one explicitly selected item through the first-party CNIG flow."""
 
         if maximum_bytes <= 0:
             raise ValueError("maximum_bytes must be positive")
@@ -176,7 +189,7 @@ class CNIGPortalClient:
         form = {
             "secuencial": item.sequential_id,
             "secDescDirLA": download_sequence,
-            "codSerie": item.product.value,
+            "codSerie": PRODUCT_CONTRACTS[item.product].catalog_series,
             "urlCart": "",
             "id_productor": "",
             "codNumMD": "",

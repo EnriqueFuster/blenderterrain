@@ -36,6 +36,10 @@ def main() -> int:
         type=Path,
         help="Directory for the opt-in sample download.",
     )
+    parser.add_argument(
+        "--sequential-id",
+        help="Download the discovered item with this exact CNIG sequential identifier.",
+    )
     args = parser.parse_args()
     if not args.online:
         parser.error("online access is disabled; pass --online to run discovery")
@@ -44,12 +48,20 @@ def main() -> int:
     client = CNIGPortalClient()
     page = client.discover(product, VALENCIA_TEST_BBOX)
     projected_items = [item for item in page.items if item.is_native_projected_variant]
-    if args.download_one:
+    if args.download_one or args.sequential_id:
         if args.download_directory is None:
-            parser.error("--download-one requires --download-directory")
-        if len(projected_items) != 1:
-            parser.error("test query did not return exactly one native projected item")
-        downloaded_path = client.download_item(projected_items[0], args.download_directory)
+            parser.error("downloading requires --download-directory")
+        if args.sequential_id:
+            selected_items = [
+                item for item in projected_items if item.sequential_id == args.sequential_id
+            ]
+            if len(selected_items) != 1:
+                parser.error("sequential identifier did not select exactly one discovered item")
+        else:
+            selected_items = projected_items
+            if len(selected_items) != 1:
+                parser.error("test query did not return exactly one native projected item")
+        downloaded_path = client.download_item(selected_items[0], args.download_directory)
     else:
         downloaded_path = None
     output = {

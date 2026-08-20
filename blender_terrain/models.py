@@ -7,10 +7,11 @@ from enum import Enum
 
 
 class DatasetProduct(str, Enum):
-    """Elevation products supported by the initial CNIG experiment."""
+    """Geographic products supported by the initial CNIG integration."""
 
     MDT02 = "MDT02"
     MDS02 = "MDS02"
+    PNOA_MA = "PNOA_MA"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +33,7 @@ class CatalogItem:
     filename: str
     file_format: str
     sequential_id: str
-    year: int | None = None
+    date: str | None = None
     resolution: str | None = None
     size_mb: float | None = None
 

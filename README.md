@@ -15,12 +15,15 @@ The project is in Phase 0: portable technical experiments outside Blender. No
 installable Blender extension exists yet, and no production import workflow is
 available.
 
-The current work validates, in order:
+The current foundation has verified:
 
-1. reproducible catalog discovery without browser automation;
-2. elevation raster encoding and windowed-reading options;
-3. numerical agreement with Rasterio as a development oracle;
-4. PNOA WMS bounds, dimensions, and orientation.
+1. reproducible MDT02, MDS02, and PNOA catalog discovery without browser automation;
+2. complete first-party CNIG downloads for all three products;
+3. bounded elevation-window reading plus CRS, transform, and bounds parsing;
+4. exact numerical and spatial agreement with Rasterio as a development oracle.
+
+PNOA WMS requests are still pending. The WMS remains the intended default for
+ROI textures because a single PNOA MTN25 image can approach 1 GB.
 
 No elevation or imagery data is redistributed in this repository.
 
@@ -49,12 +52,23 @@ The Phase 0 read-only catalog experiment is explicitly enabled with:
 ```text
 python -m scripts.discover_cnig --product MDT02 --online
 python -m scripts.discover_cnig --product MDS02 --online
+python -m scripts.discover_cnig --product PNOA_MA --online
 ```
 
 An explicit `--download-one` mode exists for controlled provider validation.
 Complete MDT02 and MDS02 samples were downloaded and validated on 2026-08-19
 through the first-party CNIG initialization and delivery endpoints. See
 `docs/provider-cnig.md` for the observed contract and current limitations.
+
+PNOA results can contain several revisions with the same filename. A research
+download must therefore select the exact identifier printed by discovery:
+
+```text
+python -m scripts.discover_cnig --product PNOA_MA --online --sequential-id 12570809 --download-directory .artifacts/pnoa-sample
+```
+
+That command downloads a large source image and is never run by the test suite.
+A complete 2024 Valencia PNOA sample was downloaded and validated on 2026-08-20.
 
 ## License
 

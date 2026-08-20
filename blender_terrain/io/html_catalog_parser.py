@@ -124,26 +124,25 @@ class _CatalogResultsParser(HTMLParser):
                 "Catalog row is missing filename, format, or sequential identifier"
             )
 
-        year_text = self._cell("Fecha")
+        date = self._cell("Fecha")
         size_text = self._cell("Tamaño\xa0(MB)")
         try:
-            year = int(year_text) if year_text else None
             size_mb = float(size_text) if size_text else None
         except ValueError as exc:
-            raise CatalogContractChanged("Catalog row contains invalid numeric metadata") from exc
+            raise CatalogContractChanged("Catalog row contains an invalid file size") from exc
 
         return CatalogItem(
             product=self.product,
             filename=filename,
             file_format=file_format,
             sequential_id=self._sequential_id,
-            year=year,
+            date=date,
             resolution=self._cell("Escala fotograma"),
             size_mb=size_mb,
         )
 
 
-def parse_product_page(html: str, expected_product: DatasetProduct) -> ProductPage:
+def parse_product_page(html: str, expected_catalog_series: str) -> ProductPage:
     """Parse dynamic discovery fields from one CNIG product page."""
 
     parser = _ProductPageParser()
@@ -152,9 +151,9 @@ def parse_product_page(html: str, expected_product: DatasetProduct) -> ProductPa
     missing = [name for name in required if not parser.hidden_fields.get(name)]
     if missing:
         raise CatalogContractChanged(f"Product page is missing fields: {', '.join(missing)}")
-    if parser.hidden_fields["codSerie"] != expected_product.value:
+    if parser.hidden_fields["codSerie"] != expected_catalog_series:
         raise CatalogContractChanged(
-            f"Expected {expected_product.value}, got {parser.hidden_fields['codSerie']}"
+            f"Expected {expected_catalog_series}, got {parser.hidden_fields['codSerie']}"
         )
     if "COG" not in parser.formats:
         raise CatalogContractChanged("Product page no longer advertises the COG format")

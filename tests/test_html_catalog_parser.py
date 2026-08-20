@@ -19,14 +19,14 @@ def fixture(name: str) -> str:
 
 class ProductPageParserTests(unittest.TestCase):
     def test_parses_mdt02_dynamic_fields(self) -> None:
-        page = parse_product_page(fixture("mdt02_product_page.html"), DatasetProduct.MDT02)
+        page = parse_product_page(fixture("mdt02_product_page.html"), "MDT02")
 
         self.assertEqual(page.catalog_group, "MOMDT")
         self.assertEqual(page.advertised_total, 8308)
         self.assertEqual(page.formats, ("COG",))
 
     def test_parses_mds02_dynamic_fields(self) -> None:
-        page = parse_product_page(fixture("mds02_product_page.html"), DatasetProduct.MDS02)
+        page = parse_product_page(fixture("mds02_product_page.html"), "MDS02")
 
         self.assertEqual(page.catalog_series, "MDS02")
         self.assertEqual(page.advertised_total, 8153)
@@ -35,11 +35,25 @@ class ProductPageParserTests(unittest.TestCase):
         html = fixture("mdt02_product_page.html").replace('id="codAgr"', 'id="changedCodAgr"')
 
         with self.assertRaisesRegex(CatalogContractChanged, "codAgr"):
-            parse_product_page(html, DatasetProduct.MDT02)
+            parse_product_page(html, "MDT02")
 
     def test_rejects_product_mismatch(self) -> None:
         with self.assertRaisesRegex(CatalogContractChanged, "Expected MDS02"):
-            parse_product_page(fixture("mdt02_product_page.html"), DatasetProduct.MDS02)
+            parse_product_page(fixture("mdt02_product_page.html"), "MDS02")
+
+    def test_accepts_numeric_pnoa_catalog_series(self) -> None:
+        html = """
+            <input id="codAgr" value="FOTOR">
+            <input id="codSerie" value="02211">
+            <input id="totalArchivos" value="13764">
+            <input id="idsMenciones" value="Ortofotos PNOA anuales">
+            <select id="comboTipoArchSerie"><option value="COG">COG</option></select>
+        """
+
+        page = parse_product_page(html, "02211")
+
+        self.assertEqual(page.catalog_group, "FOTOR")
+        self.assertEqual(page.catalog_series, "02211")
 
 
 class CatalogPageParserTests(unittest.TestCase):
@@ -74,3 +88,19 @@ class CatalogPageParserTests(unittest.TestCase):
 
         self.assertEqual(page.total_items, 0)
         self.assertEqual(page.items, ())
+
+    def test_preserves_month_and_multiple_pnoa_dates(self) -> None:
+        html = """
+            <input id="totalArchivos" value="1">
+            <tr class="row100">
+              <td data-th="Nombre">Archivo PNOA-MA-OF-ETRS89-HU30-H25-0722-1.TIF</td>
+              <td data-th="Formato">Formato COG</td>
+              <td data-th="Fecha">Fecha descarga 05/2024, 07/2024</td>
+              <td data-th="Escala fotograma">Escala 0,25 m</td>
+              <a id="linkDescDir_12570809"></a>
+            </tr>
+        """
+
+        page = parse_catalog_page(html, DatasetProduct.PNOA_MA)
+
+        self.assertEqual(page.items[0].date, "05/2024, 07/2024")
