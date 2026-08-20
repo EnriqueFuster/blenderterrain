@@ -47,6 +47,18 @@ class CatalogItem:
             return False
         return "ETRS89" in upper_name or "REGCAN95" in upper_name
 
+    @property
+    def native_utm_zone(self) -> int | None:
+        """Return the UTM zone encoded by an observed native CNIG filename."""
+
+        if not self.is_native_projected_variant:
+            return None
+        tokens = self.filename.upper().replace("_", "-").split("-")
+        for zone in (28, 29, 30, 31):
+            if f"HU{zone}" in tokens or f"H{zone}" in tokens:
+                return zone
+        return None
+
 
 @dataclass(frozen=True, slots=True)
 class CatalogPage:

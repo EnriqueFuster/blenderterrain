@@ -46,7 +46,7 @@ def main() -> int:
 
     product = DatasetProduct(args.product)
     client = CNIGPortalClient()
-    page = client.discover(product, VALENCIA_TEST_BBOX)
+    page = client.discover_all(product, VALENCIA_TEST_BBOX)
     projected_items = [item for item in page.items if item.is_native_projected_variant]
     if args.download_one or args.sequential_id:
         if args.download_directory is None:

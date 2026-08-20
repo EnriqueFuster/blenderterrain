@@ -25,7 +25,7 @@ from ..io.atomic import (
 )
 from ..io.html_catalog_parser import parse_catalog_page, parse_product_page
 from ..io.tiff_validation import validate_tiff_header
-from ..models import CatalogItem, CatalogPage, DatasetProduct
+from ..models import CatalogItem, CatalogPage, DatasetProduct, ProductPage
 
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
 USER_AGENT = "BlenderTerrain/0.1.0 (+https://github.com/EnriqueFuster/blenderterrain)"
@@ -48,6 +48,7 @@ PRODUCT_CONTRACTS = {
     DatasetProduct.PNOA_MA: _ProductContract("ortofoto-pnoa-maxima-actualidad", "02211"),
 }
 DOWNLOAD_INITIALIZATION_MAXIMUM_BYTES = 4_096
+MAX_CATALOG_PAGES = 1_000
 ACCEPTED_TIFF_CONTENT_TYPES = {
     "application/octet-stream",
     "application/x-geotiff",
@@ -102,12 +103,66 @@ class CNIGPortalClient:
     def discover(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         """Discover the first page of COG resources intersecting a WGS84 bbox."""
 
+        page_url, product_page = self._prepare_discovery(product)
+        return self._request_catalog_page(product, bbox, page_url, product_page, 1)
+
+    def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
+        """Discover and deduplicate every advertised catalog page for one ROI."""
+
+        page_url, product_page = self._prepare_discovery(product)
+        unique_items: dict[str, CatalogItem] = {}
+        expected_total: int | None = None
+        previous_page_ids: tuple[str, ...] | None = None
+        for page_number in range(1, MAX_CATALOG_PAGES + 1):
+            page = self._request_catalog_page(
+                product, bbox, page_url, product_page, page_number
+            )
+            if expected_total is None:
+                expected_total = page.total_items
+            elif page.total_items != expected_total:
+                raise CatalogContractChanged("CNIG catalog total changed during pagination")
+            if expected_total == 0:
+                return CatalogPage(0, ())
+
+            page_ids = tuple(item.sequential_id for item in page.items)
+            previous_unique_count = len(unique_items)
+            for item in page.items:
+                existing = unique_items.get(item.sequential_id)
+                if existing is not None and existing != item:
+                    raise CatalogContractChanged(
+                        "CNIG catalog returned conflicting rows for one sequential identifier"
+                    )
+                unique_items[item.sequential_id] = item
+            if page_ids == previous_page_ids or len(unique_items) == previous_unique_count:
+                raise CatalogContractChanged("CNIG catalog made no progress during pagination")
+            previous_page_ids = page_ids
+            if len(unique_items) >= expected_total:
+                if len(unique_items) != expected_total:
+                    raise CatalogContractChanged(
+                        "CNIG catalog returned more unique rows than advertised"
+                    )
+                return CatalogPage(expected_total, tuple(unique_items.values()))
+        raise CatalogContractChanged("CNIG catalog pagination exceeded its safety limit")
+
+    def _prepare_discovery(self, product: DatasetProduct) -> tuple[str, ProductPage]:
         contract = PRODUCT_CONTRACTS[product]
         page_url = BASE_URL + contract.slug
         product_html = self._request(page_url)
         product_page = parse_product_page(product_html, contract.catalog_series)
+        return page_url, product_page
+
+    def _request_catalog_page(
+        self,
+        product: DatasetProduct,
+        bbox: BBoxWGS84,
+        page_url: str,
+        product_page: ProductPage,
+        page_number: int,
+    ) -> CatalogPage:
+        """Request one page using fields parsed from the current product form."""
+
         form = {
-            "numPagina": "1",
+            "numPagina": str(page_number),
             "codAgr": product_page.catalog_group,
             "codSerie": product_page.catalog_series,
             "coordenadas": _bbox_feature_collection(bbox),
