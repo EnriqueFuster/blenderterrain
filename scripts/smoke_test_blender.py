@@ -20,6 +20,7 @@ def main() -> None:
     for _cycle in range(2):
         extension.register()
         addon = extension.blender_terrain.addon
+        job_controller = extension.blender_terrain.ui.job_controller
         classes = addon.registered_class_types()
         assert all(class_type.is_registered for class_type in classes)
         assert classes[0].bl_idname == repository.name
@@ -37,9 +38,12 @@ def main() -> None:
         assert properties.estimated_memory_mib > 0.0
         assert "CNIG discovery" in properties.planning_warning
         assert properties.imagery_summary.startswith("PNOA 0.25 m:")
+        assert not properties.job_active
+        assert not job_controller.timer_is_registered()
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)
         assert not hasattr(bpy.types.Scene, "blender_terrain_roi")
+        assert not job_controller.timer_is_registered()
     print("BlenderTerrain register/unregister smoke test passed")
 
 

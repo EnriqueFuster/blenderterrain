@@ -11,6 +11,7 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
 
     properties.is_valid = False
     properties.validation_message = "Options changed; validate ROI again"
+    properties.discovery_summary = ""
 
 
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
@@ -77,3 +78,12 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     terrain_tile_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     estimated_memory_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     planning_warning: StringProperty(default="", options={"HIDDEN"})
+    job_active: BoolProperty(default=False, options={"HIDDEN"})
+    job_state: StringProperty(default="", options={"HIDDEN"})
+    job_progress: FloatProperty(
+        default=0.0, min=0.0, max=1.0, subtype="FACTOR", options={"HIDDEN"}
+    )
+    job_message: StringProperty(default="", options={"HIDDEN"})
+    discovered_file_count: IntProperty(default=0, min=0, options={"HIDDEN"})
+    estimated_download_mb: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
+    discovery_summary: StringProperty(default="", options={"HIDDEN"})

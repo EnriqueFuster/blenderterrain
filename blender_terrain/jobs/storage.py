@@ -10,6 +10,8 @@ from typing import Any
 from ..errors import JobFormatError
 from .models import DiscoveryJob, ProgressEvent
 
+CANCELLATION_FILENAME = "cancel.request"
+
 
 def write_discovery_job(path: Path, job: DiscoveryJob) -> None:
     """Create a job file atomically without overwriting an existing job."""
@@ -44,6 +46,23 @@ def write_result(path: Path, payload: dict[str, Any]) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_atomic(path, payload, overwrite=False)
+
+
+def request_cancellation(job_directory: Path) -> None:
+    """Create an idempotent cancellation marker for a running worker."""
+
+    job_directory.mkdir(parents=True, exist_ok=True)
+    marker = job_directory / CANCELLATION_FILENAME
+    try:
+        marker.touch(exist_ok=True)
+    except OSError as exc:
+        raise JobFormatError("Cannot write the job cancellation request") from exc
+
+
+def is_cancellation_requested(job_directory: Path) -> bool:
+    """Return whether the Blender process requested cooperative cancellation."""
+
+    return (job_directory / CANCELLATION_FILENAME).is_file()
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any], overwrite: bool) -> None:

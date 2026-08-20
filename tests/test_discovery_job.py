@@ -9,7 +9,12 @@ from uuid import uuid4
 from blender_terrain.core import BBoxWGS84
 from blender_terrain.errors import CatalogContractChanged, ProviderUnavailableError
 from blender_terrain.jobs.models import DiscoveryJob, JobState
-from blender_terrain.jobs.storage import read_discovery_job, write_discovery_job
+from blender_terrain.jobs.storage import (
+    is_cancellation_requested,
+    read_discovery_job,
+    request_cancellation,
+    write_discovery_job,
+)
 from blender_terrain.jobs.worker import run_discovery_job
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
 
@@ -68,8 +73,29 @@ class DiscoveryJobStorageTests(unittest.TestCase):
             self.assertEqual(read_discovery_job(path), expected)
             self.assertFalse(path.with_name("job.json.part").exists())
 
+    def test_cancellation_request_is_idempotent(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+
+            request_cancellation(directory)
+            request_cancellation(directory)
+
+            self.assertTrue(is_cancellation_requested(directory))
+
 
 class DiscoveryWorkerTests(unittest.TestCase):
+    def test_honours_cancellation_before_contacting_provider(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            job_path = directory / "job.json"
+            write_discovery_job(job_path, job())
+            request_cancellation(directory)
+
+            state = run_discovery_job(job_path, provider_factory=FakeProvider)
+
+            result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+            self.assertEqual(state, JobState.CANCELLED)
+            self.assertEqual(result["state"], "CANCELLED")
     def test_writes_progress_and_atomic_terminal_result(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

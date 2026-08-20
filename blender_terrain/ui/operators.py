@@ -7,6 +7,7 @@ import bpy
 from ..core import BBoxWGS84, create_import_plan
 from ..errors import BlenderTerrainError
 from ..models import DatasetProduct
+from . import job_controller
 
 
 class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
@@ -75,4 +76,36 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             )
         )
         self.report({"INFO"}, properties.validation_message)
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
+    """Launch source discovery without blocking Blender's interface."""
+
+    bl_idname = "blender_terrain.discover_sources"
+    bl_label = "Discover Sources"
+    bl_description = "Find the official CNIG elevation files needed for this area"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        try:
+            job_controller.start_discovery(context)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Source discovery started in the background")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_cancel_discovery(bpy.types.Operator):
+    """Request cooperative cancellation of the active source discovery."""
+
+    bl_idname = "blender_terrain.cancel_discovery"
+    bl_label = "Cancel Discovery"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        try:
+            job_controller.cancel_discovery()
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
         return {"FINISHED"}

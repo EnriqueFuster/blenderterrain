@@ -18,6 +18,7 @@ class PortableImportTests(unittest.TestCase):
         allowed = {
             "addon.py",
             "ui/operators.py",
+            "ui/job_controller.py",
             "ui/panels.py",
             "ui/preferences.py",
             "ui/properties.py",

@@ -6,7 +6,7 @@ import bpy
 
 
 class BLENDERTERRAIN_PT_main(bpy.types.Panel):
-    """Display the initial BlenderTerrain sidebar placeholder."""
+    """Display terrain inputs, estimates and background discovery status."""
 
     bl_idname = "BLENDERTERRAIN_PT_main"
     bl_label = "BlenderTerrain"
@@ -15,10 +15,11 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
     bl_region_type = "UI"
 
     def draw(self, context: bpy.types.Context) -> None:
-        """Draw manual ROI input and its latest offline estimate."""
+        """Draw manual ROI input and its latest discovery state."""
 
         properties = context.scene.blender_terrain_roi
         box = self.layout.box()
+        box.enabled = not properties.job_active
         box.label(text="Area of Interest", icon="WORLD_DATA")
         row = box.row(align=True)
         row.prop(properties, "west")
@@ -28,17 +29,39 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
         row.prop(properties, "north")
 
         elevation = self.layout.box()
+        elevation.enabled = not properties.job_active
         elevation.label(text="Elevation", icon="MOD_DISPLACE")
         elevation.prop(properties, "product")
         elevation.prop(properties, "elevation_resolution")
 
         imagery = self.layout.box()
+        imagery.enabled = not properties.job_active
         imagery.label(text="Imagery", icon="IMAGE_DATA")
         imagery.prop(properties, "use_imagery")
         if properties.use_imagery:
             imagery.prop(properties, "imagery_gsd")
 
-        box.operator("blender_terrain.validate_roi", icon="CHECKMARK")
+        actions = self.layout.box()
+        actions.label(text="Data Sources", icon="URL")
+        if properties.job_active:
+            actions.prop(properties, "job_progress", text=properties.job_state, slider=True)
+            actions.label(text=properties.job_message, icon="INFO")
+            actions.operator("blender_terrain.cancel_discovery", icon="CANCEL")
+        else:
+            row = actions.row(align=True)
+            row.operator("blender_terrain.validate_roi", icon="CHECKMARK")
+            discover = row.row(align=True)
+            discover.enabled = properties.is_valid and bpy.app.online_access
+            discover.operator("blender_terrain.discover_sources", icon="VIEWZOOM")
+            if not bpy.app.online_access:
+                actions.label(
+                    text="Online access is disabled in Blender Preferences", icon="ERROR"
+                )
+            if properties.discovery_summary:
+                actions.label(text=properties.discovery_summary, icon="FILE_TICK")
+            if properties.job_message and properties.job_state:
+                icon = "CHECKMARK" if properties.job_state == "COMPLETE" else "ERROR"
+                actions.label(text=properties.job_message, icon=icon)
 
         result = self.layout.box()
         result.label(text=properties.validation_message)

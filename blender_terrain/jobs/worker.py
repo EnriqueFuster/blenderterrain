@@ -10,6 +10,7 @@ from ..core import ImportPlan, create_import_plan, discover_sources
 from ..core.discovery import CatalogDiscoveryProvider
 from ..errors import (
     CatalogContractChanged,
+    JobCancelled,
     JobFormatError,
     NoCoverageError,
     ProviderUnavailableError,
@@ -17,7 +18,12 @@ from ..errors import (
 )
 from ..providers.cnig_portal import CNIGPortalClient
 from .models import DiscoveryJob, JobState, ProgressEvent
-from .storage import append_progress_event, read_discovery_job, write_result
+from .storage import (
+    append_progress_event,
+    is_cancellation_requested,
+    read_discovery_job,
+    write_result,
+)
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
 
@@ -40,12 +46,19 @@ def run_discovery_job(
         )
         sequence += 1
 
+    def check_cancelled() -> None:
+        if is_cancellation_requested(job_path.parent):
+            raise JobCancelled("Source discovery was cancelled")
+
     try:
         emit(JobState.VALIDATING, 0.05, "Validating discovery job")
+        check_cancelled()
         job = read_discovery_job(job_path)
         plan = _create_plan(job)
+        check_cancelled()
         emit(JobState.DISCOVERING, 0.25, "Discovering CNIG elevation sources")
         discovery = discover_sources(plan, provider_factory())
+        check_cancelled()
         payload = {
             "schema_version": 1,
             "job_id": job.job_id,
@@ -58,6 +71,8 @@ def run_discovery_job(
         write_result(result_path, payload)
         emit(JobState.COMPLETE, 1.0, f"Found {len(discovery.items)} source file(s)")
         return JobState.COMPLETE
+    except JobCancelled as exc:
+        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
     except NoCoverageError as exc:
         return _finish_error(result_path, emit, JobState.NO_COVERAGE, str(exc))
     except CatalogContractChanged as exc:
