@@ -29,6 +29,13 @@ samples.
 Rasterio and tifffile remain development-only oracles. The package reader uses
 only Python's standard library and NumPy.
 
+The installed tifffile version decoded individual CNIG tiles correctly and its
+BSD-3-Clause license is compatible. It was not selected as the runtime backend
+because it does not provide the required bounds-to-window interface: the project
+would still own GeoTIFF interpretation, spatial block selection, and mosaicking.
+The constrained reader keeps that supported boundary explicit and rejects every
+unobserved encoding.
+
 ## Consequence for future work
 
 Projected bounds can now be converted to enclosing pixel windows and composed

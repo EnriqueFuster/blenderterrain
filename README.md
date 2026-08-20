@@ -11,9 +11,10 @@ abstractions.
 
 ## Current status
 
-The project is in Phase 0: portable technical experiments outside Blender. No
-installable Blender extension exists yet, and no production import workflow is
-available.
+The portable technical validation outside Blender is complete. All Phase 0
+acceptance criteria have been exercised, and the next implementation block is
+the installable Blender extension skeleton. No production import workflow is
+available yet.
 
 The current foundation has verified:
 
@@ -23,6 +24,11 @@ The current foundation has verified:
 4. exact numerical and spatial agreement with Rasterio as a development oracle;
 5. projected PNOA WMS texture downloads with validated dimensions and orientation;
 6. bounded elevation mosaics across aligned CNIG source files.
+
+The raster reader matched Rasterio exactly for valid Float32 values and NoData.
+The projected WMS control image matched its source orthophoto pixel for pixel.
+Both required architecture decisions are accepted, and a live bounded-download
+test confirmed that failed CNIG transfers leave no partial file behind.
 
 The WMS is the intended default for ROI textures because a single PNOA MTN25
 source image can approach 1 GB. The current WMS implementation is deliberately

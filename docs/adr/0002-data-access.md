@@ -43,16 +43,17 @@ second-coverage 2 m products required by version 1.
   filename, sheet identifier, dimensions, or array index.
 - Online integration tests remain opt-in and avoid large routine downloads.
 
-## Unresolved evidence required in Phase 0
+## Validation outcome
 
-- Current portal fields, pagination, filters, cookies, redirects, and failure
-  responses.
-- Current anonymous-download policy and a non-abusive validation method.
-- Actual TIFF/BigTIFF encodings found in representative MDT02 and MDS02 samples.
-- Window values and NoData agreement within the specified tolerance.
-- Current PNOA WMS capabilities, bounds behavior, axis order, and image limits.
-- `tifffile` compatibility with Blender 4.5's bundled Python and extension
-  packaging constraints.
+- The current portal discovery and anonymous first-party delivery contracts were
+  exercised for MDT02, MDS02, and PNOA.
+- Failed and size-limited downloads remove incomplete temporary files.
+- Representative MDT02 and MDS02 BigTIFF windows and NoData matched Rasterio
+  exactly.
+- A projected PNOA WMS image matched the corresponding source pixels exactly.
+- `tifffile` decoded the observed tiles and is license-compatible, but it does
+  not replace the required spatial window and GeoTIFF logic. It remains a
+  development oracle; the constrained reader is the runtime backend.
 
 ## Acceptance conditions
 

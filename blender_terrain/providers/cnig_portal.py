@@ -239,6 +239,7 @@ class CNIGPortalClient:
                     response, part_path, maximum_bytes
                 )
                 if declared_bytes is not None and written_bytes != declared_bytes:
+                    part_path.unlink(missing_ok=True)
                     raise DownloadIntegrityError(
                         "Downloaded size does not match the declared response size"
                     )
@@ -253,7 +254,11 @@ class CNIGPortalClient:
         except (URLError, TimeoutError, socket.timeout, UnicodeError):
             raise ProviderUnavailableError("CNIG delivery request failed") from None
 
-        validate_tiff_header(part_path)
+        try:
+            validate_tiff_header(part_path)
+        except DownloadIntegrityError:
+            part_path.unlink(missing_ok=True)
+            raise
         finalize_part(part_path, destination)
         return destination
 
@@ -288,12 +293,18 @@ class CNIGPortalClient:
         """Write a response in bounded chunks without promoting incomplete data."""
 
         total_bytes = 0
-        with part_path.open("xb") as stream:
-            while chunk := response.read(1_048_576):
-                total_bytes += len(chunk)
-                if total_bytes > maximum_bytes:
-                    raise DownloadIntegrityError("Downloaded size exceeds the experiment limit")
-                stream.write(chunk)
+        try:
+            with part_path.open("xb") as stream:
+                while chunk := response.read(1_048_576):
+                    total_bytes += len(chunk)
+                    if total_bytes > maximum_bytes:
+                        raise DownloadIntegrityError(
+                            "Downloaded size exceeds the configured limit"
+                        )
+                    stream.write(chunk)
+        except BaseException:
+            part_path.unlink(missing_ok=True)
+            raise
         return total_bytes
 
     def _request(

@@ -77,8 +77,26 @@ class DownloadSafetyTests(unittest.TestCase):
             with self.assertRaises(DownloadIntegrityError):
                 CNIGPortalClient._write_bounded_response(BytesIO(b"1234"), part, 3)
 
-            self.assertTrue(part.exists())
-            self.assertEqual(part.stat().st_size, 0)
+            self.assertFalse(part.exists())
+
+    def test_stream_writer_removes_partial_file_after_read_failure(self) -> None:
+        class FailingResponse:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def read(self, amount: int = -1) -> bytes:
+                self.calls += 1
+                if self.calls == 1:
+                    return b"partial"
+                raise OSError("connection lost")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            part = Path(temporary_directory) / "sample.tif.part"
+
+            with self.assertRaisesRegex(OSError, "connection lost"):
+                CNIGPortalClient._write_bounded_response(FailingResponse(), part, 100)
+
+            self.assertFalse(part.exists())
 
 
 if __name__ == "__main__":
