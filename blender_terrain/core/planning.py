@@ -9,6 +9,7 @@ from ..errors import PlanningLimitExceeded, UserInputError
 from ..models import DatasetProduct
 from .crs import UTMWorkArea, split_bbox_by_utm_zone
 from .estimates import ROIEstimate, estimate_bbox
+from .grid import DEFAULT_MAX_TILE_CELLS
 from .roi import BBoxWGS84
 
 ELEVATION_RESOLUTIONS = (2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
@@ -57,6 +58,24 @@ class ImportPlan:
         """Return whether processing must be divided by projected CRS."""
 
         return len(self.work_areas) > 1
+
+    @property
+    def terrain_tile_columns(self) -> int:
+        """Return the provisional number of terrain objects from west to east."""
+
+        return math.ceil(self.elevation.sample_columns / DEFAULT_MAX_TILE_CELLS)
+
+    @property
+    def terrain_tile_rows(self) -> int:
+        """Return the provisional number of terrain objects from north to south."""
+
+        return math.ceil(self.elevation.sample_rows / DEFAULT_MAX_TILE_CELLS)
+
+    @property
+    def terrain_tile_count(self) -> int:
+        """Return the provisional number of terrain objects."""
+
+        return self.terrain_tile_columns * self.terrain_tile_rows
 
 
 def create_import_plan(

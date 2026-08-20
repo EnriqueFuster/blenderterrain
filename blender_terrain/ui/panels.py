@@ -47,4 +47,5 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
             result.label(text=f"Area: {properties.area_square_metres / 1_000_000:.3f} km²")
             result.label(text=f"Elevation: {properties.selected_resolution:g} m")
             result.label(text=f"Samples: {properties.sample_count:,}")
+            result.label(text=f"Terrain objects: {properties.terrain_tile_count}")
             result.label(text=properties.imagery_summary)

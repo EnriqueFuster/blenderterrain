@@ -74,3 +74,4 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     sample_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     selected_resolution: FloatProperty(default=0.0, options={"HIDDEN"})
     imagery_summary: StringProperty(default="", options={"HIDDEN"})
+    terrain_tile_count: IntProperty(default=0, min=0, options={"HIDDEN"})

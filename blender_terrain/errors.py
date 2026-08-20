@@ -39,3 +39,7 @@ class DownloadAuthorizationRequired(BlenderTerrainError):
 
 class RasterFormatError(BlenderTerrainError):
     """Raised when a raster uses a TIFF layout unsupported by the local reader."""
+
+
+class RasterAlignmentError(BlenderTerrainError):
+    """Raised when projected bounds cannot form a consistent output grid."""

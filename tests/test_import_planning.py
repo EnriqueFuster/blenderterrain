@@ -19,6 +19,7 @@ class ImportPlanningTests(unittest.TestCase):
 
         self.assertEqual(plan.product, DatasetProduct.MDT02)
         self.assertEqual(plan.elevation_resolution_metres, 10.0)
+        self.assertEqual(plan.terrain_tile_count, 1)
         self.assertIsNone(plan.imagery)
 
     def test_auto_selects_a_safe_elevation_resolution(self) -> None:
