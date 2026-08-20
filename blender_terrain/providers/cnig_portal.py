@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from http.cookiejar import CookieJar
 from pathlib import Path
@@ -197,6 +198,7 @@ class CNIGPortalClient:
         item: CatalogItem,
         cache_directory: Path,
         maximum_bytes: int = 1_073_741_824,
+        progress_callback: Callable[[int, int | None], None] | None = None,
     ) -> Path:
         """Download one explicitly selected item through the first-party CNIG flow."""
 
@@ -275,7 +277,11 @@ class CNIGPortalClient:
                         "Delivered filename does not match the catalog item"
                     )
                 written_bytes = self._write_bounded_response(
-                    response, part_path, maximum_bytes
+                    response,
+                    part_path,
+                    maximum_bytes,
+                    declared_bytes,
+                    progress_callback,
                 )
                 if declared_bytes is not None and written_bytes != declared_bytes:
                     part_path.unlink(missing_ok=True)
@@ -331,7 +337,11 @@ class CNIGPortalClient:
 
     @staticmethod
     def _write_bounded_response(
-        response: _ReadableResponse, part_path: Path, maximum_bytes: int
+        response: _ReadableResponse,
+        part_path: Path,
+        maximum_bytes: int,
+        expected_bytes: int | None = None,
+        progress_callback: Callable[[int, int | None], None] | None = None,
     ) -> int:
         """Write a response in bounded chunks without promoting incomplete data."""
 
@@ -345,6 +355,8 @@ class CNIGPortalClient:
                             "Downloaded size exceeds the configured limit"
                         )
                     stream.write(chunk)
+                    if progress_callback is not None:
+                        progress_callback(total_bytes, expected_bytes)
         except BaseException:
             part_path.unlink(missing_ok=True)
             raise

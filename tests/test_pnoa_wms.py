@@ -65,6 +65,21 @@ class WMSMapRequestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "axis order"):
             _validate_map_request(bounds, 512, 512, self.capabilities)
 
+    def test_accepts_all_advertised_spanish_etrs89_utm_zones(self) -> None:
+        for epsg in (25828, 25829, 25830, 25831):
+            with self.subTest(epsg=epsg):
+                capabilities = WMSCapabilities(
+                    "1.3.0",
+                    "OI.OrthoimageCoverage",
+                    ("image/png",),
+                    (f"EPSG:{epsg}",),
+                    4096,
+                    4096,
+                )
+                bounds = ProjectedBounds(100, 200, 300, 400, epsg)
+
+                _validate_map_request(bounds, 512, 512, capabilities)
+
     def test_rejects_non_finite_projected_bounds(self) -> None:
         with self.assertRaisesRegex(ValueError, "finite"):
             ProjectedBounds(math.nan, 4374500, 713628, 4374628, 25830)

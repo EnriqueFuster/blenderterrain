@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -21,7 +22,8 @@ WMS_URL = "https://www.ign.es/wms-inspire/pnoa-ma"
 PNOA_LAYER = "OI.OrthoimageCoverage"
 USER_AGENT = "BlenderTerrain/0.0.0 (+https://github.com/EnriqueFuster/blenderterrain)"
 CAPABILITIES_MAXIMUM_BYTES = 1_048_576
-CONTROL_TESTED_EPSG = 25830
+CONTROL_TESTED_EPSGS = frozenset({25828, 25829, 25830, 25831})
+DownloadProgress = Callable[[int, int | None], None]
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -57,6 +59,7 @@ class PNOAWMSClient:
         height: int,
         cache_directory: Path,
         filename: str,
+        progress_callback: DownloadProgress | None = None,
     ) -> Path:
         """Download one north-up projected map image into the local cache."""
 
@@ -82,16 +85,30 @@ class PNOAWMSClient:
                 if response.headers.get_content_type().lower() != "image/png":
                     raise DownloadIntegrityError("WMS GetMap returned an unexpected content type")
                 total = 0
+                content_length = response.headers.get("Content-Length")
+                try:
+                    expected_bytes = int(content_length) if content_length else None
+                except ValueError as exc:
+                    raise DownloadIntegrityError(
+                        "WMS download size header is not an integer"
+                    ) from exc
+                if expected_bytes is not None and expected_bytes > maximum_bytes:
+                    raise DownloadIntegrityError("WMS PNG declared size exceeds its limit")
                 with part_path.open("xb") as stream:
                     while chunk := response.read(1_048_576):
                         total += len(chunk)
                         if total > maximum_bytes:
                             raise DownloadIntegrityError("WMS PNG exceeds its expected size limit")
                         stream.write(chunk)
+                        if progress_callback is not None:
+                            progress_callback(total, expected_bytes)
         except HTTPError as exc:
             raise ProviderUnavailableError(f"PNOA WMS returned HTTP {exc.code}") from None
         except (URLError, TimeoutError):
             raise ProviderUnavailableError("PNOA WMS request failed") from None
+        except BaseException:
+            part_path.unlink(missing_ok=True)
+            raise
 
         validate_png(part_path, width, height)
         finalize_part(part_path, destination)
@@ -140,7 +157,9 @@ def _validate_map_request(
         raise ValueError("WMS image dimensions must be positive")
     if width > capabilities.max_width or height > capabilities.max_height:
         raise ValueError("WMS image dimensions exceed the advertised service limit")
-    if bounds.epsg != CONTROL_TESTED_EPSG:
-        raise ValueError("Only the control-tested EPSG:25830 WMS axis order is supported")
+    if bounds.epsg not in CONTROL_TESTED_EPSGS:
+        raise ValueError(
+            "Only the control-tested Spanish ETRS89 UTM axis order is supported"
+        )
     if f"EPSG:{bounds.epsg}" not in capabilities.crs:
         raise ProviderContractChanged("WMS layer no longer supports the requested CRS")
