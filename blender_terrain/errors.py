@@ -5,6 +5,14 @@ class BlenderTerrainError(Exception):
     """Base class for expected project failures."""
 
 
+class UserInputError(BlenderTerrainError):
+    """Raised when user-provided geometry or options are invalid."""
+
+
+class NoCoverageError(BlenderTerrainError):
+    """Raised when an area does not intersect supported geographic coverage."""
+
+
 class ProviderUnavailableError(BlenderTerrainError):
     """Raised when a provider cannot complete a request."""
 

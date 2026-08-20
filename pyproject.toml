@@ -53,6 +53,7 @@ exclude = "(^|[\\\\/])blender_terrain[\\\\/](addon\\.py|ui[\\\\/])"
 files = [
   "blender_terrain/errors.py",
   "blender_terrain/models.py",
+  "blender_terrain/core",
   "blender_terrain/io",
   "blender_terrain/providers",
 ]

@@ -11,6 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
+from ..core.roi import BBoxWGS84
 from ..errors import (
     CatalogContractChanged,
     DownloadAuthorizationRequired,
@@ -70,36 +71,21 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         return None
 
 
-@dataclass(frozen=True, slots=True)
-class BBoxWGS84:
-    """A small rectangular WGS84 query used by the discovery experiment."""
+def _bbox_feature_collection(bounds: BBoxWGS84) -> str:
+    """Serialize bounds using the compact GeoJSON contract expected by CNIG."""
 
-    west: float
-    south: float
-    east: float
-    north: float
-
-    def as_feature_collection(self) -> str:
-        """Serialize the bbox as the compact GeoJSON expected by the portal."""
-
-        ring = [
-            [self.west, self.south],
-            [self.east, self.south],
-            [self.east, self.north],
-            [self.west, self.north],
-            [self.west, self.south],
-        ]
-        payload = {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "properties": {},
-                    "geometry": {"type": "Polygon", "coordinates": [ring]},
-                }
-            ],
-        }
-        return json.dumps(payload, separators=(",", ":"))
+    ring = [[longitude, latitude] for longitude, latitude in bounds.polygon_ring()]
+    payload = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {"type": "Polygon", "coordinates": [ring]},
+            }
+        ],
+    }
+    return json.dumps(payload, separators=(",", ":"))
 
 
 class CNIGPortalClient:
@@ -124,7 +110,7 @@ class CNIGPortalClient:
             "numPagina": "1",
             "codAgr": product_page.catalog_group,
             "codSerie": product_page.catalog_series,
-            "coordenadas": bbox.as_feature_collection(),
+            "coordenadas": _bbox_feature_collection(bbox),
             "series": "",
             "codComAutonoma": "",
             "codProvincia": "",
