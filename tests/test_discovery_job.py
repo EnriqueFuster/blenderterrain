@@ -15,8 +15,8 @@ from blender_terrain.jobs.storage import (
     request_cancellation,
     write_discovery_job,
 )
-from blender_terrain.jobs.worker import run_discovery_job
-from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
+from blender_terrain.jobs.worker import run_delivery_job, run_discovery_job
+from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProjectedBounds
 
 
 class FakeProvider:
@@ -51,14 +51,40 @@ class OfflineProvider:
         raise ProviderUnavailableError("provider unavailable")
 
 
-def job() -> DiscoveryJob:
+class FakeDeliveryCNIG(FakeProvider):
+    def download_item(
+        self, item: CatalogItem, cache_directory: Path,
+        maximum_bytes: int = 1_073_741_824, progress_callback=None,
+    ) -> Path:
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        destination = cache_directory / item.filename
+        destination.write_bytes(b"fake tiff")
+        if progress_callback:
+            progress_callback(9, 9)
+        return destination
+
+
+class FakeDeliveryImagery:
+    def download_png(
+        self, bounds: ProjectedBounds, width: int, height: int, cache_directory: Path,
+        filename: str, progress_callback=None,
+    ) -> Path:
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        destination = cache_directory / filename
+        destination.write_bytes(b"fake png")
+        if progress_callback:
+            progress_callback(8, 8)
+        return destination
+
+
+def job(use_imagery: bool = False) -> DiscoveryJob:
     return DiscoveryJob(
         job_id=str(uuid4()),
         bounds=BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
         product=DatasetProduct.MDT02,
         elevation_resolution_metres=10.0,
-        use_imagery=False,
-        imagery_gsd_metres=None,
+        use_imagery=use_imagery,
+        imagery_gsd_metres=5.0 if use_imagery else None,
     )
 
 
@@ -138,6 +164,43 @@ class DiscoveryWorkerTests(unittest.TestCase):
                 self.assertEqual(state, expected_state)
                 self.assertEqual(result["state"], expected_state.value)
                 self.assertIn("error", result)
+
+
+class DeliveryWorkerTests(unittest.TestCase):
+    def test_downloads_elevation_and_pnoa_and_persists_paths(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            job_path = directory / "jobs" / str(uuid4()) / "job.json"
+            write_discovery_job(job_path, job(use_imagery=True))
+
+            state = run_delivery_job(
+                job_path,
+                cnig_factory=FakeDeliveryCNIG,
+                imagery_factory=FakeDeliveryImagery,
+            )
+
+            result = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
+            events = [
+                json.loads(line)
+                for line in job_path.with_name("events.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertEqual(state, JobState.COMPLETE)
+            self.assertEqual(len(result["elevation_paths"]), 1)
+            self.assertEqual(len(result["imagery_paths"]), 1)
+            self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
+            self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])
+
+    def test_honours_cancellation_before_network_delivery(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            job_path = Path(temporary_directory) / "jobs" / str(uuid4()) / "job.json"
+            write_discovery_job(job_path, job())
+            request_cancellation(job_path.parent)
+
+            state = run_delivery_job(job_path, cnig_factory=FakeDeliveryCNIG)
+
+            self.assertEqual(state, JobState.CANCELLED)
 
 
 if __name__ == "__main__":

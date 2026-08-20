@@ -12,6 +12,9 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.is_valid = False
     properties.validation_message = "Options changed; validate ROI again"
     properties.discovery_summary = ""
+    properties.discovery_ready = False
+    properties.delivery_ready = False
+    properties.delivery_summary = ""
 
 
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
@@ -87,3 +90,6 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     discovered_file_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     estimated_download_mb: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     discovery_summary: StringProperty(default="", options={"HIDDEN"})
+    discovery_ready: BoolProperty(default=False, options={"HIDDEN"})
+    delivery_ready: BoolProperty(default=False, options={"HIDDEN"})
+    delivery_summary: StringProperty(default="", options={"HIDDEN"})

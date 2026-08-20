@@ -10,13 +10,19 @@ def main() -> int:
     """Bootstrap the portable package when Blender executes this file directly."""
 
     arguments = sys.argv[sys.argv.index("--") + 1 :]
-    if len(arguments) != 1:
-        raise RuntimeError("Expected one job.json path after --")
+    if len(arguments) not in {1, 2}:
+        raise RuntimeError("Expected a job.json path and optional worker mode after --")
     if __package__ in (None, ""):
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from blender_terrain.jobs.worker import run_discovery_job
+    from blender_terrain.jobs.worker import run_delivery_job, run_discovery_job
 
-    run_discovery_job(Path(arguments[0]).resolve())
+    job_path = Path(arguments[0]).resolve()
+    if len(arguments) == 2 and arguments[1] == "delivery":
+        run_delivery_job(job_path)
+    elif len(arguments) == 1:
+        run_discovery_job(job_path)
+    else:
+        raise RuntimeError(f"Unsupported worker mode: {arguments[1]}")
     return 0
 
 

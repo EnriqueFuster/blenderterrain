@@ -34,6 +34,7 @@ class _ActiveJob:
     process: subprocess.Popen[bytes]
     directory: Path
     scene_name: str
+    mode: str
     last_sequence: int = -1
     result_applied: bool = False
 
@@ -51,15 +52,29 @@ def configure(extension_package: str) -> None:
 def start_discovery(context: bpy.types.Context) -> None:
     """Persist the current request and launch a factory-startup Blender worker."""
 
-    global _active_job
-    if _active_job is not None:
-        raise UserInputError("Another source discovery is already running")
-    if not bpy.app.online_access:
-        raise UserInputError("Blender online access is disabled in Preferences")
-
     properties = context.scene.blender_terrain_roi
     if not properties.is_valid:
         raise UserInputError("Validate the ROI before discovering sources")
+    properties.discovery_ready = False
+    _start_worker(context, properties, "discovery", "Starting background source discovery")
+
+
+def start_delivery(context: bpy.types.Context) -> None:
+    """Launch elevation and optional PNOA delivery in a background worker."""
+
+    properties = context.scene.blender_terrain_roi
+    if not properties.is_valid or not properties.discovery_ready:
+        raise UserInputError("Discover the current sources before downloading data")
+    properties.delivery_summary = ""
+    _start_worker(context, properties, "delivery", "Starting background data download")
+
+
+def _start_worker(context: bpy.types.Context, properties: Any, mode: str, message: str) -> None:
+    global _active_job
+    if _active_job is not None:
+        raise UserInputError("Another BlenderTerrain job is already running")
+    if not bpy.app.online_access:
+        raise UserInputError("Blender online access is disabled in Preferences")
     cache_directory = _cache_directory(context)
     job_id = str(uuid4())
     job_directory = cache_directory / "jobs" / job_id
@@ -78,6 +93,8 @@ def start_discovery(context: bpy.types.Context) -> None:
         "--",
         str(job_path),
     ]
+    if mode == "delivery":
+        command.append("delivery")
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_path = job_directory / "worker.log"
     try:
@@ -93,12 +110,13 @@ def start_discovery(context: bpy.types.Context) -> None:
     except OSError as exc:
         raise UserInputError(f"Cannot start the Blender background worker: {exc}") from exc
 
-    _active_job = _ActiveJob(process, job_directory, context.scene.name)
+    _active_job = _ActiveJob(process, job_directory, context.scene.name, mode)
     properties.job_active = True
     properties.job_state = JobState.VALIDATING.value
     properties.job_progress = 0.0
-    properties.job_message = "Starting background source discovery"
-    properties.discovery_summary = ""
+    properties.job_message = message
+    if mode == "discovery":
+        properties.discovery_summary = ""
     if not bpy.app.timers.is_registered(_poll_active_job):
         bpy.app.timers.register(_poll_active_job, first_interval=_POLL_INTERVAL_SECONDS)
 
@@ -107,7 +125,7 @@ def cancel_discovery() -> None:
     """Ask the current worker to stop at its next safe checkpoint."""
 
     if _active_job is None:
-        raise UserInputError("There is no active discovery to cancel")
+        raise UserInputError("There is no active job to cancel")
     request_cancellation(_active_job.directory)
     properties = _scene_properties(_active_job.scene_name)
     if properties is not None:
@@ -156,7 +174,7 @@ def _poll_active_job() -> float | None:
             result = json.loads(result_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return _POLL_INTERVAL_SECONDS
-        _apply_result(properties, result)
+        _apply_result(active, properties, result)
         active.result_applied = True
 
     return_code = active.process.poll()
@@ -198,7 +216,7 @@ def _apply_new_events(active: _ActiveJob, properties: Any) -> None:
         properties.job_message = message
 
 
-def _apply_result(properties: Any, result: dict[str, Any]) -> None:
+def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -> None:
     state = str(result.get("state", JobState.INVALID_DATA.value))
     if state not in _TERMINAL_STATES:
         state = JobState.INVALID_DATA.value
@@ -206,6 +224,15 @@ def _apply_result(properties: Any, result: dict[str, Any]) -> None:
     properties.job_state = state
     properties.job_progress = 1.0
     if state == JobState.COMPLETE.value:
+        if active.mode == "delivery":
+            elevation_count = len(result.get("elevation_paths", []))
+            imagery_count = len(result.get("imagery_paths", []))
+            properties.delivery_ready = True
+            properties.delivery_summary = (
+                f"Prepared {elevation_count} elevation and {imagery_count} imagery file(s)"
+            )
+            properties.job_message = "Data download completed"
+            return
         count = len(result.get("items", []))
         estimated_mb = result.get("estimated_download_mb")
         properties.discovered_file_count = count
@@ -216,9 +243,15 @@ def _apply_result(properties: Any, result: dict[str, Any]) -> None:
             else ", size unavailable"
         )
         properties.discovery_summary = f"{count} elevation source file(s){size_text}"
+        properties.discovery_ready = True
         properties.job_message = "Source discovery completed"
     else:
-        properties.discovery_summary = ""
+        if active.mode == "discovery":
+            properties.discovery_summary = ""
+            properties.discovery_ready = False
+        else:
+            properties.delivery_ready = False
+            properties.delivery_summary = ""
         properties.job_message = str(result.get("error", f"Discovery ended as {state}"))
 
 

@@ -24,8 +24,9 @@ def main() -> None:
     try:
         if not bpy.app.online_access:
             raise RuntimeError("Blender online access must be enabled for this smoke test")
-        with TemporaryDirectory() as temporary_directory:
+        with TemporaryDirectory(ignore_cleanup_errors=True) as temporary_directory:
             controller._cache_directory = lambda _context: Path(temporary_directory)
+            bpy.context.scene.blender_terrain_roi.imagery_gsd = "5"
             assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
             assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
 
@@ -40,6 +41,18 @@ def main() -> None:
             assert properties.discovered_file_count > 0
             assert properties.discovery_summary
             print(properties.discovery_summary)
+
+            assert bpy.ops.blender_terrain.download_data() == {"FINISHED"}
+            deadline = time.monotonic() + 600.0
+            while controller.has_active_job() and time.monotonic() < deadline:
+                time.sleep(0.1)
+                controller._poll_active_job()
+
+            assert not controller.has_active_job(), "Delivery did not finish within 600 seconds"
+            assert properties.job_state == "COMPLETE", properties.job_message
+            assert properties.delivery_ready
+            assert properties.delivery_summary
+            print(properties.delivery_summary)
     finally:
         extension.unregister()
     print("BlenderTerrain UI discovery smoke test passed")

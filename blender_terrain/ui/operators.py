@@ -97,10 +97,10 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
 
 
 class BLENDERTERRAIN_OT_cancel_discovery(bpy.types.Operator):
-    """Request cooperative cancellation of the active source discovery."""
+    """Request cooperative cancellation of the active background job."""
 
     bl_idname = "blender_terrain.cancel_discovery"
-    bl_label = "Cancel Discovery"
+    bl_label = "Cancel Job"
 
     def execute(self, context: bpy.types.Context) -> set[str]:
         try:
@@ -108,4 +108,21 @@ class BLENDERTERRAIN_OT_cancel_discovery(bpy.types.Operator):
         except BlenderTerrainError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_download_data(bpy.types.Operator):
+    """Download discovered elevation and optional PNOA sources."""
+
+    bl_idname = "blender_terrain.download_data"
+    bl_label = "Download Data"
+    bl_description = "Download and validate the required elevation and imagery files"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        try:
+            job_controller.start_delivery(context)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Data download started in the background")
         return {"FINISHED"}

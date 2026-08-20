@@ -6,10 +6,19 @@ from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
-from ..core import ImportPlan, create_import_plan, discover_sources
+from ..core import (
+    ImportPlan,
+    TransferProgress,
+    create_import_plan,
+    deliver_plan_sources,
+    discover_sources,
+    plan_imagery_tiles,
+)
 from ..core.discovery import CatalogDiscoveryProvider
 from ..errors import (
     CatalogContractChanged,
+    DownloadAuthorizationRequired,
+    DownloadIntegrityError,
     JobCancelled,
     JobFormatError,
     NoCoverageError,
@@ -17,6 +26,7 @@ from ..errors import (
     UserInputError,
 )
 from ..providers.cnig_portal import CNIGPortalClient
+from ..providers.pnoa_wms import PNOAWMSClient
 from .models import DiscoveryJob, JobState, ProgressEvent
 from .storage import (
     append_progress_event,
@@ -80,6 +90,99 @@ def run_discovery_job(
     except ProviderUnavailableError as exc:
         return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
     except (JobFormatError, UserInputError) as exc:
+        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+
+
+def run_delivery_job(
+    job_path: Path,
+    cnig_factory: Callable[[], CNIGPortalClient] = CNIGPortalClient,
+    imagery_factory: Callable[[], PNOAWMSClient] = PNOAWMSClient,
+) -> JobState:
+    """Discover and download validated elevation and optional PNOA sources."""
+
+    events_path = job_path.with_name("events.jsonl")
+    result_path = job_path.with_name("result.json")
+    sequence = 0
+
+    def emit(state: JobState, progress: float, message: str) -> None:
+        nonlocal sequence
+        append_progress_event(events_path, ProgressEvent(sequence, state, progress, message))
+        sequence += 1
+
+    def cancelled() -> bool:
+        return is_cancellation_requested(job_path.parent)
+
+    try:
+        emit(JobState.VALIDATING, 0.02, "Validating data delivery job")
+        job = read_discovery_job(job_path)
+        plan = _create_plan(job)
+        if cancelled():
+            raise JobCancelled("Data delivery was cancelled")
+        cnig = cnig_factory()
+        emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
+        discovery = discover_sources(plan, cnig)
+        imagery_count = len(plan_imagery_tiles(plan))
+        file_count = len(discovery.items) + imagery_count
+
+        def report(transfer: TransferProgress) -> None:
+            if cancelled():
+                raise JobCancelled("Data delivery was cancelled")
+            offset = transfer.file_index
+            state = JobState.DOWNLOADING_ELEVATION
+            if transfer.kind == "imagery":
+                offset += len(discovery.items)
+                state = JobState.DOWNLOADING_IMAGERY
+            fraction = (
+                transfer.written_bytes / transfer.expected_bytes
+                if transfer.expected_bytes
+                else 0.0
+            )
+            progress = 0.1 + 0.85 * min(1.0, (offset + fraction) / max(1, file_count))
+            emit(
+                state,
+                progress,
+                f"Downloading {transfer.filename} ({transfer.written_bytes / 1_048_576:.1f} MiB)",
+            )
+
+        delivered = deliver_plan_sources(
+            plan,
+            discovery,
+            job_path.parents[2],
+            cnig,
+            imagery_factory(),
+            report,
+            cancelled,
+        )
+        payload = {
+            "schema_version": 1,
+            "job_id": job.job_id,
+            "state": JobState.COMPLETE.value,
+            "elevation_paths": [str(path) for path in delivered.elevation_paths],
+            "imagery_paths": [str(path) for path in delivered.imagery_paths],
+        }
+        write_result(result_path, payload)
+        emit(
+            JobState.COMPLETE,
+            1.0,
+            f"Prepared {len(delivered.elevation_paths)} elevation and "
+            f"{len(delivered.imagery_paths)} imagery file(s)",
+        )
+        return JobState.COMPLETE
+    except JobCancelled as exc:
+        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
+    except NoCoverageError as exc:
+        return _finish_error(result_path, emit, JobState.NO_COVERAGE, str(exc))
+    except CatalogContractChanged as exc:
+        return _finish_error(result_path, emit, JobState.PROVIDER_CHANGED, str(exc))
+    except ProviderUnavailableError as exc:
+        return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
+    except (
+        DownloadAuthorizationRequired,
+        DownloadIntegrityError,
+        JobFormatError,
+        UserInputError,
+        ValueError,
+    ) as exc:
         return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
 
 
