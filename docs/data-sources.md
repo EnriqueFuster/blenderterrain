@@ -19,7 +19,7 @@ URL or observed value appears in the specification.
 | CNIG MDT02 second coverage | 2 m terrain elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-terreno-mdt02-segunda-cobertura> | Catalog, direct delivery, and sample verified |
 | CNIG MDS02 second coverage | 2 m surface elevation | <https://centrodedescargas.cnig.es/CentroDescargas/modelo-digital-superficies-mds02-segunda-cobertura> | Catalog, direct delivery, and sample verified |
 | CNIG PNOA Maximum Actuality | Full source orthophoto | <https://centrodedescargas.cnig.es/CentroDescargas/ortofoto-pnoa-maxima-actualidad> | Catalog, direct delivery, and sample verified |
-| PNOA Maximum Actuality WMS | ROI imagery texture | <https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetCapabilities> | Pending capabilities and control-image verification |
+| PNOA Maximum Actuality WMS | ROI imagery texture | <https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetCapabilities> | Capabilities and EPSG:25830 control image verified |
 | CNIG data policy | Attribution and permitted use | <https://centrodedescargas.cnig.es/CentroDescargas/politica-datos> | Pending legal-text recheck before release |
 | CNIG FAQ | Anonymous download behavior | <https://centrodedescargas.cnig.es/CentroDescargas/faqs> | Pending current-policy and response verification |
 | IDEE coverage API | Possible future elevation provider | <https://api-coverages.idee.es/> | Out of version 1 unless it exposes the required product |
@@ -48,6 +48,12 @@ It is a 58880 by 39168, three-band RGB BigTIFF in EPSG:25830 with 0.25 m pixels,
 256 by 256 JPEG-compressed tiles, and overview factors 2 through 256. CNIG
 advertises it as COG; tiled window reads and overviews were verified, but no
 independent COG conformance validator was available in the development environment.
+
+The WMS 1.3 service advertises a 4096 by 4096 maximum response, PNG support, and
+the `OI.OrthoimageCoverage` layer. A 512 by 512 EPSG:25830 control request for
+bounds `(713500, 4374500, 713628, 4374628)` produced a valid 627665-byte PNG. It
+matched the corresponding source-orthophoto pixels exactly without horizontal or
+vertical inversion. Other CRS axis orders remain unverified and disabled.
 
 ## Values that must not become silent constants
 

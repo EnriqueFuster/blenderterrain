@@ -20,10 +20,12 @@ The current foundation has verified:
 1. reproducible MDT02, MDS02, and PNOA catalog discovery without browser automation;
 2. complete first-party CNIG downloads for all three products;
 3. bounded elevation-window reading plus CRS, transform, and bounds parsing;
-4. exact numerical and spatial agreement with Rasterio as a development oracle.
+4. exact numerical and spatial agreement with Rasterio as a development oracle;
+5. projected PNOA WMS texture downloads with validated dimensions and orientation.
 
-PNOA WMS requests are still pending. The WMS remains the intended default for
-ROI textures because a single PNOA MTN25 image can approach 1 GB.
+The WMS is the intended default for ROI textures because a single PNOA MTN25
+source image can approach 1 GB. The current WMS implementation is deliberately
+limited to the control-tested EPSG:25830 axis order.
 
 No elevation or imagery data is redistributed in this repository.
 
@@ -69,6 +71,16 @@ python -m scripts.discover_cnig --product PNOA_MA --online --sequential-id 12570
 
 That command downloads a large source image and is never run by the test suite.
 A complete 2024 Valencia PNOA sample was downloaded and validated on 2026-08-20.
+
+The opt-in WMS check fetches current capabilities and can download a 512 by 512
+PNG control image:
+
+```text
+python -m scripts.check_pnoa_wms --online --download-directory .artifacts/pnoa-wms-control
+```
+
+The control image was compared with the corresponding pixels in the downloaded
+PNOA source and matched exactly, including orientation.
 
 ## License
 

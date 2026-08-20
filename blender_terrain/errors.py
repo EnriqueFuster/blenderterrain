@@ -9,7 +9,11 @@ class ProviderUnavailableError(BlenderTerrainError):
     """Raised when a provider cannot complete a request."""
 
 
-class CatalogContractChanged(BlenderTerrainError):
+class ProviderContractChanged(BlenderTerrainError):
+    """Raised when an external service no longer satisfies its observed contract."""
+
+
+class CatalogContractChanged(ProviderContractChanged):
     """Raised when provider HTML no longer satisfies the observed contract."""
 
 
