@@ -21,7 +21,8 @@ The current foundation has verified:
 2. complete first-party CNIG downloads for all three products;
 3. bounded elevation-window reading plus CRS, transform, and bounds parsing;
 4. exact numerical and spatial agreement with Rasterio as a development oracle;
-5. projected PNOA WMS texture downloads with validated dimensions and orientation.
+5. projected PNOA WMS texture downloads with validated dimensions and orientation;
+6. bounded elevation mosaics across aligned CNIG source files.
 
 The WMS is the intended default for ROI textures because a single PNOA MTN25
 source image can approach 1 GB. The current WMS implementation is deliberately
@@ -81,6 +82,12 @@ python -m scripts.check_pnoa_wms --online --download-directory .artifacts/pnoa-w
 
 The control image was compared with the corresponding pixels in the downloaded
 PNOA source and matched exactly, including orientation.
+
+Elevation bounds are expanded to outer pixel edges so an ROI never loses its
+border pixels. Mosaic output is limited to 16777216 pixels by default and keeps
+a per-pixel source index. Overlapping valid elevation values use explicit source
+order and produce conflict counts and a maximum difference instead of silently
+hiding provider seams.
 
 ## License
 

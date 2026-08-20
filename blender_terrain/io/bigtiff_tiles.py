@@ -8,6 +8,7 @@ Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import struct
 from typing import Final
@@ -16,6 +17,7 @@ import zlib
 import numpy as np
 
 from blender_terrain.errors import RasterFormatError
+from blender_terrain.models import ProjectedBounds
 
 _TYPE_SIZES: Final = {1: 1, 2: 1, 3: 2, 4: 4, 12: 8, 16: 8}
 _NUMERIC_FORMATS: Final = {1: "B", 3: "H", 4: "I", 12: "d", 16: "Q"}
@@ -75,6 +77,7 @@ class GeoReference:
     origin_y: float
     pixel_width: float
     pixel_height: float
+    declared_epsg: int
 
     def bounds(self, width: int, height: int) -> tuple[float, float, float, float]:
         """Return west, south, east, and north bounds for image dimensions."""
@@ -82,6 +85,47 @@ class GeoReference:
         east = self.origin_x + width * self.pixel_width
         south = self.origin_y + height * self.pixel_height
         return self.origin_x, south, east, self.origin_y
+
+    def window_bounds(self, window: PixelWindow) -> ProjectedBounds:
+        """Return the outer projected bounds of a pixel window."""
+
+        west = self.origin_x + window.column * self.pixel_width
+        north = self.origin_y + window.row * self.pixel_height
+        east = west + window.width * self.pixel_width
+        south = north + window.height * self.pixel_height
+        return ProjectedBounds(west, south, east, north, self.epsg)
+
+    def enclosing_window(self, bounds: ProjectedBounds) -> PixelWindow:
+        """Return the smallest grid window that fully contains projected bounds."""
+
+        if bounds.epsg != self.epsg:
+            raise ValueError("Projected bounds and raster grid must use the same EPSG code")
+        pixel_height = -self.pixel_height
+        left = (bounds.west - self.origin_x) / self.pixel_width
+        right = (bounds.east - self.origin_x) / self.pixel_width
+        top = (self.origin_y - bounds.north) / pixel_height
+        bottom = (self.origin_y - bounds.south) / pixel_height
+        column = _floor_grid_coordinate(left)
+        row = _floor_grid_coordinate(top)
+        column_end = _ceil_grid_coordinate(right)
+        row_end = _ceil_grid_coordinate(bottom)
+        return PixelWindow(row, column, row_end - row, column_end - column)
+
+
+@dataclass(frozen=True, slots=True)
+class PixelWindow:
+    """Integer pixel window using a top-left row and column origin."""
+
+    row: int
+    column: int
+    height: int
+    width: int
+
+    def __post_init__(self) -> None:
+        if self.row < 0 or self.column < 0:
+            raise ValueError("Pixel window origin must be non-negative")
+        if self.height <= 0 or self.width <= 0:
+            raise ValueError("Pixel window dimensions must be positive")
 
 
 class BigTiffFloatTileReader:
@@ -165,6 +209,31 @@ class BigTiffFloatTileReader:
                     intersection_left - tile_left : intersection_right - tile_left,
                 ]
         return result
+
+    def window_for_bounds(self, bounds: ProjectedBounds) -> PixelWindow:
+        """Return the smallest source window that fully contains projected bounds."""
+
+        if bounds.epsg != self.georeference.epsg:
+            raise ValueError("Projected bounds and raster must use the same EPSG code")
+        raster_west, raster_south, raster_east, raster_north = self.georeference.bounds(
+            self.layout.width, self.layout.height
+        )
+        if (
+            bounds.west < raster_west
+            or bounds.south < raster_south
+            or bounds.east > raster_east
+            or bounds.north > raster_north
+        ):
+            raise ValueError("Projected bounds extend outside the raster")
+
+        return self.georeference.enclosing_window(bounds)
+
+    def read_bounds(self, bounds: ProjectedBounds) -> tuple[np.ndarray, ProjectedBounds]:
+        """Read enclosing pixels and return their exact projected outer bounds."""
+
+        window = self.window_for_bounds(bounds)
+        data = self.read_window(window.row, window.column, window.height, window.width)
+        return data, self.georeference.window_bounds(window)
 
     def _read_header(self) -> tuple[str, int]:
         with self._path.open("rb") as stream:
@@ -270,9 +339,10 @@ def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:
     raster_type = keys.get(_GT_RASTER_TYPE)
     if raster_type not in {1, 2}:
         raise RasterFormatError("GeoTIFF raster type is missing or unsupported")
-    epsg = keys.get(_PROJECTED_CRS_TYPE)
-    if epsg is None or epsg == 32767:
+    declared_epsg = keys.get(_PROJECTED_CRS_TYPE)
+    if declared_epsg is None or declared_epsg == 32767:
         raise RasterFormatError("GeoTIFF has no directly encoded projected EPSG code")
+    epsg = _canonical_xy_epsg(declared_epsg)
 
     origin_x = tiepoint[3] - tiepoint[0] * scale[0]
     origin_y = tiepoint[4] + tiepoint[1] * scale[1]
@@ -285,6 +355,7 @@ def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:
         origin_y=origin_y,
         pixel_width=scale[0],
         pixel_height=-scale[1],
+        declared_epsg=declared_epsg,
     )
 
 
@@ -322,3 +393,19 @@ def _inflate_exact(compressed: bytes, expected_size: int) -> bytes:
     if len(raw) != expected_size or decompressor.unconsumed_tail or decompressor.unused_data:
         raise RasterFormatError("TIFF tile does not decompress to its expected size")
     return raw
+
+
+def _floor_grid_coordinate(value: float) -> int:
+    nearest = round(value)
+    return nearest if abs(value - nearest) <= 1e-9 else math.floor(value)
+
+
+def _ceil_grid_coordinate(value: float) -> int:
+    nearest = round(value)
+    return nearest if abs(value - nearest) <= 1e-9 else math.ceil(value)
+
+
+def _canonical_xy_epsg(declared_epsg: int) -> int:
+    if declared_epsg == 3042:
+        return 25830
+    return declared_epsg

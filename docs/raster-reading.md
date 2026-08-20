@@ -31,7 +31,7 @@ only Python's standard library and NumPy.
 
 ## Consequence for future work
 
-The next elevation-raster task is to convert projected bounds into pixel windows
-and compose windows that cross source files. Any new source format must first be
-inspected and either added as an explicit supported layout with tests or rejected
-with `RasterFormatError`.
+Projected bounds can now be converted to enclosing pixel windows and composed
+across aligned source files with overlap diagnostics. Any new source format must
+first be inspected and either added as an explicit supported layout with tests
+or rejected with `RasterFormatError`.
