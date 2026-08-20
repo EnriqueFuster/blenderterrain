@@ -43,3 +43,11 @@ class RasterFormatError(BlenderTerrainError):
 
 class RasterAlignmentError(BlenderTerrainError):
     """Raised when projected bounds cannot form a consistent output grid."""
+
+
+class JobFormatError(BlenderTerrainError):
+    """Raised when a persisted job does not satisfy the supported schema."""
+
+
+class JobCancelled(BlenderTerrainError):
+    """Raised when a background job observes a cooperative cancellation request."""

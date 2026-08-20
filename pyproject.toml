@@ -56,6 +56,7 @@ files = [
   "blender_terrain/models.py",
   "blender_terrain/core",
   "blender_terrain/io",
+  "blender_terrain/jobs",
   "blender_terrain/providers",
 ]
 
