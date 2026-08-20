@@ -20,6 +20,8 @@ class ImportPlanningTests(unittest.TestCase):
         self.assertEqual(plan.product, DatasetProduct.MDT02)
         self.assertEqual(plan.elevation_resolution_metres, 10.0)
         self.assertEqual(plan.terrain_tile_count, 1)
+        self.assertGreater(plan.estimated_elevation_working_bytes, 0)
+        self.assertEqual(plan.estimated_imagery_decoded_bytes, 0)
         self.assertIsNone(plan.imagery)
 
     def test_auto_selects_a_safe_elevation_resolution(self) -> None:
@@ -66,6 +68,19 @@ class ImportPlanningTests(unittest.TestCase):
                 False,
                 None,
             )
+
+    def test_builds_separate_grids_for_a_cross_zone_roi(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-0.02, 39.0, 0.02, 39.04),
+            DatasetProduct.MDT02,
+            10.0,
+            False,
+            None,
+        )
+
+        self.assertEqual([grid.bounds.epsg for grid in plan.grids], [25830, 25831])
+        self.assertTrue(plan.crosses_utm_zones)
+        self.assertIn("crosses UTM zones", plan.warnings[0])
 
 
 if __name__ == "__main__":

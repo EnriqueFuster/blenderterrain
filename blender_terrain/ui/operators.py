@@ -49,6 +49,8 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             properties.selected_resolution = 0.0
             properties.imagery_summary = ""
             properties.terrain_tile_count = 0
+            properties.estimated_memory_mib = 0.0
+            properties.planning_warning = ""
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 
@@ -61,6 +63,8 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         properties.sample_count = plan.elevation_sample_count
         properties.selected_resolution = plan.elevation_resolution_metres
         properties.terrain_tile_count = plan.terrain_tile_count
+        properties.estimated_memory_mib = plan.estimated_combined_bytes / (1024 * 1024)
+        properties.planning_warning = " | ".join(plan.warnings)
         properties.imagery_summary = (
             "PNOA disabled"
             if plan.imagery is None

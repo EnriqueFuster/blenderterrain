@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from ..errors import NoCoverageError
 from .roi import BBoxWGS84
+from .territory import TerritoryGroup, classify_territory_envelope
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,10 +45,13 @@ _ZONE_LONGITUDE_RANGES = {
 
 
 def split_bbox_by_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
-    """Split bounds at supported UTM meridians without claiming land coverage."""
+    """Select the datum family and split bounds at supported UTM meridians."""
 
+    territory = classify_territory_envelope(bounds)
+    supported_zones = (28,) if territory is TerritoryGroup.CANARY_ISLANDS else (29, 30, 31)
     work_areas: list[UTMWorkArea] = []
-    for zone, (zone_west, zone_east) in _ZONE_LONGITUDE_RANGES.items():
+    for zone in supported_zones:
+        zone_west, zone_east = _ZONE_LONGITUDE_RANGES[zone]
         part_west = max(bounds.west, zone_west)
         part_east = min(bounds.east, zone_east)
         if part_east <= part_west:

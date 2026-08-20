@@ -18,6 +18,8 @@ IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0)
 MAX_ELEVATION_SAMPLES = 16_777_216
 PLANNING_WMS_TILE_DIMENSION = 4_096
 MAX_IMAGERY_PIXELS = 67_108_864
+ELEVATION_WORKING_BYTES_PER_SAMPLE = 11
+IMAGERY_DECODED_BYTES_PER_PIXEL = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +88,38 @@ class ImportPlan:
         """Return the exact cell count after UTM projection and grid alignment."""
 
         return sum(grid.sample_count for grid in self.grids)
+
+    @property
+    def estimated_elevation_working_bytes(self) -> int:
+        """Estimate elevation arrays, mask, provenance, and one Float32 scratch grid."""
+
+        return self.elevation_sample_count * ELEVATION_WORKING_BYTES_PER_SAMPLE
+
+    @property
+    def estimated_imagery_decoded_bytes(self) -> int:
+        """Estimate a four-byte decoded color buffer, excluding GPU copies."""
+
+        return (
+            0
+            if self.imagery is None
+            else self.imagery.pixel_count * IMAGERY_DECODED_BYTES_PER_PIXEL
+        )
+
+    @property
+    def estimated_combined_bytes(self) -> int:
+        """Return a lower-bound combined planning footprint."""
+
+        return self.estimated_elevation_working_bytes + self.estimated_imagery_decoded_bytes
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        """Return actionable limitations discovered during offline planning."""
+
+        warnings: list[str] = []
+        if self.crosses_utm_zones:
+            warnings.append("ROI crosses UTM zones and will create sibling terrain groups")
+        warnings.append("Exact Spanish data coverage is confirmed during CNIG discovery")
+        return tuple(warnings)
 
 
 def create_import_plan(

@@ -34,6 +34,8 @@ def main() -> None:
         assert properties.area_square_metres > 0.0
         assert properties.sample_count > 0
         assert properties.terrain_tile_count == 6
+        assert properties.estimated_memory_mib > 0.0
+        assert "CNIG discovery" in properties.planning_warning
         assert properties.imagery_summary.startswith("PNOA 0.25 m:")
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)

@@ -12,6 +12,7 @@ from .grid import (
 from .planning import ImageryEstimate, ImportPlan, create_import_plan
 from .projection import ProjectedPoint, project_wgs84_to_utm, project_work_area_bounds
 from .roi import BBoxWGS84
+from .territory import TerritoryGroup, classify_territory_envelope
 
 __all__ = [
     "DEFAULT_MAX_TILE_CELLS",
@@ -23,8 +24,10 @@ __all__ = [
     "ImportPlan",
     "ProjectedPoint",
     "ROIEstimate",
+    "TerritoryGroup",
     "UTMWorkArea",
     "align_projected_grid",
+    "classify_territory_envelope",
     "create_import_plan",
     "estimate_bbox",
     "project_wgs84_to_utm",

@@ -11,10 +11,11 @@ abstractions.
 
 ## Current status
 
-The portable technical validation outside Blender is complete. The repository
-also contains an installable Blender 4.5 extension skeleton with a sidebar
-panel and a configurable cache directory. No production import workflow is
-available yet.
+The portable technical validation outside Blender is complete. The installable
+Blender 4.5 extension now accepts a manual WGS84 bounding box, DTM/DSM choice,
+terrain resolution, and optional PNOA settings. `Validate ROI` builds an offline
+UTM grid plan with sample, terrain-object, texture, and memory estimates. Data
+discovery and terrain construction are not connected to the panel yet.
 
 The current foundation has verified:
 
