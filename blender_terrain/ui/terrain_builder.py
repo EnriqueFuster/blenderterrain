@@ -12,6 +12,8 @@ import bpy
 import numpy as np
 
 from ..core import (
+    TERRAIN_SCHEMA_VERSION,
+    TerrainRepresentation,
     bounds_fully_covered,
     build_terrain_mesh_geometry,
     projected_texture_transform,
@@ -52,6 +54,8 @@ def create_terrain_objects(
     task_id = str(result["task_id"])
     short_id = import_id[:8]
     collection = bpy.data.collections.new(f"BlenderTerrain_{short_id}")
+    collection["blender_terrain_schema_version"] = TERRAIN_SCHEMA_VERSION
+    collection["blender_terrain_representation"] = TerrainRepresentation.BAKED.value
     collection["blender_terrain_import_id"] = import_id
     collection["blender_terrain_task_id"] = task_id
     collection["blender_terrain_product"] = request["product"]
@@ -78,6 +82,9 @@ def create_terrain_objects(
     collection["blender_terrain_data_license"] = provenance["license"]
     collection["blender_terrain_retrieved_at_utc"] = provenance["retrieved_at_utc"]
     collection["blender_terrain_vertical_scale"] = vertical_scale
+    collection["blender_terrain_subdivision_viewport"] = 0
+    collection["blender_terrain_subdivision_render"] = 0
+    collection["blender_terrain_displacement_enabled"] = True
     context.scene.collection.children.link(collection)
     parents: dict[int, bpy.types.Object] = {}
     objects: list[bpy.types.Object] = []
@@ -105,6 +112,9 @@ def create_terrain_objects(
             object_.scale.z = vertical_scale
             object_.parent = parents[bounds.epsg]
             object_["blender_terrain_epsg"] = bounds.epsg
+            object_["blender_terrain_schema_version"] = TERRAIN_SCHEMA_VERSION
+            object_["blender_terrain_representation"] = TerrainRepresentation.BAKED.value
+            object_["blender_terrain_strength_multiplier"] = 1.0
             object_["blender_terrain_west"] = bounds.west
             object_["blender_terrain_south"] = bounds.south
             object_["blender_terrain_east"] = bounds.east

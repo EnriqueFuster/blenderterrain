@@ -164,6 +164,9 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert len(terrain.data.vertices) == 4
         assert len(terrain.data.polygons) == 1
         assert terrain["blender_terrain_epsg"] == 25830
+        assert terrain["blender_terrain_schema_version"] == 2
+        assert terrain["blender_terrain_representation"] == "BAKED"
+        assert terrain["blender_terrain_strength_multiplier"] == 1.0
         assert len(terrain.data.materials) == (1 if use_imagery else 0)
         if use_imagery:
             assert terrain.data.materials[0].use_nodes
@@ -187,6 +190,9 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         collection = bpy.data.collections["BlenderTerrain_12345678"]
         assert collection["blender_terrain_import_id"] == properties.import_id
         assert collection["blender_terrain_product"] == "MDT02"
+        assert collection["blender_terrain_schema_version"] == 2
+        assert collection["blender_terrain_representation"] == "BAKED"
+        assert collection["blender_terrain_vertical_scale"] == 1.0
         assert collection["blender_terrain_source"].startswith(
             "Instituto Geográfico Nacional"
         )

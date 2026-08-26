@@ -17,6 +17,13 @@ from .mesh_geometry import TerrainMeshGeometry, build_terrain_mesh_geometry
 from .planning import ImageryEstimate, ImportPlan, create_import_plan
 from .projection import ProjectedPoint, project_wgs84_to_utm, project_work_area_bounds
 from .roi import BBoxWGS84
+from .terrain_schema import (
+    TERRAIN_SCHEMA_VERSION,
+    TerrainMetadata,
+    TerrainRepresentation,
+    TerrainSettings,
+    read_terrain_metadata,
+)
 from .territory import TerritoryGroup, classify_territory_envelope
 from .texture_mapping import (
     TextureTransform,
@@ -26,6 +33,7 @@ from .texture_mapping import (
 
 __all__ = [
     "DEFAULT_MAX_TILE_CELLS",
+    "TERRAIN_SCHEMA_VERSION",
     "BBoxWGS84",
     "CRSInfo",
     "DeliveryResult",
@@ -39,6 +47,9 @@ __all__ = [
     "ProjectedPoint",
     "ROIEstimate",
     "TerrainMeshGeometry",
+    "TerrainMetadata",
+    "TerrainRepresentation",
+    "TerrainSettings",
     "TerritoryGroup",
     "TextureTransform",
     "TransferProgress",
@@ -56,6 +67,7 @@ __all__ = [
     "project_wgs84_to_utm",
     "project_work_area_bounds",
     "projected_texture_transform",
+    "read_terrain_metadata",
     "select_catalog_items",
     "split_bbox_by_utm_zone",
     "tile_grid",
