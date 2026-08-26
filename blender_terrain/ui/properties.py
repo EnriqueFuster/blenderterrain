@@ -43,6 +43,15 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     """Store manual WGS84 bounds and their latest validation result."""
 
+    roi_input_mode: EnumProperty(
+        name="ROI Input",
+        items=(
+            ("BOUNDING_BOX", "Bounding Box", "Enter WGS84 rectangle coordinates"),
+            ("CENTER_SIZE", "Center + Size", "Enter a WGS84 centre and metric dimensions"),
+        ),
+        default="BOUNDING_BOX",
+        update=_invalidate_validation,
+    )
     west: FloatProperty(
         name="West", default=-0.39, min=-180.0, max=180.0, precision=6,
         update=_invalidate_validation,
@@ -57,6 +66,22 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
     north: FloatProperty(
         name="North", default=39.48, min=-90.0, max=90.0, precision=6,
+        update=_invalidate_validation,
+    )
+    center_longitude: FloatProperty(
+        name="Longitude", default=-0.38, min=-180.0, max=180.0, precision=6,
+        update=_invalidate_validation,
+    )
+    center_latitude: FloatProperty(
+        name="Latitude", default=39.47, min=-90.0, max=90.0, precision=6,
+        update=_invalidate_validation,
+    )
+    roi_width_metres: FloatProperty(
+        name="Width (m)", default=2_000.0, min=1.0, max=1_000_000.0,
+        update=_invalidate_validation,
+    )
+    roi_height_metres: FloatProperty(
+        name="Height (m)", default=2_000.0, min=1.0, max=1_000_000.0,
         update=_invalidate_validation,
     )
     product: EnumProperty(

@@ -21,12 +21,31 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
         box = self.layout.box()
         box.enabled = not properties.job_active
         box.label(text="Area of Interest", icon="WORLD_DATA")
+        box.prop(properties, "roi_input_mode")
+        if properties.roi_input_mode == "CENTER_SIZE":
+            row = box.row(align=True)
+            row.prop(properties, "center_longitude")
+            row.prop(properties, "center_latitude")
+            row = box.row(align=True)
+            row.prop(properties, "roi_width_metres")
+            row.prop(properties, "roi_height_metres")
+            box.operator("blender_terrain.update_bbox_from_center", icon="FILE_REFRESH")
+            box.label(
+                text=(
+                    f"BBox: {properties.west:.6f}, {properties.south:.6f}, "
+                    f"{properties.east:.6f}, {properties.north:.6f}"
+                )
+            )
+        else:
+            row = box.row(align=True)
+            row.prop(properties, "west")
+            row.prop(properties, "east")
+            row = box.row(align=True)
+            row.prop(properties, "south")
+            row.prop(properties, "north")
         row = box.row(align=True)
-        row.prop(properties, "west")
-        row.prop(properties, "east")
-        row = box.row(align=True)
-        row.prop(properties, "south")
-        row.prop(properties, "north")
+        row.operator("blender_terrain.copy_bbox", icon="COPYDOWN")
+        row.operator("blender_terrain.paste_bbox", icon="PASTEDOWN")
 
         elevation = self.layout.box()
         elevation.enabled = not properties.job_active

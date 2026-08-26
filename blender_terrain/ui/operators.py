@@ -6,7 +6,13 @@ from pathlib import Path
 
 import bpy
 
-from ..core import BBoxWGS84, create_import_plan
+from ..core import (
+    BBoxWGS84,
+    bbox_from_center_size,
+    create_import_plan,
+    format_bbox,
+    parse_bbox,
+)
 from ..errors import BlenderTerrainError
 from ..models import DatasetProduct
 from . import job_controller
@@ -36,12 +42,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
 
         properties = context.scene.blender_terrain_roi
         try:
-            bounds = BBoxWGS84(
-                properties.west,
-                properties.south,
-                properties.east,
-                properties.north,
-            )
+            bounds = _bounds_from_properties(properties, store_derived=True)
             plan = create_import_plan(
                 bounds=bounds,
                 product=DatasetProduct(properties.product),
@@ -111,6 +112,91 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         )
         self.report({"INFO"}, properties.validation_message)
         return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_update_bbox_from_center(bpy.types.Operator):
+    """Calculate WGS84 bounds from the current centre and metric dimensions."""
+
+    bl_idname = "blender_terrain.update_bbox_from_center"
+    bl_label = "Update Bounding Box"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            bounds = bbox_from_center_size(
+                properties.center_longitude,
+                properties.center_latitude,
+                properties.roi_width_metres,
+                properties.roi_height_metres,
+            )
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        _store_bounds(properties, bounds)
+        self.report({"INFO"}, "Bounding box updated from metric dimensions")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_copy_bbox(bpy.types.Operator):
+    """Copy the current WGS84 bounds as four comma-separated coordinates."""
+
+    bl_idname = "blender_terrain.copy_bbox"
+    bl_label = "Copy BBox"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            bounds = _bounds_from_properties(properties)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        context.window_manager.clipboard = format_bbox(bounds)
+        self.report({"INFO"}, "Bounding box copied")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_paste_bbox(bpy.types.Operator):
+    """Replace the current WGS84 bounds from clipboard text."""
+
+    bl_idname = "blender_terrain.paste_bbox"
+    bl_label = "Paste BBox"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            bounds = parse_bbox(context.window_manager.clipboard)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        properties.roi_input_mode = "BOUNDING_BOX"
+        _store_bounds(properties, bounds)
+        self.report({"INFO"}, "Bounding box pasted")
+        return {"FINISHED"}
+
+
+def _bounds_from_properties(
+    properties: object, *, store_derived: bool = False
+) -> BBoxWGS84:
+    if properties.roi_input_mode == "CENTER_SIZE":
+        bounds = bbox_from_center_size(
+            properties.center_longitude,
+            properties.center_latitude,
+            properties.roi_width_metres,
+            properties.roi_height_metres,
+        )
+        if store_derived:
+            _store_bounds(properties, bounds)
+        return bounds
+    return BBoxWGS84(
+        properties.west, properties.south, properties.east, properties.north
+    )
+
+
+def _store_bounds(properties: object, bounds: BBoxWGS84) -> None:
+    properties.west = bounds.west
+    properties.south = bounds.south
+    properties.east = bounds.east
+    properties.north = bounds.north
 
 
 class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):

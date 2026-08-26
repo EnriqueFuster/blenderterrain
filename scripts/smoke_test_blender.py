@@ -32,15 +32,21 @@ def main() -> None:
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
         properties = bpy.context.scene.blender_terrain_roi
         if _cycle == 1:
+            properties.roi_input_mode = "CENTER_SIZE"
+            properties.center_longitude = -0.38
+            properties.center_latitude = 39.47
+            properties.roi_width_metres = 2_000.0
+            properties.roi_height_metres = 2_000.0
             properties.tiling_mode = "MANUAL"
             properties.manual_tile_rows = 2
             properties.manual_tile_columns = 3
+            assert bpy.ops.blender_terrain.update_bbox_from_center() == {"FINISHED"}
         result = bpy.ops.blender_terrain.validate_roi()
         assert result == {"FINISHED"}
         assert properties.is_valid
         assert properties.crs_summary == "EPSG:25830"
         assert properties.product == "MDT02"
-        assert properties.selected_resolution == (5.0 if _cycle == 1 else 2.0)
+        assert properties.selected_resolution == 2.0
         assert properties.area_square_metres > 0.0
         assert properties.sample_count > 0
         assert properties.terrain_tile_count == 6
@@ -48,6 +54,7 @@ def main() -> None:
         assert properties.estimated_memory_mib > 0.0
         assert "CNIG discovery" in properties.planning_warning
         assert properties.imagery_summary.startswith("PNOA 0.25 m:")
+        assert bpy.ops.blender_terrain.copy_bbox() == {"FINISHED"}
         assert not properties.job_active
         assert not job_controller.timer_is_registered()
         properties.job_active = True

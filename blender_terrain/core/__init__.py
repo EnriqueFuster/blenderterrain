@@ -21,8 +21,15 @@ from .mesh_geometry import (
     build_terrain_mesh_geometry,
 )
 from .planning import ImageryEstimate, ImportPlan, create_import_plan
-from .projection import ProjectedPoint, project_wgs84_to_utm, project_work_area_bounds
+from .projection import (
+    GeographicPoint,
+    ProjectedPoint,
+    project_utm_to_wgs84,
+    project_wgs84_to_utm,
+    project_work_area_bounds,
+)
 from .roi import BBoxWGS84
+from .roi_input import bbox_from_center_size, format_bbox, parse_bbox
 from .terrain_schema import (
     TERRAIN_SCHEMA_VERSION,
     TerrainMetadata,
@@ -45,6 +52,7 @@ __all__ = [
     "DeliveryResult",
     "DiscoveryResult",
     "ElevationRange",
+    "GeographicPoint",
     "GridSpec",
     "GridTile",
     "ImageryEstimate",
@@ -62,6 +70,7 @@ __all__ = [
     "TransferProgress",
     "UTMWorkArea",
     "align_projected_grid",
+    "bbox_from_center_size",
     "bounds_fully_covered",
     "build_displacement_mesh_geometry",
     "build_terrain_mesh_geometry",
@@ -71,9 +80,12 @@ __all__ = [
     "deliver_plan_sources",
     "discover_sources",
     "estimate_bbox",
+    "format_bbox",
     "normalize_heightmap",
+    "parse_bbox",
     "plan_imagery_tiles",
     "process_elevation_tiles",
+    "project_utm_to_wgs84",
     "project_wgs84_to_utm",
     "project_work_area_bounds",
     "projected_texture_transform",
