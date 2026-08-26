@@ -50,6 +50,35 @@ def configure(extension_package: str) -> None:
     _extension_package = extension_package
 
 
+def recover_interrupted_jobs() -> int:
+    """Unlock scenes that persisted a worker no longer owned by this process."""
+
+    if _active_job is not None:
+        return 0
+    recovered = 0
+    for scene in bpy.data.scenes:
+        properties = scene.blender_terrain_roi
+        if not properties.job_active:
+            continue
+        mode = properties.active_job_mode
+        properties.job_active = False
+        properties.active_job_mode = ""
+        properties.job_state = JobState.INVALID_DATA.value
+        properties.job_progress = 1.0
+        properties.job_message = "Previous background task was interrupted; retry when ready"
+        if mode == "discovery":
+            properties.discovery_ready = False
+            properties.discovery_summary = ""
+        else:
+            properties.delivery_ready = False
+            properties.delivery_summary = ""
+            properties.delivery_result_path = ""
+            properties.imagery_available = False
+            properties.imagery_size_mib = 0.0
+        recovered += 1
+    return recovered
+
+
 def start_discovery(context: bpy.types.Context) -> None:
     """Persist the current request and launch a factory-startup Blender worker."""
 
@@ -117,6 +146,7 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
 
     _active_job = _ActiveJob(process, job_directory, context.scene.name, mode)
     properties.job_active = True
+    properties.active_job_mode = mode
     properties.job_state = JobState.VALIDATING.value
     properties.job_progress = 0.0
     properties.job_message = message
@@ -143,9 +173,17 @@ def shutdown() -> None:
     global _active_job
     if bpy.app.timers.is_registered(_poll_active_job):
         bpy.app.timers.unregister(_poll_active_job)
-    if _active_job is not None and _active_job.process.poll() is None:
-        request_cancellation(_active_job.directory)
-        _active_job.process.terminate()
+    if _active_job is not None:
+        properties = _scene_properties(_active_job.scene_name)
+        if _active_job.process.poll() is None:
+            request_cancellation(_active_job.directory)
+            _active_job.process.terminate()
+        if properties is not None:
+            properties.job_active = False
+            properties.active_job_mode = ""
+            properties.job_state = JobState.CANCELLED.value
+            properties.job_progress = 1.0
+            properties.job_message = "Background task stopped because the extension closed"
     _active_job = None
 
 
@@ -188,6 +226,7 @@ def _poll_active_job() -> float | None:
         return None
     if return_code is not None:
         properties.job_active = False
+        properties.active_job_mode = ""
         properties.job_state = JobState.INVALID_DATA.value
         properties.job_progress = 1.0
         properties.job_message = f"Background worker stopped without a result (exit {return_code})"
@@ -226,6 +265,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
     if state not in _TERMINAL_STATES:
         state = JobState.INVALID_DATA.value
     properties.job_active = False
+    properties.active_job_mode = ""
     properties.job_state = state
     properties.job_progress = 1.0
     if state in {JobState.COMPLETE.value, JobState.COMPLETE_WITH_WARNINGS.value}:

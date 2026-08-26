@@ -45,6 +45,14 @@ def main() -> None:
         assert properties.imagery_summary.startswith("PNOA 0.25 m:")
         assert not properties.job_active
         assert not job_controller.timer_is_registered()
+        properties.job_active = True
+        properties.active_job_mode = "delivery"
+        properties.delivery_ready = True
+        assert job_controller.recover_interrupted_jobs() == 1
+        assert not properties.job_active
+        assert not properties.delivery_ready
+        assert properties.job_state == "INVALID_DATA"
+        assert "interrupted" in properties.job_message
         _smoke_terrain_operator(properties, use_imagery=_cycle == 0)
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)

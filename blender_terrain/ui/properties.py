@@ -88,6 +88,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     estimated_memory_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     planning_warning: StringProperty(default="", options={"HIDDEN"})
     job_active: BoolProperty(default=False, options={"HIDDEN"})
+    active_job_mode: StringProperty(default="", options={"HIDDEN"})
     job_state: StringProperty(default="", options={"HIDDEN"})
     job_progress: FloatProperty(
         default=0.0, min=0.0, max=1.0, subtype="FACTOR", options={"HIDDEN"}
