@@ -53,7 +53,7 @@ def configure(extension_package: str) -> None:
 def recover_interrupted_jobs() -> int:
     """Unlock scenes that persisted a worker no longer owned by this process."""
 
-    if _active_job is not None:
+    if _active_job is not None or not hasattr(bpy.data, "scenes"):
         return 0
     recovered = 0
     for scene in bpy.data.scenes:
@@ -77,6 +77,19 @@ def recover_interrupted_jobs() -> int:
             properties.imagery_size_mib = 0.0
         recovered += 1
     return recovered
+
+
+def schedule_interrupted_job_recovery() -> None:
+    """Recover now or defer until Blender releases registration-time data access."""
+
+    if hasattr(bpy.data, "scenes"):
+        recover_interrupted_jobs()
+    elif not bpy.app.timers.is_registered(_recover_interrupted_jobs_on_timer):
+        bpy.app.timers.register(_recover_interrupted_jobs_on_timer, first_interval=0.0)
+
+
+def _recover_interrupted_jobs_on_timer() -> None:
+    recover_interrupted_jobs()
 
 
 def start_discovery(context: bpy.types.Context) -> None:
@@ -171,6 +184,8 @@ def shutdown() -> None:
     """Stop monitoring and terminate only the worker owned by this extension."""
 
     global _active_job
+    if bpy.app.timers.is_registered(_recover_interrupted_jobs_on_timer):
+        bpy.app.timers.unregister(_recover_interrupted_jobs_on_timer)
     if bpy.app.timers.is_registered(_poll_active_job):
         bpy.app.timers.unregister(_poll_active_job)
     if _active_job is not None:

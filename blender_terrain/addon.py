@@ -41,7 +41,7 @@ def register(extension_package: str) -> None:
     for class_type in _CLASSES:
         bpy.utils.register_class(class_type)
     bpy.types.Scene.blender_terrain_roi = PointerProperty(type=BLENDERTERRAIN_ROIProperties)
-    job_controller.recover_interrupted_jobs()
+    job_controller.schedule_interrupted_job_recovery()
 
 
 def unregister() -> None:

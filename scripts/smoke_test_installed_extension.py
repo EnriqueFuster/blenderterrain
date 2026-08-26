@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import importlib
+import sys
 
 import bpy
 
 
 def main() -> None:
-    extension = importlib.import_module("bl_ext.user_default.blender_terrain")
+    arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+    module_name = arguments[0] if arguments else "bl_ext.user_default.blender_terrain"
+    extension = importlib.import_module(module_name)
     if not hasattr(bpy.types.Scene, "blender_terrain_roi"):
         extension.register()
         registered_here = True
