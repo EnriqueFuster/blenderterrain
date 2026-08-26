@@ -3,19 +3,34 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import bpy
 import numpy as np
 
-from ..core import build_terrain_mesh_geometry
+from ..core import (
+    bounds_fully_covered,
+    build_terrain_mesh_geometry,
+    projected_texture_transform,
+)
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
 
 
+@dataclass(frozen=True, slots=True)
+class _ImageryEntry:
+    path: Path
+    bounds: ProjectedBounds
+
+
 def create_terrain_objects(
-    context: bpy.types.Context, result_path: Path, vertical_scale: float
+    context: bpy.types.Context,
+    result_path: Path,
+    vertical_scale: float,
+    pack_images: bool = False,
 ) -> tuple[bpy.types.Object, ...]:
     """Create one mesh object per processed tile using local projected coordinates."""
 
@@ -24,6 +39,7 @@ def create_terrain_objects(
     if not isinstance(entries, list) or not entries:
         raise RasterFormatError("Delivery result contains no processed elevation tiles")
     parsed = tuple(_parse_entry(entry) for entry in entries)
+    imagery = _parse_imagery(result.get("imagery", []))
     origins = {
         epsg: (
             min(bounds.west for _, bounds, *_ in parsed if bounds.epsg == epsg),
@@ -31,14 +47,20 @@ def create_terrain_objects(
         )
         for epsg in {bounds.epsg for _, bounds, *_ in parsed}
     }
-    job_id = str(result.get("job_id", "unknown"))
-    collection = bpy.data.collections.new(f"BlenderTerrain_{job_id[:8]}")
+    import_id = str(result["import_id"])
+    task_id = str(result["task_id"])
+    short_id = import_id[:8]
+    collection = bpy.data.collections.new(f"BlenderTerrain_{short_id}")
+    collection["blender_terrain_import_id"] = import_id
+    collection["blender_terrain_task_id"] = task_id
     context.scene.collection.children.link(collection)
     parents: dict[int, bpy.types.Object] = {}
     objects: list[bpy.types.Object] = []
+    materials: list[bpy.types.Material] = []
     try:
         for epsg, (origin_x, origin_y) in origins.items():
-            parent = bpy.data.objects.new(f"Terrain_EPSG_{epsg}", None)
+            parent = bpy.data.objects.new(f"BT_{short_id}_EPSG_{epsg}", None)
+            parent["blender_terrain_import_id"] = import_id
             parent["blender_terrain_epsg"] = epsg
             parent["blender_terrain_origin_easting"] = origin_x
             parent["blender_terrain_origin_northing"] = origin_y
@@ -49,8 +71,10 @@ def create_terrain_objects(
             if elevation.dtype != np.float32 or elevation.shape != (rows + 1, columns + 1):
                 raise RasterFormatError(f"Processed elevation dimensions do not match: {path.name}")
             geometry = build_terrain_mesh_geometry(elevation, bounds, nodata)
-            mesh = _create_mesh(f"TerrainMesh_{index:03d}", geometry.vertices, geometry.faces)
-            object_ = bpy.data.objects.new(f"Terrain_{index:03d}", mesh)
+            mesh = _create_mesh(
+                f"BT_{short_id}_Mesh_{index:03d}", geometry.vertices, geometry.faces
+            )
+            object_ = bpy.data.objects.new(f"BT_{short_id}_Terrain_{index:03d}", mesh)
             origin_x, origin_y = origins[bounds.epsg]
             object_.location = (bounds.west - origin_x, bounds.south - origin_y, 0.0)
             object_.scale.z = vertical_scale
@@ -61,6 +85,14 @@ def create_terrain_objects(
             object_["blender_terrain_east"] = bounds.east
             object_["blender_terrain_north"] = bounds.north
             object_["blender_terrain_source"] = str(path)
+            object_["blender_terrain_import_id"] = import_id
+            object_["blender_terrain_task_id"] = task_id
+            material = _create_imagery_material(
+                f"BT_{short_id}_Material_{index:03d}", bounds, imagery, import_id
+            )
+            if material is not None:
+                mesh.materials.append(material)
+                materials.append(material)
             collection.objects.link(object_)
             objects.append(object_)
     except BaseException:
@@ -70,8 +102,54 @@ def create_terrain_objects(
             if mesh is not None:
                 bpy.data.meshes.remove(mesh)
         bpy.data.collections.remove(collection)
+        for material in materials:
+            bpy.data.materials.remove(material)
         raise
+    _select_created_objects(context, objects)
+    if pack_images:
+        pack_collection_images(collection)
     return tuple(objects)
+
+
+def terrain_import_exists(import_id: str) -> bool:
+    """Return whether the scene data already contains this terrain import."""
+
+    return any(
+        collection.get("blender_terrain_import_id") == import_id
+        for collection in bpy.data.collections
+    )
+
+
+def collection_for_import(import_id: str) -> bpy.types.Collection | None:
+    """Find the collection created for a persistent terrain import."""
+
+    return next(
+        (
+            collection
+            for collection in bpy.data.collections
+            if collection.get("blender_terrain_import_id") == import_id
+        ),
+        None,
+    )
+
+
+def pack_collection_images(collection: bpy.types.Collection) -> tuple[bpy.types.Image, ...]:
+    """Pack every external image used by mesh materials in one import collection."""
+
+    images: dict[int, bpy.types.Image] = {}
+    for object_ in collection.objects:
+        if not isinstance(object_.data, bpy.types.Mesh):
+            continue
+        for material in object_.data.materials:
+            if material is None or not material.use_nodes:
+                continue
+            for node in material.node_tree.nodes:
+                if node.bl_idname == "ShaderNodeTexImage" and node.image is not None:
+                    images[node.image.as_pointer()] = node.image
+    for image in images.values():
+        if image.packed_file is None:
+            image.pack()
+    return tuple(images.values())
 
 
 def _create_mesh(name: str, vertices: Any, faces: Any) -> bpy.types.Mesh:
@@ -87,6 +165,73 @@ def _create_mesh(name: str, vertices: Any, faces: Any) -> bpy.types.Mesh:
     return mesh
 
 
+def _create_imagery_material(
+    name: str,
+    terrain_bounds: ProjectedBounds,
+    imagery: tuple[_ImageryEntry, ...],
+    import_id: str,
+) -> bpy.types.Material | None:
+    coverage = tuple(
+        (entry, transform)
+        for entry in imagery
+        if (transform := projected_texture_transform(terrain_bounds, entry.bounds)) is not None
+    )
+    if not coverage:
+        return None
+    if not bounds_fully_covered(
+        terrain_bounds, tuple(entry.bounds for entry, _ in coverage)
+    ):
+        raise RasterFormatError("PNOA imagery does not cover the complete terrain tile")
+
+    material = bpy.data.materials.new(name)
+    material["blender_terrain_import_id"] = import_id
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    nodes.clear()
+    links = material.node_tree.links
+    output = nodes.new("ShaderNodeOutputMaterial")
+    shader = nodes.new("ShaderNodeBsdfPrincipled")
+    shader.inputs["Roughness"].default_value = 0.8
+    coordinates = nodes.new("ShaderNodeTexCoord")
+    color_socket = None
+    for index, (entry, transform) in enumerate(coverage):
+        mapping = nodes.new("ShaderNodeVectorMath")
+        mapping.operation = "MULTIPLY_ADD"
+        mapping.inputs[1].default_value = (transform.scale_u, transform.scale_v, 0.0)
+        mapping.inputs[2].default_value = (transform.offset_u, transform.offset_v, 0.0)
+        links.new(coordinates.outputs["Generated"], mapping.inputs[0])
+        texture = nodes.new("ShaderNodeTexImage")
+        texture.name = f"PNOA_{index:03d}"
+        texture.image = bpy.data.images.load(str(entry.path), check_existing=True)
+        texture.image.colorspace_settings.name = "sRGB"
+        texture.extension = "CLIP"
+        texture.interpolation = "Linear"
+        links.new(mapping.outputs["Vector"], texture.inputs["Vector"])
+        if color_socket is None:
+            color_socket = texture.outputs["Color"]
+        else:
+            add = nodes.new("ShaderNodeMixRGB")
+            add.blend_type = "MIX"
+            links.new(color_socket, add.inputs[1])
+            links.new(texture.outputs["Color"], add.inputs[2])
+            links.new(texture.outputs["Alpha"], add.inputs[0])
+            color_socket = add.outputs[0]
+    links.new(color_socket, shader.inputs["Base Color"])
+    links.new(shader.outputs["BSDF"], output.inputs["Surface"])
+    return material
+
+
+def _select_created_objects(
+    context: bpy.types.Context, objects: list[bpy.types.Object]
+) -> None:
+    for selected in context.selected_objects:
+        selected.select_set(False)
+    for object_ in objects:
+        object_.select_set(True)
+    if objects:
+        context.view_layer.objects.active = objects[0]
+
+
 def _read_result(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -94,6 +239,15 @@ def _read_result(path: Path) -> dict[str, Any]:
         raise RasterFormatError("Cannot read the completed delivery result") from exc
     if not isinstance(payload, dict) or payload.get("state") != "COMPLETE":
         raise RasterFormatError("Delivery result is not complete")
+    try:
+        if not isinstance(payload["import_id"], str) or not isinstance(
+            payload["task_id"], str
+        ):
+            raise TypeError
+        UUID(payload["import_id"])
+        UUID(payload["task_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RasterFormatError("Delivery result has invalid task or import identity") from exc
     return payload
 
 
@@ -115,3 +269,26 @@ def _parse_entry(entry: object) -> tuple[Path, ProjectedBounds, int, int, float]
     except (KeyError, TypeError, ValueError) as exc:
         raise RasterFormatError("Delivery result contains an invalid terrain tile") from exc
     return path, bounds, rows, columns, nodata
+
+
+def _parse_imagery(entries: object) -> tuple[_ImageryEntry, ...]:
+    if not isinstance(entries, list):
+        raise RasterFormatError("Delivery result contains invalid PNOA imagery")
+    parsed: list[_ImageryEntry] = []
+    for entry in entries:
+        try:
+            if not isinstance(entry, dict) or not isinstance(entry["bounds"], dict):
+                raise TypeError
+            raw_bounds = entry["bounds"]
+            bounds = ProjectedBounds(
+                float(raw_bounds["west"]), float(raw_bounds["south"]),
+                float(raw_bounds["east"]), float(raw_bounds["north"]),
+                int(raw_bounds["epsg"]),
+            )
+            path = Path(entry["path"]).resolve()
+            if not path.is_file():
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RasterFormatError("Delivery result contains invalid PNOA imagery") from exc
+        parsed.append(_ImageryEntry(path, bounds))
+    return tuple(parsed)

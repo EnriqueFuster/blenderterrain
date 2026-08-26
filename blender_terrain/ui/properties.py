@@ -17,6 +17,9 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.delivery_summary = ""
     properties.delivery_result_path = ""
     properties.terrain_created = False
+    properties.import_id = ""
+    properties.imagery_packed = False
+    properties.imagery_size_mib = 0.0
 
 
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
@@ -98,3 +101,11 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     delivery_result_path: StringProperty(default="", options={"HIDDEN"})
     vertical_scale: FloatProperty(name="Vertical Scale", default=1.0, min=0.001, max=100.0)
     terrain_created: BoolProperty(default=False, options={"HIDDEN"})
+    import_id: StringProperty(default="", options={"HIDDEN"})
+    pack_imagery: BoolProperty(
+        name="Pack PNOA into .blend",
+        description="Embed PNOA images in the blend file when creating the terrain",
+        default=False,
+    )
+    imagery_packed: BoolProperty(default=False, options={"HIDDEN"})
+    imagery_size_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})

@@ -82,7 +82,8 @@ class FakeDeliveryImagery:
 
 def job(use_imagery: bool = False) -> DiscoveryJob:
     return DiscoveryJob(
-        job_id=str(uuid4()),
+        task_id=str(uuid4()),
+        import_id=str(uuid4()),
         bounds=BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
         product=DatasetProduct.MDT02,
         elevation_resolution_metres=10.0,
@@ -145,6 +146,8 @@ class DiscoveryWorkerTests(unittest.TestCase):
             self.assertEqual([event["sequence"] for event in events], [0, 1, 2])
             result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
             self.assertEqual(result["state"], "COMPLETE")
+            self.assertIn("task_id", result)
+            self.assertIn("import_id", result)
             self.assertEqual(result["items"][0]["sequential_id"], "100")
             self.assertEqual(result["estimated_download_mb"], 25.0)
             self.assertFalse((directory / "result.json.part").exists())
@@ -193,6 +196,8 @@ class DeliveryWorkerTests(unittest.TestCase):
             self.assertEqual(state, JobState.COMPLETE)
             self.assertEqual(len(result["elevation_paths"]), 1)
             self.assertEqual(len(result["imagery_paths"]), 1)
+            self.assertEqual(len(result["imagery"]), 1)
+            self.assertEqual(result["imagery"][0]["bounds"]["epsg"], 25830)
             self.assertEqual(len(result["processed_elevation"]), 1)
             self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
             self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])

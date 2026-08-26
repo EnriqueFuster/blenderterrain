@@ -65,7 +65,18 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
                 actions.label(text=properties.delivery_summary, icon="CHECKMARK")
             if properties.delivery_ready:
                 actions.prop(properties, "vertical_scale")
+                if properties.use_imagery:
+                    actions.prop(properties, "pack_imagery")
+                    actions.label(
+                        text=f"PNOA cache size: {properties.imagery_size_mib:.1f} MiB",
+                        icon="INFO",
+                    )
                 actions.operator("blender_terrain.create_terrain", icon="MESH_GRID")
+            if properties.terrain_created and properties.use_imagery:
+                if properties.imagery_packed:
+                    actions.label(text="PNOA images packed in .blend", icon="PACKAGE")
+                else:
+                    actions.operator("blender_terrain.pack_imagery", icon="PACKAGE")
             if properties.job_message and properties.job_state:
                 icon = "CHECKMARK" if properties.job_state == "COMPLETE" else "ERROR"
                 actions.label(text=properties.job_message, icon=icon)

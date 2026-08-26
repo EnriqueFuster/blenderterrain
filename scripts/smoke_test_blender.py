@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import json
+import struct
 import sys
+import zlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -43,7 +45,7 @@ def main() -> None:
         assert properties.imagery_summary.startswith("PNOA 0.25 m:")
         assert not properties.job_active
         assert not job_controller.timer_is_registered()
-        _smoke_terrain_operator(properties)
+        _smoke_terrain_operator(properties, use_imagery=_cycle == 0)
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)
         assert not hasattr(bpy.types.Scene, "blender_terrain_roi")
@@ -51,17 +53,22 @@ def main() -> None:
     print("BlenderTerrain register/unregister smoke test passed")
 
 
-def _smoke_terrain_operator(properties: object) -> None:
+def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         array_path = directory / "terrain.npy"
+        image_paths = (directory / "pnoa-west.png", directory / "pnoa-east.png")
         np.save(array_path, np.array([[1, 2], [3, 4]], dtype=np.float32))
+        if use_imagery:
+            for image_path in image_paths:
+                _write_png(image_path)
         result_path = directory / "result.json"
         result_path.write_text(
             json.dumps(
                 {
                     "schema_version": 1,
-                    "job_id": "12345678-test",
+                    "task_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "import_id": "12345678-1234-4234-8234-123456789abc",
                     "state": "COMPLETE",
                     "processed_elevation": [
                         {
@@ -78,23 +85,98 @@ def _smoke_terrain_operator(properties: object) -> None:
                             "nodata": -9999,
                         }
                     ],
+                    "imagery": [
+                        {
+                            "path": str(image_paths[0]),
+                            "bounds": {
+                                "west": 700000,
+                                "south": 4300000,
+                                "east": 700005,
+                                "north": 4300010,
+                                "epsg": 25830,
+                            },
+                        },
+                        {
+                            "path": str(image_paths[1]),
+                            "bounds": {
+                                "west": 700005,
+                                "south": 4300000,
+                                "east": 700010,
+                                "north": 4300010,
+                                "epsg": 25830,
+                            },
+                        }
+                    ] if use_imagery else [],
                 }
             ),
             encoding="utf-8",
         )
         properties.delivery_result_path = str(result_path)
+        properties.import_id = "12345678-1234-4234-8234-123456789abc"
         assert bpy.ops.blender_terrain.create_terrain() == {"FINISHED"}
-        terrain = bpy.data.objects["Terrain_000"]
+        terrain = bpy.data.objects["BT_12345678_Terrain_000"]
+        assert bpy.context.view_layer.objects.active == terrain
+        assert terrain.select_get()
         assert len(terrain.data.vertices) == 4
         assert len(terrain.data.polygons) == 1
         assert terrain["blender_terrain_epsg"] == 25830
+        assert len(terrain.data.materials) == (1 if use_imagery else 0)
+        if use_imagery:
+            assert terrain.data.materials[0].use_nodes
+            image_nodes = tuple(
+                node
+                for node in terrain.data.materials[0].node_tree.nodes
+                if node.bl_idname == "ShaderNodeTexImage"
+            )
+            assert len(image_nodes) == 2
+            assert all(node.image.colorspace_settings.name == "sRGB" for node in image_nodes)
+            mix_nodes = tuple(
+                node
+                for node in terrain.data.materials[0].node_tree.nodes
+                if node.bl_idname == "ShaderNodeMixRGB"
+            )
+            assert len(mix_nodes) == 1
+            assert mix_nodes[0].blend_type == "MIX"
+            assert mix_nodes[0].inputs[0].is_linked
+            assert bpy.ops.blender_terrain.pack_imagery() == {"FINISHED"}
+            assert all(node.image.packed_file is not None for node in image_nodes)
         collection = bpy.data.collections["BlenderTerrain_12345678"]
+        assert collection["blender_terrain_import_id"] == properties.import_id
+        assert any(
+            candidate.get("blender_terrain_import_id") == properties.import_id
+            for candidate in bpy.data.collections
+        )
+        materials = tuple(
+            material
+            for object_ in collection.objects
+            if isinstance(object_.data, bpy.types.Mesh)
+            for material in object_.data.materials
+        )
         for object_ in tuple(collection.objects):
             mesh = object_.data if isinstance(object_.data, bpy.types.Mesh) else None
             bpy.data.objects.remove(object_, do_unlink=True)
             if mesh is not None:
                 bpy.data.meshes.remove(mesh)
         bpy.data.collections.remove(collection)
+        for material in materials:
+            bpy.data.materials.remove(material)
+        if use_imagery:
+            for image_path in image_paths:
+                bpy.data.images.remove(bpy.data.images[image_path.name])
+
+
+def _write_png(path: Path) -> None:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        checksum = zlib.crc32(data, zlib.crc32(kind))
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", checksum)
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00"))
+        + chunk(b"IEND", b"")
+    )
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@ from ..errors import PlanningLimitExceeded
 from ..models import ProjectedBounds
 from .grid import align_projected_grid, tile_grid
 from .planning import MAX_IMAGERY_PIXELS, PLANNING_WMS_TILE_DIMENSION, ImportPlan
-from .projection import project_work_area_bounds
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,10 +39,8 @@ def plan_imagery_tiles(plan: ImportPlan) -> tuple[ImageryTileRequest, ...]:
     if plan.imagery is None:
         return ()
     requests: list[ImageryTileRequest] = []
-    for zone_index, work_area in enumerate(plan.work_areas):
-        grid = align_projected_grid(
-            project_work_area_bounds(work_area), plan.imagery.gsd_metres
-        )
+    for zone_index, elevation_grid in enumerate(plan.grids):
+        grid = align_projected_grid(elevation_grid.bounds, plan.imagery.gsd_metres)
         for tile in tile_grid(grid, PLANNING_WMS_TILE_DIMENSION):
             requests.append(
                 ImageryTileRequest(

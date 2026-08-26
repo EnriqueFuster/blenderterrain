@@ -13,6 +13,7 @@ from .ui.operators import (
     BLENDERTERRAIN_OT_create_terrain,
     BLENDERTERRAIN_OT_discover_sources,
     BLENDERTERRAIN_OT_download_data,
+    BLENDERTERRAIN_OT_pack_imagery,
     BLENDERTERRAIN_OT_validate_roi,
 )
 from .ui.panels import BLENDERTERRAIN_PT_main
@@ -26,6 +27,7 @@ _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_OT_discover_sources,
     BLENDERTERRAIN_OT_download_data,
     BLENDERTERRAIN_OT_create_terrain,
+    BLENDERTERRAIN_OT_pack_imagery,
     BLENDERTERRAIN_OT_cancel_discovery,
     BLENDERTERRAIN_PT_main,
 )

@@ -18,6 +18,11 @@ from .planning import ImageryEstimate, ImportPlan, create_import_plan
 from .projection import ProjectedPoint, project_wgs84_to_utm, project_work_area_bounds
 from .roi import BBoxWGS84
 from .territory import TerritoryGroup, classify_territory_envelope
+from .texture_mapping import (
+    TextureTransform,
+    bounds_fully_covered,
+    projected_texture_transform,
+)
 
 __all__ = [
     "DEFAULT_MAX_TILE_CELLS",
@@ -35,9 +40,11 @@ __all__ = [
     "ROIEstimate",
     "TerrainMeshGeometry",
     "TerritoryGroup",
+    "TextureTransform",
     "TransferProgress",
     "UTMWorkArea",
     "align_projected_grid",
+    "bounds_fully_covered",
     "build_terrain_mesh_geometry",
     "classify_territory_envelope",
     "create_import_plan",
@@ -48,6 +55,7 @@ __all__ = [
     "process_elevation_tiles",
     "project_wgs84_to_utm",
     "project_work_area_bounds",
+    "projected_texture_transform",
     "select_catalog_items",
     "split_bbox_by_utm_zone",
     "tile_grid",

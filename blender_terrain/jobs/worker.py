@@ -77,7 +77,8 @@ def run_discovery_job(
         check_cancelled()
         payload = {
             "schema_version": 1,
-            "job_id": job.job_id,
+            "task_id": job.task_id,
+            "import_id": job.import_id,
             "state": JobState.COMPLETE.value,
             "advertised_items": discovery.advertised_items,
             "ignored_items": discovery.ignored_items,
@@ -128,7 +129,8 @@ def run_delivery_job(
         cnig = cnig_factory()
         emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
         discovery = discover_sources(plan, cnig)
-        imagery_count = len(plan_imagery_tiles(plan))
+        imagery_requests = plan_imagery_tiles(plan)
+        imagery_count = len(imagery_requests)
         file_count = len(discovery.items) + imagery_count
 
         def report(transfer: TransferProgress) -> None:
@@ -161,7 +163,7 @@ def run_delivery_job(
             cancelled,
         )
         emit(JobState.PROCESSING_ELEVATION, 0.96, "Processing final elevation tiles")
-        processed_directory = job_path.parents[2] / "processed" / job.job_id
+        processed_directory = job_path.parents[2] / "processed" / job.task_id
         processed_tiles = elevation_processor(delivered.elevation_paths, plan)
         processed_payload: list[dict[str, object]] = []
         for processed in processed_tiles:
@@ -187,10 +189,23 @@ def run_delivery_job(
             )
         payload = {
             "schema_version": 1,
-            "job_id": job.job_id,
+            "task_id": job.task_id,
+            "import_id": job.import_id,
             "state": JobState.COMPLETE.value,
             "elevation_paths": [str(path) for path in delivered.elevation_paths],
             "imagery_paths": [str(path) for path in delivered.imagery_paths],
+            "imagery": [
+                {
+                    "path": str(path),
+                    "bounds": asdict(request.bounds),
+                    "width": request.width,
+                    "height": request.height,
+                    "gsd_metres": request.gsd_metres,
+                }
+                for path, request in zip(
+                    delivered.imagery_paths, imagery_requests, strict=True
+                )
+            ],
             "processed_elevation": processed_payload,
         }
         write_result(result_path, payload)

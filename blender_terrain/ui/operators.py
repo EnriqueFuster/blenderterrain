@@ -10,7 +10,12 @@ from ..core import BBoxWGS84, create_import_plan
 from ..errors import BlenderTerrainError
 from ..models import DatasetProduct
 from . import job_controller
-from .terrain_builder import create_terrain_objects
+from .terrain_builder import (
+    collection_for_import,
+    create_terrain_objects,
+    pack_collection_images,
+    terrain_import_exists,
+)
 
 
 class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
@@ -138,15 +143,77 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
     bl_label = "Create Terrain"
     bl_description = "Create one georeferenced mesh object per processed terrain tile"
 
+    def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
+        """Warn before deliberately creating another copy of the same import."""
+
+        import_id = context.scene.blender_terrain_roi.import_id
+        if import_id and terrain_import_exists(import_id):
+            return context.window_manager.invoke_confirm(
+                self,
+                event,
+                title="Duplicate Terrain Import",
+                message=(
+                    "This terrain already exists in the scene. "
+                    "Create another independent copy?"
+                ),
+                confirm_text="Create Copy",
+                icon="QUESTION",
+            )
+        return self.execute(context)
+
     def execute(self, context: bpy.types.Context) -> set[str]:
         properties = context.scene.blender_terrain_roi
         try:
             objects = create_terrain_objects(
-                context, Path(properties.delivery_result_path), properties.vertical_scale
+                context,
+                Path(properties.delivery_result_path),
+                properties.vertical_scale,
+                properties.pack_imagery,
             )
         except (BlenderTerrainError, OSError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
         properties.terrain_created = True
+        properties.imagery_packed = properties.pack_imagery and properties.use_imagery
         self.report({"INFO"}, f"Created {len(objects)} terrain object(s)")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_pack_imagery(bpy.types.Operator):
+    """Pack cached PNOA images used by the current terrain into the blend file."""
+
+    bl_idname = "blender_terrain.pack_imagery"
+    bl_label = "Pack PNOA Images"
+    bl_description = "Store copies of this terrain's external PNOA images inside the blend file"
+
+    def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
+        size = context.scene.blender_terrain_roi.imagery_size_mib
+        return context.window_manager.invoke_confirm(
+            self,
+            event,
+            title="Pack PNOA Images",
+            message=(
+                f"Embed approximately {size:.1f} MiB in the blend file? "
+                "The external cache files will be kept."
+            ),
+            confirm_text="Pack Images",
+            icon="PACKAGE",
+        )
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        collection = collection_for_import(properties.import_id)
+        if collection is None:
+            self.report({"ERROR"}, "The current terrain import is not present in the scene")
+            return {"CANCELLED"}
+        try:
+            images = pack_collection_images(collection)
+        except RuntimeError as exc:
+            self.report({"ERROR"}, f"Cannot pack PNOA images: {exc}")
+            return {"CANCELLED"}
+        if not images:
+            self.report({"WARNING"}, "This terrain has no PNOA images to pack")
+            return {"CANCELLED"}
+        properties.imagery_packed = True
+        self.report({"INFO"}, f"Packed {len(images)} PNOA image(s) into the blend file")
         return {"FINISHED"}

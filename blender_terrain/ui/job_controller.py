@@ -76,10 +76,14 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
     if not bpy.app.online_access:
         raise UserInputError("Blender online access is disabled in Preferences")
     cache_directory = _cache_directory(context)
-    job_id = str(uuid4())
-    job_directory = cache_directory / "jobs" / job_id
+    task_id = str(uuid4())
+    if not properties.import_id:
+        properties.import_id = str(uuid4())
+    job_directory = cache_directory / "jobs" / task_id
     job_path = job_directory / "job.json"
-    write_discovery_job(job_path, _job_from_properties(job_id, properties))
+    write_discovery_job(
+        job_path, _job_from_properties(task_id, properties.import_id, properties)
+    )
 
     worker_entry = Path(__file__).resolve().parents[1] / "jobs" / "worker_entry.py"
     command = [
@@ -228,6 +232,10 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
             terrain_count = len(result.get("processed_elevation", []))
+            imagery_paths = tuple(Path(path) for path in result.get("imagery_paths", []))
+            properties.imagery_size_mib = sum(
+                path.stat().st_size for path in imagery_paths if path.is_file()
+            ) / (1024 * 1024)
             properties.delivery_ready = True
             properties.delivery_result_path = str(active.directory / "result.json")
             properties.delivery_summary = (
@@ -255,6 +263,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         else:
             properties.delivery_ready = False
             properties.delivery_summary = ""
+            properties.imagery_size_mib = 0.0
         properties.job_message = str(result.get("error", f"Discovery ended as {state}"))
 
 
@@ -272,10 +281,11 @@ def _cache_directory(context: bpy.types.Context) -> Path:
     return path
 
 
-def _job_from_properties(job_id: str, properties: Any) -> DiscoveryJob:
+def _job_from_properties(task_id: str, import_id: str, properties: Any) -> DiscoveryJob:
     try:
         return DiscoveryJob(
-            job_id=job_id,
+            task_id=task_id,
+            import_id=import_id,
             bounds=BBoxWGS84(
                 properties.west,
                 properties.south,

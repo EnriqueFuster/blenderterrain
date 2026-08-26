@@ -12,7 +12,7 @@ from ..core.roi import BBoxWGS84
 from ..errors import JobFormatError
 from ..models import DatasetProduct
 
-JOB_SCHEMA_VERSION = 1
+JOB_SCHEMA_VERSION = 2
 
 
 class JobState(StrEnum):
@@ -35,7 +35,8 @@ class JobState(StrEnum):
 class DiscoveryJob:
     """Inputs needed to reconstruct an offline plan and discover CNIG sources."""
 
-    job_id: str
+    task_id: str
+    import_id: str
     bounds: BBoxWGS84
     product: DatasetProduct
     elevation_resolution_metres: float | None
@@ -44,16 +45,18 @@ class DiscoveryJob:
 
     def __post_init__(self) -> None:
         try:
-            UUID(self.job_id)
+            UUID(self.task_id)
+            UUID(self.import_id)
         except ValueError as exc:
-            raise JobFormatError("Job identifier must be a UUID") from exc
+            raise JobFormatError("Task and import identifiers must be UUIDs") from exc
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize using only JSON-compatible stable fields."""
 
         return {
             "schema_version": JOB_SCHEMA_VERSION,
-            "job_id": self.job_id,
+            "task_id": self.task_id,
+            "import_id": self.import_id,
             "bounds": asdict(self.bounds),
             "product": self.product.value,
             "elevation_resolution_metres": self.elevation_resolution_metres,
@@ -85,13 +88,15 @@ class DiscoveryJob:
             use_imagery = payload["use_imagery"]
             if not isinstance(use_imagery, bool):
                 raise TypeError
-            job_id = payload["job_id"]
-            if not isinstance(job_id, str):
+            task_id = payload["task_id"]
+            import_id = payload["import_id"]
+            if not isinstance(task_id, str) or not isinstance(import_id, str):
                 raise TypeError
         except (KeyError, TypeError, ValueError) as exc:
             raise JobFormatError("Job JSON contains invalid fields") from exc
         return cls(
-            job_id=job_id,
+            task_id=task_id,
+            import_id=import_id,
             bounds=bounds,
             product=product,
             elevation_resolution_metres=elevation_resolution,
