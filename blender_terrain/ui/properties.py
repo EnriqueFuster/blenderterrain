@@ -5,6 +5,23 @@ from __future__ import annotations
 import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
+_IMPORT_ITEMS_CACHE: list[tuple[str, str, str]] = []
+
+
+def _terrain_import_items(
+    properties: object, context: bpy.types.Context
+) -> list[tuple[str, str, str]]:
+    from .terrain_controls import import_items
+
+    _IMPORT_ITEMS_CACHE[:] = import_items()
+    return _IMPORT_ITEMS_CACHE
+
+
+def _active_import_changed(properties: object, context: bpy.types.Context) -> None:
+    from .terrain_controls import load_import_settings
+
+    load_import_settings(properties)
+
 
 def _invalidate_validation(properties: object, context: bpy.types.Context) -> None:
     """Mark estimates stale whenever an input option changes."""
@@ -112,3 +129,28 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     imagery_packed: BoolProperty(default=False, options={"HIDDEN"})
     imagery_available: BoolProperty(default=False, options={"HIDDEN"})
     imagery_size_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
+    active_import_id: EnumProperty(
+        name="Terrain Import",
+        items=_terrain_import_items,
+        update=_active_import_changed,
+    )
+    active_import_representation: StringProperty(default="", options={"HIDDEN"})
+    terrain_vertical_scale: FloatProperty(
+        name="Vertical Scale", default=1.0, min=0.001, max=100.0
+    )
+    terrain_subdivision_viewport: IntProperty(
+        name="Viewport Subdivision", default=0, min=0, max=6
+    )
+    terrain_subdivision_render: IntProperty(
+        name="Render Subdivision", default=0, min=0, max=8
+    )
+    terrain_displacement_enabled: BoolProperty(name="Enable Displacement", default=True)
+    selected_strength_multiplier: FloatProperty(
+        name="Strength Multiplier", default=1.0, min=0.0, max=10.0
+    )
+    selected_subdivision_viewport: IntProperty(
+        name="Selected Viewport", default=0, min=0, max=6
+    )
+    selected_subdivision_render: IntProperty(
+        name="Selected Render", default=0, min=0, max=8
+    )

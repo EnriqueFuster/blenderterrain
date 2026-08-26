@@ -16,6 +16,12 @@ from .terrain_builder import (
     pack_collection_images,
     terrain_import_exists,
 )
+from .terrain_controls import (
+    apply_global_settings,
+    apply_selected_settings,
+    restore_selected_settings,
+    select_import_objects,
+)
 
 
 class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
@@ -174,10 +180,85 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
         properties.terrain_created = True
+        properties.active_import_id = properties.import_id
         properties.imagery_packed = (
             properties.pack_imagery and properties.imagery_available
         )
         self.report({"INFO"}, f"Created {len(objects)} terrain object(s)")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_select_import_objects(bpy.types.Operator):
+    """Select all mesh objects belonging to the active terrain import."""
+
+    bl_idname = "blender_terrain.select_import_objects"
+    bl_label = "Select Terrain Objects"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            count = select_import_objects(context, properties.active_import_id)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Selected {count} terrain object(s)")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_apply_import_settings(bpy.types.Operator):
+    """Apply shared displacement settings to the complete active import."""
+
+    bl_idname = "blender_terrain.apply_import_settings"
+    bl_label = "Apply to Entire Terrain"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            count = apply_global_settings(properties)
+        except (BlenderTerrainError, ValueError) as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Updated {count} terrain object(s)")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_apply_selected_settings(bpy.types.Operator):
+    """Apply local displacement overrides to selected terrain objects."""
+
+    bl_idname = "blender_terrain.apply_selected_settings"
+    bl_label = "Apply to Selected Objects"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            count, seams = apply_selected_settings(context, properties)
+        except (BlenderTerrainError, ValueError) as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        if seams:
+            self.report(
+                {"WARNING"},
+                f"Updated {count} object(s); {seams} shared edge(s) may be discontinuous",
+            )
+        else:
+            self.report({"INFO"}, f"Updated {count} terrain object(s)")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_restore_selected_settings(bpy.types.Operator):
+    """Restore selected terrain objects to their import-wide settings."""
+
+    bl_idname = "blender_terrain.restore_selected_settings"
+    bl_label = "Restore Selected to Global"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            count = restore_selected_settings(context, properties)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Restored {count} terrain object(s)")
         return {"FINISHED"}
 
 

@@ -174,6 +174,28 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert terrain.modifiers[0].subdivision_type == "SIMPLE"
         assert terrain.modifiers[1].texture_coords == "UV"
         assert terrain.modifiers[1].uv_layer == "TerrainUV"
+        assert properties.active_import_id == properties.import_id
+        assert properties.active_import_representation == "DISPLACEMENT"
+        properties.terrain_vertical_scale = 1.5
+        properties.terrain_subdivision_viewport = 0
+        properties.terrain_subdivision_render = 2
+        properties.terrain_displacement_enabled = True
+        assert bpy.ops.blender_terrain.apply_import_settings() == {"FINISHED"}
+        assert terrain.scale.z == 1.5
+        assert terrain.modifiers[0].levels == 0
+        assert terrain.modifiers[0].render_levels == 2
+        properties.selected_strength_multiplier = 1.25
+        properties.selected_subdivision_viewport = 1
+        properties.selected_subdivision_render = 3
+        assert bpy.ops.blender_terrain.apply_selected_settings() == {"FINISHED"}
+        assert terrain["blender_terrain_strength_multiplier"] == 1.25
+        assert terrain.modifiers[1].strength == 3.75
+        assert terrain.modifiers[0].levels == 1
+        assert bpy.ops.blender_terrain.restore_selected_settings() == {"FINISHED"}
+        assert terrain["blender_terrain_strength_multiplier"] == 1.0
+        assert terrain.modifiers[1].strength == 3.0
+        assert terrain.modifiers[0].levels == 0
+        assert bpy.ops.blender_terrain.select_import_objects() == {"FINISHED"}
         _assert_evaluated_elevation(terrain)
         assert len(terrain.data.materials) == (1 if use_imagery else 0)
         if use_imagery:
@@ -200,7 +222,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert collection["blender_terrain_product"] == "MDT02"
         assert collection["blender_terrain_schema_version"] == 2
         assert collection["blender_terrain_representation"] == "DISPLACEMENT"
-        assert collection["blender_terrain_vertical_scale"] == 1.0
+        assert collection["blender_terrain_vertical_scale"] == 1.5
         assert collection["blender_terrain_elevation_minimum"] == 1.0
         assert collection["blender_terrain_elevation_maximum"] == 4.0
         assert collection["blender_terrain_source"].startswith(
@@ -217,6 +239,8 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             terrain = bpy.data.objects["BT_12345678_Terrain_000"]
             _assert_evaluated_elevation(terrain)
             assert terrain.modifiers[1].texture.image.packed_file is not None
+            properties = bpy.context.scene.blender_terrain_roi
+            assert properties.active_import_id == "12345678-1234-4234-8234-123456789abc"
             collection = bpy.data.collections["BlenderTerrain_12345678"]
         materials = tuple(
             material

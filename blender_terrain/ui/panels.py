@@ -94,6 +94,38 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
             imported.label(text="Source: IGN-CNIG")
             imported.label(text="Data terms: CNIG provider policy")
 
+        terrain_imports = tuple(
+            collection
+            for collection in bpy.data.collections
+            if isinstance(collection.get("blender_terrain_import_id"), str)
+        )
+        if terrain_imports:
+            controls = self.layout.box()
+            controls.label(text="Imported Terrain", icon="MOD_DISPLACE")
+            controls.prop(properties, "active_import_id")
+            controls.operator("blender_terrain.select_import_objects", icon="RESTRICT_SELECT_OFF")
+            controls.label(
+                text=f"Representation: {properties.active_import_representation or 'Unknown'}"
+            )
+            editable = controls.column()
+            editable.enabled = properties.active_import_representation == "DISPLACEMENT"
+            editable.label(text="Whole Import")
+            editable.prop(properties, "terrain_vertical_scale")
+            editable.prop(properties, "terrain_subdivision_viewport")
+            editable.prop(properties, "terrain_subdivision_render")
+            editable.prop(properties, "terrain_displacement_enabled")
+            editable.operator("blender_terrain.apply_import_settings")
+            editable.separator()
+            editable.label(text="Selected Objects")
+            editable.prop(properties, "selected_strength_multiplier")
+            editable.prop(properties, "selected_subdivision_viewport")
+            editable.prop(properties, "selected_subdivision_render")
+            row = editable.row(align=True)
+            row.operator("blender_terrain.apply_selected_settings")
+            row.operator("blender_terrain.restore_selected_settings")
+            if properties.active_import_representation == "BAKED":
+                controls.label(text="Legacy baked terrain: controls unavailable", icon="INFO")
+
         result = self.layout.box()
         result.label(text=properties.validation_message)
         if properties.is_valid:
