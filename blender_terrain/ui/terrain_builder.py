@@ -265,7 +265,7 @@ def _read_result(path: Path) -> dict[str, Any]:
     if (
         not isinstance(payload, dict)
         or payload.get("schema_version") != 2
-        or payload.get("state") != "COMPLETE"
+        or payload.get("state") not in {"COMPLETE", "COMPLETE_WITH_WARNINGS"}
     ):
         raise RasterFormatError("Delivery result is not complete")
     try:

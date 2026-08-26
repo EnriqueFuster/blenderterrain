@@ -80,6 +80,11 @@ class FakeDeliveryImagery:
         return destination
 
 
+class OfflineDeliveryImagery:
+    def download_png(self, *args, **kwargs) -> Path:
+        raise ProviderUnavailableError("PNOA test outage")
+
+
 def job(use_imagery: bool = False) -> DiscoveryJob:
     return DiscoveryJob(
         task_id=str(uuid4()),
@@ -220,6 +225,26 @@ class DeliveryWorkerTests(unittest.TestCase):
             state = run_delivery_job(job_path, cnig_factory=FakeDeliveryCNIG)
 
             self.assertEqual(state, JobState.CANCELLED)
+
+    def test_completes_processed_terrain_with_warning_when_pnoa_fails(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            job_path = Path(temporary_directory) / "jobs" / str(uuid4()) / "job.json"
+            write_discovery_job(job_path, job(use_imagery=True))
+
+            state = run_delivery_job(
+                job_path,
+                cnig_factory=FakeDeliveryCNIG,
+                imagery_factory=OfflineDeliveryImagery,
+                elevation_processor=_fake_elevation_processor,
+            )
+
+            result = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
+            self.assertEqual(state, JobState.COMPLETE_WITH_WARNINGS)
+            self.assertEqual(result["state"], "COMPLETE_WITH_WARNINGS")
+            self.assertEqual(result["imagery"], [])
+            self.assertEqual(result["imagery_paths"], [])
+            self.assertEqual(len(result["processed_elevation"]), 1)
+            self.assertIn("PNOA test outage", result["warnings"][0])
 
 
 def _fake_elevation_processor(

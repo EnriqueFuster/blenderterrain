@@ -188,11 +188,15 @@ def run_delivery_job(
                     "maximum_overlap_difference": processed.maximum_overlap_difference,
                 }
             )
+        terminal_state = (
+            JobState.COMPLETE_WITH_WARNINGS if delivered.warnings else JobState.COMPLETE
+        )
         payload = {
             "schema_version": RESULT_SCHEMA_VERSION,
             "task_id": job.task_id,
             "import_id": job.import_id,
-            "state": JobState.COMPLETE.value,
+            "state": terminal_state.value,
+            "warnings": list(delivered.warnings),
             "request": {
                 "bounds_wgs84": asdict(job.bounds),
                 "product": job.product.value,
@@ -232,20 +236,24 @@ def run_delivery_job(
                     "gsd_metres": request.gsd_metres,
                 }
                 for path, request in zip(
-                    delivered.imagery_paths, imagery_requests, strict=True
+                    delivered.imagery_paths, imagery_requests, strict=False
                 )
             ],
             "processed_elevation": processed_payload,
         }
         write_result(result_path, payload)
         emit(
-            JobState.COMPLETE,
+            terminal_state,
             1.0,
-            f"Prepared {len(delivered.elevation_paths)} elevation and "
-            f"{len(delivered.imagery_paths)} imagery and "
-            f"{len(processed_tiles)} processed terrain tile(s)",
+            (
+                delivered.warnings[0]
+                if delivered.warnings
+                else f"Prepared {len(delivered.elevation_paths)} elevation and "
+                f"{len(delivered.imagery_paths)} imagery and "
+                f"{len(processed_tiles)} processed terrain tile(s)"
+            ),
         )
-        return JobState.COMPLETE
+        return terminal_state
     except JobCancelled as exc:
         return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
     except NoCoverageError as exc:

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..errors import JobCancelled
+from ..errors import BlenderTerrainError, JobCancelled
 from ..io.png_validation import validate_png
 from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, ProjectedBounds
@@ -36,6 +36,7 @@ class DeliveryResult:
 
     elevation_paths: tuple[Path, ...]
     imagery_paths: tuple[Path, ...]
+    warnings: tuple[str, ...] = ()
 
 
 class ElevationDownloader(Protocol):
@@ -91,28 +92,35 @@ def deliver_plan_sources(
             elevation_client.download_item(item, elevation_directory, progress_callback=callback)
         )
 
-    for index, request in enumerate(imagery_requests):
-        _check_cancelled(cancellation_requested)
-        destination = imagery_directory / request.filename
-        if destination.is_file():
-            validate_png(destination, request.width, request.height)
-            imagery_paths.append(destination)
-            continue
-        callback = _file_progress(
-            "imagery", index, len(imagery_requests), request.filename, progress_callback
-        )
-        imagery_paths.append(
-            imagery_client.download_png(
-                request.bounds,
-                request.width,
-                request.height,
-                imagery_directory,
-                request.filename,
-                progress_callback=callback,
+    warnings: list[str] = []
+    try:
+        for index, request in enumerate(imagery_requests):
+            _check_cancelled(cancellation_requested)
+            destination = imagery_directory / request.filename
+            if destination.is_file():
+                validate_png(destination, request.width, request.height)
+                imagery_paths.append(destination)
+                continue
+            callback = _file_progress(
+                "imagery", index, len(imagery_requests), request.filename, progress_callback
             )
-        )
+            imagery_paths.append(
+                imagery_client.download_png(
+                    request.bounds,
+                    request.width,
+                    request.height,
+                    imagery_directory,
+                    request.filename,
+                    progress_callback=callback,
+                )
+            )
+    except JobCancelled:
+        raise
+    except (BlenderTerrainError, ValueError) as exc:
+        imagery_paths.clear()
+        warnings.append(f"PNOA imagery could not be prepared: {exc}")
     _check_cancelled(cancellation_requested)
-    return DeliveryResult(tuple(elevation_paths), tuple(imagery_paths))
+    return DeliveryResult(tuple(elevation_paths), tuple(imagery_paths), tuple(warnings))
 
 
 def _file_progress(

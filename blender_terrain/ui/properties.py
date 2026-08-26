@@ -19,6 +19,7 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.terrain_created = False
     properties.import_id = ""
     properties.imagery_packed = False
+    properties.imagery_available = False
     properties.imagery_size_mib = 0.0
 
 
@@ -108,4 +109,5 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         default=False,
     )
     imagery_packed: BoolProperty(default=False, options={"HIDDEN"})
+    imagery_available: BoolProperty(default=False, options={"HIDDEN"})
     imagery_size_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})

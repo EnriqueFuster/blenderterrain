@@ -174,7 +174,9 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
         properties.terrain_created = True
-        properties.imagery_packed = properties.pack_imagery and properties.use_imagery
+        properties.imagery_packed = (
+            properties.pack_imagery and properties.imagery_available
+        )
         self.report({"INFO"}, f"Created {len(objects)} terrain object(s)")
         return {"FINISHED"}
 

@@ -20,6 +20,7 @@ from ..models import DatasetProduct
 _POLL_INTERVAL_SECONDS = 0.25
 _TERMINAL_STATES = {
     JobState.COMPLETE.value,
+    JobState.COMPLETE_WITH_WARNINGS.value,
     JobState.CANCELLED.value,
     JobState.NO_COVERAGE.value,
     JobState.PROVIDER_CHANGED.value,
@@ -227,7 +228,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
     properties.job_active = False
     properties.job_state = state
     properties.job_progress = 1.0
-    if state == JobState.COMPLETE.value:
+    if state in {JobState.COMPLETE.value, JobState.COMPLETE_WITH_WARNINGS.value}:
         if active.mode == "delivery":
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
@@ -236,13 +237,19 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
             properties.imagery_size_mib = sum(
                 path.stat().st_size for path in imagery_paths if path.is_file()
             ) / (1024 * 1024)
+            properties.imagery_available = imagery_count > 0
             properties.delivery_ready = True
             properties.delivery_result_path = str(active.directory / "result.json")
             properties.delivery_summary = (
                 f"Prepared {elevation_count} elevation, {imagery_count} imagery and "
                 f"{terrain_count} terrain tile(s)"
             )
-            properties.job_message = "Data download completed"
+            warnings = result.get("warnings", [])
+            properties.job_message = (
+                str(warnings[0])
+                if state == JobState.COMPLETE_WITH_WARNINGS.value and warnings
+                else "Data download completed"
+            )
             return
         count = len(result.get("items", []))
         estimated_mb = result.get("estimated_download_mb")
@@ -263,6 +270,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         else:
             properties.delivery_ready = False
             properties.delivery_summary = ""
+            properties.imagery_available = False
             properties.imagery_size_mib = 0.0
         properties.job_message = str(result.get("error", f"Discovery ended as {state}"))
 
