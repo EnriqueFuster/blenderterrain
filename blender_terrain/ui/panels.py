@@ -81,6 +81,13 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
                 icon = "CHECKMARK" if properties.job_state == "COMPLETE" else "ERROR"
                 actions.label(text=properties.job_message, icon=icon)
 
+        if properties.terrain_created:
+            imported = self.layout.box()
+            imported.label(text="Current Import", icon="OUTLINER_COLLECTION")
+            imported.label(text=f"ID: {properties.import_id[:8]}")
+            imported.label(text="Source: IGN-CNIG")
+            imported.label(text="Data terms: CNIG provider policy")
+
         result = self.layout.box()
         result.label(text=properties.validation_message)
         if properties.is_valid:

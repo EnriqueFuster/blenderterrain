@@ -40,6 +40,7 @@ def create_terrain_objects(
         raise RasterFormatError("Delivery result contains no processed elevation tiles")
     parsed = tuple(_parse_entry(entry) for entry in entries)
     imagery = _parse_imagery(result.get("imagery", []))
+    request, provenance, sources, crs = _parse_manifest(result)
     origins = {
         epsg: (
             min(bounds.west for _, bounds, *_ in parsed if bounds.epsg == epsg),
@@ -53,6 +54,30 @@ def create_terrain_objects(
     collection = bpy.data.collections.new(f"BlenderTerrain_{short_id}")
     collection["blender_terrain_import_id"] = import_id
     collection["blender_terrain_task_id"] = task_id
+    collection["blender_terrain_product"] = request["product"]
+    collection["blender_terrain_elevation_resolution_metres"] = request[
+        "elevation_resolution_metres"
+    ]
+    collection["blender_terrain_use_imagery"] = request["use_imagery"]
+    if request["imagery_gsd_metres"] is not None:
+        collection["blender_terrain_imagery_gsd_metres"] = request[
+            "imagery_gsd_metres"
+        ]
+    collection["blender_terrain_roi_wgs84"] = json.dumps(
+        request["bounds_wgs84"], sort_keys=True
+    )
+    collection["blender_terrain_crs"] = json.dumps(crs, ensure_ascii=False, sort_keys=True)
+    collection["blender_terrain_sources"] = json.dumps(
+        sources, ensure_ascii=False, sort_keys=True
+    )
+    collection["blender_terrain_source"] = provenance["source"]
+    collection["blender_terrain_attribution"] = (
+        "Source: Instituto Geográfico Nacional de España (IGN-CNIG)"
+    )
+    collection["blender_terrain_data_policy_url"] = provenance["data_policy_url"]
+    collection["blender_terrain_data_license"] = provenance["license"]
+    collection["blender_terrain_retrieved_at_utc"] = provenance["retrieved_at_utc"]
+    collection["blender_terrain_vertical_scale"] = vertical_scale
     context.scene.collection.children.link(collection)
     parents: dict[int, bpy.types.Object] = {}
     objects: list[bpy.types.Object] = []
@@ -237,7 +262,11 @@ def _read_result(path: Path) -> dict[str, Any]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RasterFormatError("Cannot read the completed delivery result") from exc
-    if not isinstance(payload, dict) or payload.get("state") != "COMPLETE":
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != 2
+        or payload.get("state") != "COMPLETE"
+    ):
         raise RasterFormatError("Delivery result is not complete")
     try:
         if not isinstance(payload["import_id"], str) or not isinstance(
@@ -249,6 +278,36 @@ def _read_result(path: Path) -> dict[str, Any]:
     except (KeyError, TypeError, ValueError) as exc:
         raise RasterFormatError("Delivery result has invalid task or import identity") from exc
     return payload
+
+
+def _parse_manifest(
+    result: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], list[Any], list[Any]]:
+    try:
+        request = result["request"]
+        provenance = result["provenance"]
+        sources = result["sources"]
+        crs = result["crs"]
+        if (
+            not isinstance(request, dict)
+            or not isinstance(provenance, dict)
+            or not isinstance(sources, list)
+            or not sources
+            or not isinstance(crs, list)
+            or not crs
+            or not isinstance(request["bounds_wgs84"], dict)
+            or not isinstance(request["product"], str)
+            or not isinstance(request["elevation_resolution_metres"], (int, float))
+            or not isinstance(request["use_imagery"], bool)
+            or not isinstance(provenance["source"], str)
+            or not isinstance(provenance["data_policy_url"], str)
+            or not isinstance(provenance["license"], str)
+            or not isinstance(provenance["retrieved_at_utc"], str)
+        ):
+            raise TypeError
+    except (KeyError, TypeError) as exc:
+        raise RasterFormatError("Delivery result has incomplete provenance") from exc
+    return request, provenance, sources, crs
 
 
 def _parse_entry(entry: object) -> tuple[Path, ProjectedBounds, int, int, float]:

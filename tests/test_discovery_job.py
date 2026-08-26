@@ -126,6 +126,7 @@ class DiscoveryWorkerTests(unittest.TestCase):
             result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
             self.assertEqual(state, JobState.CANCELLED)
             self.assertEqual(result["state"], "CANCELLED")
+
     def test_writes_progress_and_atomic_terminal_result(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
@@ -145,6 +146,7 @@ class DiscoveryWorkerTests(unittest.TestCase):
             )
             self.assertEqual([event["sequence"] for event in events], [0, 1, 2])
             result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["schema_version"], 2)
             self.assertEqual(result["state"], "COMPLETE")
             self.assertIn("task_id", result)
             self.assertIn("import_id", result)
@@ -199,6 +201,12 @@ class DeliveryWorkerTests(unittest.TestCase):
             self.assertEqual(len(result["imagery"]), 1)
             self.assertEqual(result["imagery"][0]["bounds"]["epsg"], 25830)
             self.assertEqual(len(result["processed_elevation"]), 1)
+            self.assertEqual(result["request"]["product"], "MDT02")
+            self.assertEqual(result["request"]["imagery_gsd_metres"], 5.0)
+            self.assertEqual(result["crs"][0]["epsg"], 25830)
+            self.assertEqual(result["sources"][0]["sequential_id"], "100")
+            self.assertIn("IGN-CNIG", result["provenance"]["source"])
+            self.assertIn("politica-datos", result["provenance"]["data_policy_url"])
             self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
             self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
             self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])

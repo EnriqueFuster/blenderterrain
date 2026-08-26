@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..core import (
@@ -28,9 +29,9 @@ from ..errors import (
     UserInputError,
 )
 from ..io.elevation_output import write_elevation_array
-from ..providers.cnig_portal import CNIGPortalClient
-from ..providers.pnoa_wms import PNOAWMSClient
-from .models import DiscoveryJob, JobState, ProgressEvent
+from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
+from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
+from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
 from .storage import (
     append_progress_event,
     is_cancellation_requested,
@@ -76,7 +77,7 @@ def run_discovery_job(
         discovery = discover_sources(plan, provider_factory())
         check_cancelled()
         payload = {
-            "schema_version": 1,
+            "schema_version": RESULT_SCHEMA_VERSION,
             "task_id": job.task_id,
             "import_id": job.import_id,
             "state": JobState.COMPLETE.value,
@@ -188,10 +189,38 @@ def run_delivery_job(
                 }
             )
         payload = {
-            "schema_version": 1,
+            "schema_version": RESULT_SCHEMA_VERSION,
             "task_id": job.task_id,
             "import_id": job.import_id,
             "state": JobState.COMPLETE.value,
+            "request": {
+                "bounds_wgs84": asdict(job.bounds),
+                "product": job.product.value,
+                "elevation_resolution_metres": plan.elevation_resolution_metres,
+                "use_imagery": job.use_imagery,
+                "imagery_gsd_metres": (
+                    None if plan.imagery is None else plan.imagery.gsd_metres
+                ),
+            },
+            "crs": [asdict(work_area.crs) for work_area in plan.work_areas],
+            "sources": [
+                {
+                    **asdict(item),
+                    "detail_url": f"{BASE_URL}detalleArchivo?sec={item.sequential_id}",
+                }
+                for item in discovery.items
+            ],
+            "provenance": {
+                "source": "Instituto Geográfico Nacional de España (IGN-CNIG)",
+                "portal_url": "https://centrodedescargas.cnig.es/",
+                "data_policy_url": (
+                    "https://centrodedescargas.cnig.es/CentroDescargas/politica-datos"
+                ),
+                "license": "CC BY 4.0-compatible IGN-CNIG data terms",
+                "retrieved_at_utc": datetime.now(UTC).isoformat(),
+                "pnoa_wms_url": WMS_URL if job.use_imagery else None,
+                "pnoa_layer": PNOA_LAYER if job.use_imagery else None,
+            },
             "elevation_paths": [str(path) for path in delivered.elevation_paths],
             "imagery_paths": [str(path) for path in delivered.imagery_paths],
             "imagery": [
@@ -253,7 +282,7 @@ def _finish_error(
 ) -> JobState:
     write_result(
         result_path,
-        {"schema_version": 1, "state": state.value, "error": message},
+        {"schema_version": RESULT_SCHEMA_VERSION, "state": state.value, "error": message},
     )
     emit(state, 1.0, message)
     return state

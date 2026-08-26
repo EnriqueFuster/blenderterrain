@@ -11,29 +11,26 @@ abstractions.
 
 ## Current status
 
-The portable technical validation outside Blender is complete. The installable
-Blender 4.5 extension now accepts a manual WGS84 bounding box, DTM/DSM choice,
-terrain resolution, and optional PNOA settings. `Validate ROI` builds an offline
-UTM grid plan with sample, terrain-object, texture, and memory estimates. Data
-discovery and terrain construction are not connected to the panel yet.
+The Blender 4.5 extension implements the first end-to-end workflow: enter a
+manual WGS84 bounding box, choose MDT02 or MDS02 and an output resolution,
+optionally request PNOA imagery, discover and download the official sources,
+process bounded terrain tiles, and create georeferenced Blender mesh objects and
+materials. Network and raster work runs in a background Blender process with
+observable states and cooperative cancellation.
 
-The current foundation has verified:
+The current implementation includes:
 
-1. reproducible MDT02, MDS02, and PNOA catalog discovery without browser automation;
-2. complete first-party CNIG downloads for all three products;
-3. bounded elevation-window reading plus CRS, transform, and bounds parsing;
-4. exact numerical and spatial agreement with Rasterio as a development oracle;
-5. projected PNOA WMS texture downloads with validated dimensions and orientation;
-6. bounded elevation mosaics across aligned CNIG source files.
+1. paginated MDT02 and MDS02 discovery without browser automation;
+2. validated, atomic CNIG TIFF downloads and cache reuse;
+3. bounded BigTIFF reading, mosaicking, NoData handling and bilinear resampling;
+4. deterministic terrain tiling with identical shared-edge elevations;
+5. PNOA WMS textures in the supported Spanish ETRS89 UTM zones;
+6. local Blender coordinates with CRS, ROI, source and attribution metadata;
+7. optional packing of PNOA images into the `.blend` file.
 
-The raster reader matched Rasterio exactly for valid Float32 values and NoData.
-The projected WMS control image matched its source orthophoto pixel for pixel.
-Both required architecture decisions are accepted, and a live bounded-download
-test confirmed that failed CNIG transfers leave no partial file behind.
-
-The WMS is the intended default for ROI textures because a single PNOA MTN25
-source image can approach 1 GB. The current WMS implementation is deliberately
-limited to the control-tested EPSG:25830 axis order.
+The first MVP is still under validation. Interactive ROI selection, user-defined
+terrain subdivision, non-destructive displacement controls, job recovery, and
+large-shader performance tuning remain future work.
 
 No elevation or imagery data is redistributed in this repository.
 
@@ -55,9 +52,11 @@ blender --command extension build --output-dir .artifacts/extension-build
 ```
 
 Install the resulting ZIP from Blender through **Edit > Preferences > Get
-Extensions > Install from Disk**. The empty **Terrain** panel appears in the 3D
-View sidebar. This is currently an integration shell, not a usable terrain
-importer.
+Extensions > Install from Disk**. Enable Blender online access, select a cache
+directory in the extension preferences, and open **3D View > Sidebar > Terrain**.
+Run `Validate ROI`, `Discover Sources`, `Download Data`, and `Create Terrain` in
+that order. A compact manual feedback test is available in
+[`docs/manual-testing.md`](docs/manual-testing.md).
 
 ## Development
 
@@ -70,7 +69,7 @@ python -m unittest discover -s tests -v
 Optional development tools are declared in `pyproject.toml`. Online tests will
 always be opt-in and must never perform large downloads by default.
 
-The Phase 0 read-only catalog experiment is explicitly enabled with:
+The read-only catalog diagnostic is explicitly enabled with:
 
 ```text
 python -m scripts.discover_cnig --product MDT02 --online

@@ -13,6 +13,7 @@ from ..errors import JobFormatError
 from ..models import DatasetProduct
 
 JOB_SCHEMA_VERSION = 2
+RESULT_SCHEMA_VERSION = 2
 
 
 class JobState(StrEnum):

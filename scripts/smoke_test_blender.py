@@ -66,10 +66,46 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         result_path.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "task_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     "import_id": "12345678-1234-4234-8234-123456789abc",
                     "state": "COMPLETE",
+                    "request": {
+                        "bounds_wgs84": {
+                            "west": -0.381,
+                            "south": 39.469,
+                            "east": -0.379,
+                            "north": 39.471,
+                        },
+                        "product": "MDT02",
+                        "elevation_resolution_metres": 10.0,
+                        "use_imagery": use_imagery,
+                        "imagery_gsd_metres": 1.0 if use_imagery else None,
+                    },
+                    "crs": [
+                        {
+                            "epsg": 25830,
+                            "name": "ETRS89 / UTM zone 30N",
+                            "datum": "ETRS89",
+                            "utm_zone": 30,
+                        }
+                    ],
+                    "sources": [
+                        {
+                            "product": "MDT02",
+                            "filename": "source.tif",
+                            "sequential_id": "1",
+                        }
+                    ],
+                    "provenance": {
+                        "source": "Instituto Geográfico Nacional de España (IGN-CNIG)",
+                        "data_policy_url": (
+                            "https://centrodedescargas.cnig.es/"
+                            "CentroDescargas/politica-datos"
+                        ),
+                        "license": "CC BY 4.0-compatible IGN-CNIG data terms",
+                        "retrieved_at_utc": "2026-08-26T00:00:00+00:00",
+                    },
                     "processed_elevation": [
                         {
                             "path": str(array_path),
@@ -142,6 +178,10 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             assert all(node.image.packed_file is not None for node in image_nodes)
         collection = bpy.data.collections["BlenderTerrain_12345678"]
         assert collection["blender_terrain_import_id"] == properties.import_id
+        assert collection["blender_terrain_product"] == "MDT02"
+        assert collection["blender_terrain_source"].startswith(
+            "Instituto Geográfico Nacional"
+        )
         assert any(
             candidate.get("blender_terrain_import_id") == properties.import_id
             for candidate in bpy.data.collections
