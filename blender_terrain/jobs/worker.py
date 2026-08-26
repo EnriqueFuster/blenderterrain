@@ -149,12 +149,7 @@ def run_delivery_job(
                 else 0.0
             )
             progress = 0.1 + 0.85 * min(1.0, (offset + fraction) / max(1, file_count))
-            message = (
-                f"Using cached {transfer.filename}"
-                if transfer.cached
-                else f"Downloading {transfer.filename} "
-                f"({transfer.written_bytes / 1_048_576:.1f} MiB)"
-            )
+            message = _transfer_message(transfer)
             emit(state, progress, message)
 
         delivered = deliver_plan_sources(
@@ -166,6 +161,7 @@ def run_delivery_job(
             report,
             cancelled,
         )
+
         def report_processing(completed: int, total: int) -> None:
             if cancelled():
                 raise JobCancelled("Data delivery was cancelled")
@@ -293,6 +289,21 @@ def run_delivery_job(
         ValueError,
     ) as exc:
         return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+
+
+def _transfer_message(transfer: TransferProgress) -> str:
+    kind = "elevation" if transfer.kind == "elevation" else "PNOA imagery"
+    position = f"{transfer.file_index + 1}/{transfer.file_count}"
+    if transfer.cached:
+        return f"Using cached {kind} {position}: {transfer.filename}"
+    written_mib = transfer.written_bytes / 1_048_576
+    if transfer.expected_bytes:
+        expected_mib = transfer.expected_bytes / 1_048_576
+        percentage = min(100.0, transfer.written_bytes / transfer.expected_bytes * 100.0)
+        size = f"{written_mib:.1f}/{expected_mib:.1f} MiB, {percentage:.0f}%"
+    else:
+        size = f"{written_mib:.1f} MiB"
+    return f"Downloading {kind} {position}: {transfer.filename} ({size})"
 
 
 def _create_plan(job: DiscoveryJob) -> ImportPlan:

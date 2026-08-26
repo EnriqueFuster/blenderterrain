@@ -275,16 +275,29 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
 
     def execute(self, context: bpy.types.Context) -> set[str]:
         properties = context.scene.blender_terrain_roi
+        window_manager = context.window_manager
+
+        def report_progress(progress: float, message: str) -> None:
+            window_manager.progress_update(progress * 100.0)
+            if context.workspace is not None:
+                context.workspace.status_text_set(text=message)
+
+        window_manager.progress_begin(0.0, 100.0)
         try:
             objects = create_terrain_objects(
                 context,
                 Path(properties.delivery_result_path),
                 properties.vertical_scale,
                 properties.pack_imagery,
+                report_progress,
             )
         except (BlenderTerrainError, OSError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
+        finally:
+            window_manager.progress_end()
+            if context.workspace is not None:
+                context.workspace.status_text_set(text=None)
         properties.terrain_created = True
         properties.active_import_id = properties.import_id
         properties.imagery_packed = (

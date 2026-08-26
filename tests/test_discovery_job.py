@@ -235,6 +235,20 @@ class DeliveryWorkerTests(unittest.TestCase):
             self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
             self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
             self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])
+            download_messages = [
+                event["message"]
+                for event in events
+                if event["state"].startswith("DOWNLOADING_")
+            ]
+            self.assertTrue(
+                any(
+                    "elevation 1/1" in message and "100%" in message
+                    for message in download_messages
+                )
+            )
+            self.assertTrue(
+                any("PNOA imagery 1/1" in message for message in download_messages)
+            )
             processing_messages = [
                 event["message"]
                 for event in events

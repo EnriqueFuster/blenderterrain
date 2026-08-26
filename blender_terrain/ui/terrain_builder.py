@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,9 +36,11 @@ def create_terrain_objects(
     result_path: Path,
     vertical_scale: float,
     pack_images: bool = False,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[bpy.types.Object, ...]:
     """Create one mesh object per processed tile using local projected coordinates."""
 
+    _report_build_progress(progress_callback, 0.0, "Reading processed terrain data")
     result = _read_result(result_path)
     entries = result.get("processed_elevation")
     if not isinstance(entries, list) or not entries:
@@ -61,6 +64,7 @@ def create_terrain_objects(
     ):
         if elevation.dtype != np.float32 or elevation.shape != (rows + 1, columns + 1):
             raise RasterFormatError(f"Processed elevation dimensions do not match: {path.name}")
+    _report_build_progress(progress_callback, 0.1, "Calculating shared elevation range")
     elevation_range = calculate_elevation_range(loaded)
     import_id = str(result["import_id"])
     task_id = str(result["task_id"])
@@ -108,6 +112,7 @@ def create_terrain_objects(
     collection["blender_terrain_elevation_maximum"] = elevation_range.maximum
     collection["blender_terrain_elevation_range"] = elevation_range.span
     context.scene.collection.children.link(collection)
+    _report_build_progress(progress_callback, 0.15, "Creating terrain collection")
     parents: dict[int, bpy.types.Object] = {}
     objects: list[bpy.types.Object] = []
     materials: list[bpy.types.Material] = []
@@ -125,6 +130,11 @@ def create_terrain_objects(
         for index, ((elevation, nodata), (path, bounds, _rows, _columns, _)) in enumerate(
             zip(loaded, parsed, strict=True)
         ):
+            _report_build_progress(
+                progress_callback,
+                0.15 + 0.75 * index / len(parsed),
+                f"Creating terrain object {index + 1} of {len(parsed)}",
+            )
             geometry = build_displacement_mesh_geometry(
                 elevation, bounds, nodata, elevation_range.minimum
             )
@@ -200,8 +210,19 @@ def create_terrain_objects(
         raise
     _select_created_objects(context, objects)
     if pack_images:
+        _report_build_progress(progress_callback, 0.92, "Packing PNOA imagery")
         pack_collection_images(collection)
+    _report_build_progress(
+        progress_callback, 1.0, f"Created {len(objects)} terrain object(s)"
+    )
     return tuple(objects)
+
+
+def _report_build_progress(
+    callback: Callable[[float, str], None] | None, progress: float, message: str
+) -> None:
+    if callback is not None:
+        callback(progress, message)
 
 
 def terrain_import_exists(import_id: str) -> bool:

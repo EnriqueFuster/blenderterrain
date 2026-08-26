@@ -68,7 +68,12 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
         actions = self.layout.box()
         actions.label(text="Data Sources", icon="URL")
         if properties.job_active:
-            actions.prop(properties, "job_progress", text=properties.job_state, slider=True)
+            actions.prop(
+                properties,
+                "job_progress",
+                text=_job_state_label(properties.job_state),
+                slider=True,
+            )
             actions.label(text=properties.job_message, icon="INFO")
             actions.operator("blender_terrain.cancel_discovery", icon="CANCEL")
         else:
@@ -163,3 +168,13 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
             result.label(text=properties.imagery_summary)
             if properties.planning_warning:
                 result.label(text=properties.planning_warning, icon="INFO")
+
+
+def _job_state_label(state: str) -> str:
+    return {
+        "VALIDATING": "Validating",
+        "DISCOVERING": "Finding sources",
+        "DOWNLOADING_ELEVATION": "Downloading elevation",
+        "DOWNLOADING_IMAGERY": "Downloading PNOA imagery",
+        "PROCESSING_ELEVATION": "Processing elevation",
+    }.get(state, state.replace("_", " ").title())
