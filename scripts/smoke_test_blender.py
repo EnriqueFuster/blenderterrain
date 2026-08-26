@@ -31,6 +31,9 @@ def main() -> None:
         assert classes[0].bl_idname == repository.name
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
         properties = bpy.context.scene.blender_terrain_roi
+        property_rna = type(properties).bl_rna.properties
+        assert property_rna["terrain_subdivision_viewport"].hard_max == 11
+        assert property_rna["terrain_subdivision_render"].hard_max == 11
         if _cycle == 1:
             properties.roi_input_mode = "CENTER_SIZE"
             properties.center_longitude = -0.38

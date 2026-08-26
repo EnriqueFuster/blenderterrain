@@ -12,6 +12,7 @@ from ..core import (
     create_import_plan,
     format_bbox,
     parse_bbox,
+    subdivision_risk_message,
 )
 from ..errors import BlenderTerrainError
 from ..models import DatasetProduct
@@ -337,7 +338,14 @@ class BLENDERTERRAIN_OT_apply_import_settings(bpy.types.Operator):
         except (BlenderTerrainError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Updated {count} terrain object(s)")
+        risk = subdivision_risk_message(
+            properties.terrain_subdivision_viewport,
+            properties.terrain_subdivision_render,
+        )
+        self.report(
+            {"WARNING"} if risk else {"INFO"},
+            risk or f"Updated {count} terrain object(s)",
+        )
         return {"FINISHED"}
 
 
@@ -354,10 +362,19 @@ class BLENDERTERRAIN_OT_apply_selected_settings(bpy.types.Operator):
         except (BlenderTerrainError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
-        if seams:
+        risk = subdivision_risk_message(
+            properties.selected_subdivision_viewport,
+            properties.selected_subdivision_render,
+        )
+        if seams or risk:
+            warnings = []
+            if seams:
+                warnings.append(f"{seams} shared edge(s) may be discontinuous")
+            if risk:
+                warnings.append(risk)
             self.report(
                 {"WARNING"},
-                f"Updated {count} object(s); {seams} shared edge(s) may be discontinuous",
+                f"Updated {count} object(s); " + "; ".join(warnings),
             )
         else:
             self.report({"INFO"}, f"Updated {count} terrain object(s)")

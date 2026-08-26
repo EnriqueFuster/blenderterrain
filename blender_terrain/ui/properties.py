@@ -180,18 +180,34 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         name="Vertical Scale", default=1.0, min=0.001, max=100.0
     )
     terrain_subdivision_viewport: IntProperty(
-        name="Viewport Subdivision", default=0, min=0, max=6
+        name="Viewport Subdivision",
+        description="Subdivision shown in the viewport; cost grows fourfold per level",
+        default=0,
+        min=0,
+        max=11,
     )
     terrain_subdivision_render: IntProperty(
-        name="Render Subdivision", default=0, min=0, max=8
+        name="Render Subdivision",
+        description="Subdivision used for rendering; high levels may exhaust memory",
+        default=0,
+        min=0,
+        max=11,
     )
     terrain_displacement_enabled: BoolProperty(name="Enable Displacement", default=True)
     selected_strength_multiplier: FloatProperty(
         name="Strength Multiplier", default=1.0, min=0.0, max=10.0
     )
     selected_subdivision_viewport: IntProperty(
-        name="Selected Viewport", default=0, min=0, max=6
+        name="Selected Viewport",
+        description="Viewport subdivision for selected terrain objects",
+        default=0,
+        min=0,
+        max=11,
     )
     selected_subdivision_render: IntProperty(
-        name="Selected Render", default=0, min=0, max=8
+        name="Selected Render",
+        description="Render subdivision for selected terrain objects",
+        default=0,
+        min=0,
+        max=11,
     )

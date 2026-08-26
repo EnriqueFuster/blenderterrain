@@ -31,11 +31,14 @@ from .projection import (
 from .roi import BBoxWGS84
 from .roi_input import bbox_from_center_size, format_bbox, parse_bbox
 from .terrain_schema import (
+    MAX_SUBDIVISION_LEVEL,
+    SUBDIVISION_WARNING_LEVEL,
     TERRAIN_SCHEMA_VERSION,
     TerrainMetadata,
     TerrainRepresentation,
     TerrainSettings,
     read_terrain_metadata,
+    subdivision_risk_message,
 )
 from .territory import TerritoryGroup, classify_territory_envelope
 from .texture_mapping import (
@@ -46,6 +49,8 @@ from .texture_mapping import (
 
 __all__ = [
     "DEFAULT_MAX_TILE_CELLS",
+    "MAX_SUBDIVISION_LEVEL",
+    "SUBDIVISION_WARNING_LEVEL",
     "TERRAIN_SCHEMA_VERSION",
     "BBoxWGS84",
     "CRSInfo",
@@ -92,6 +97,7 @@ __all__ = [
     "read_terrain_metadata",
     "select_catalog_items",
     "split_bbox_by_utm_zone",
+    "subdivision_risk_message",
     "tile_grid",
     "tile_grid_manual",
 ]

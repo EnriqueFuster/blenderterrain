@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import bpy
 
+from ..core import SUBDIVISION_WARNING_LEVEL
+
 
 class BLENDERTERRAIN_PT_main(bpy.types.Panel):
     """Display terrain inputs, estimates and background discovery status."""
@@ -142,6 +144,11 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
             editable.prop(properties, "terrain_vertical_scale")
             editable.prop(properties, "terrain_subdivision_viewport")
             editable.prop(properties, "terrain_subdivision_render")
+            _draw_subdivision_warning(
+                editable,
+                properties.terrain_subdivision_viewport,
+                properties.terrain_subdivision_render,
+            )
             editable.prop(properties, "terrain_displacement_enabled")
             editable.operator("blender_terrain.apply_import_settings")
             editable.separator()
@@ -149,6 +156,11 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
             editable.prop(properties, "selected_strength_multiplier")
             editable.prop(properties, "selected_subdivision_viewport")
             editable.prop(properties, "selected_subdivision_render")
+            _draw_subdivision_warning(
+                editable,
+                properties.selected_subdivision_viewport,
+                properties.selected_subdivision_render,
+            )
             row = editable.row(align=True)
             row.operator("blender_terrain.apply_selected_settings")
             row.operator("blender_terrain.restore_selected_settings")
@@ -178,3 +190,15 @@ def _job_state_label(state: str) -> str:
         "DOWNLOADING_IMAGERY": "Downloading PNOA imagery",
         "PROCESSING_ELEVATION": "Processing elevation",
     }.get(state, state.replace("_", " ").title())
+
+
+def _draw_subdivision_warning(layout: bpy.types.UILayout, viewport: int, render: int) -> None:
+    highest = max(viewport, render)
+    if highest < SUBDIVISION_WARNING_LEVEL:
+        return
+    layout.label(
+        text=f"Level {highest}: up to {4**highest:,} faces per base face",
+        icon="ERROR",
+    )
+    if highest >= 6:
+        layout.label(text="May freeze Blender or exhaust memory", icon="ERROR")

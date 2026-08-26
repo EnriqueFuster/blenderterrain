@@ -31,6 +31,10 @@ The current implementation includes:
 9. import-wide and per-object vertical scale and subdivision controls;
 10. optional packing of PNOA images into the `.blend` file.
 
+Subdivision follows Blender's technical range from 0 to 11. The interface warns
+from level 3 because each additional level can multiply the generated face count
+by four; high values can freeze Blender or exhaust system and GPU memory.
+
 The first MVP workflow was validated end to end from an isolated Blender 4.5.3
 extension installation on 2026-08-26 with both MDT02 and MDS02, including live
 PNOA imagery, terrain processing and Blender object creation.

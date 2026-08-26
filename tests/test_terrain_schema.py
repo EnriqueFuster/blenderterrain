@@ -5,7 +5,9 @@ import unittest
 from blender_terrain.core import (
     TERRAIN_SCHEMA_VERSION,
     TerrainRepresentation,
+    TerrainSettings,
     read_terrain_metadata,
+    subdivision_risk_message,
 )
 from blender_terrain.errors import RasterFormatError
 
@@ -57,6 +59,15 @@ class TerrainSchemaTests(unittest.TestCase):
         for properties in examples:
             with self.subTest(properties=properties), self.assertRaises(RasterFormatError):
                 read_terrain_metadata(properties)
+
+    def test_uses_blenders_hard_subdivision_limit_and_reports_exponential_cost(self) -> None:
+        self.assertEqual(TerrainSettings(subdivision_viewport=11).subdivision_viewport, 11)
+        with self.assertRaises(ValueError):
+            TerrainSettings(subdivision_render=12)
+
+        self.assertIsNone(subdivision_risk_message(2, 2))
+        self.assertIn("64 faces", subdivision_risk_message(3, 0) or "")
+        self.assertIn("4,194,304 faces", subdivision_risk_message(0, 11) or "")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,8 @@ from enum import StrEnum
 from ..errors import RasterFormatError
 
 TERRAIN_SCHEMA_VERSION = 2
+MAX_SUBDIVISION_LEVEL = 11
+SUBDIVISION_WARNING_LEVEL = 3
 
 
 class TerrainRepresentation(StrEnum):
@@ -31,10 +33,10 @@ class TerrainSettings:
     def __post_init__(self) -> None:
         if not math.isfinite(self.vertical_scale) or self.vertical_scale <= 0.0:
             raise ValueError("Terrain vertical scale must be finite and positive")
-        if not 0 <= self.subdivision_viewport <= 6:
-            raise ValueError("Viewport subdivision must be between zero and six")
-        if not 0 <= self.subdivision_render <= 8:
-            raise ValueError("Render subdivision must be between zero and eight")
+        if not 0 <= self.subdivision_viewport <= MAX_SUBDIVISION_LEVEL:
+            raise ValueError("Viewport subdivision exceeds Blender's supported range")
+        if not 0 <= self.subdivision_render <= MAX_SUBDIVISION_LEVEL:
+            raise ValueError("Render subdivision exceeds Blender's supported range")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,19 @@ class TerrainMetadata:
     representation: TerrainRepresentation
     settings: TerrainSettings
     legacy: bool = False
+
+
+def subdivision_risk_message(viewport: int, render: int) -> str | None:
+    """Describe exponential subdivision cost when either level is potentially unsafe."""
+
+    highest = max(viewport, render)
+    if highest < SUBDIVISION_WARNING_LEVEL:
+        return None
+    multiplier = 4**highest
+    return (
+        f"Subdivision level {highest} can generate up to {multiplier:,} faces per "
+        "base face; Blender may become unresponsive or run out of memory"
+    )
 
 
 def read_terrain_metadata(properties: Mapping[str, object]) -> TerrainMetadata:
