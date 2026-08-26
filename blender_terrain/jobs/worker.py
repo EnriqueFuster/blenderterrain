@@ -41,7 +41,8 @@ from .storage import (
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
 ElevationProcessor = Callable[
-    [tuple[Path, ...], ImportPlan], tuple[ProcessedElevationTile, ...]
+    [tuple[Path, ...], ImportPlan, Callable[[int, int], None] | None],
+    tuple[ProcessedElevationTile, ...],
 ]
 
 
@@ -148,11 +149,13 @@ def run_delivery_job(
                 else 0.0
             )
             progress = 0.1 + 0.85 * min(1.0, (offset + fraction) / max(1, file_count))
-            emit(
-                state,
-                progress,
-                f"Downloading {transfer.filename} ({transfer.written_bytes / 1_048_576:.1f} MiB)",
+            message = (
+                f"Using cached {transfer.filename}"
+                if transfer.cached
+                else f"Downloading {transfer.filename} "
+                f"({transfer.written_bytes / 1_048_576:.1f} MiB)"
             )
+            emit(state, progress, message)
 
         delivered = deliver_plan_sources(
             plan,
@@ -163,9 +166,22 @@ def run_delivery_job(
             report,
             cancelled,
         )
-        emit(JobState.PROCESSING_ELEVATION, 0.96, "Processing final elevation tiles")
+        def report_processing(completed: int, total: int) -> None:
+            if cancelled():
+                raise JobCancelled("Data delivery was cancelled")
+            progress = 0.95 + 0.04 * completed / max(1, total)
+            emit(
+                JobState.PROCESSING_ELEVATION,
+                progress,
+                f"Processing terrain tile {min(completed + 1, total)} of {total}"
+                if completed < total
+                else f"Processed {total} terrain tile(s)",
+            )
+
         processed_directory = job_path.parents[2] / "processed" / job.task_id
-        processed_tiles = elevation_processor(delivered.elevation_paths, plan)
+        processed_tiles = elevation_processor(
+            delivered.elevation_paths, plan, report_processing
+        )
         processed_payload: list[dict[str, object]] = []
         for processed in processed_tiles:
             if cancelled():
@@ -187,6 +203,11 @@ def run_delivery_job(
                     "conflicting_valid_pixels": processed.conflicting_valid_pixels,
                     "maximum_overlap_difference": processed.maximum_overlap_difference,
                 }
+            )
+            emit(
+                JobState.PROCESSING_ELEVATION,
+                0.99,
+                f"Writing terrain tile {len(processed_payload)} of {len(processed_tiles)}",
             )
         terminal_state = (
             JobState.COMPLETE_WITH_WARNINGS if delivered.warnings else JobState.COMPLETE

@@ -102,6 +102,31 @@ class DeliveryTests(unittest.TestCase):
                 FakeImageryClient(), cancellation_requested=lambda: True,
             )
 
+    def test_reports_validated_cache_reuse(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+            DatasetProduct.MDT02, 10.0, False, None,
+        )
+        discovery = DiscoveryResult(
+            (CatalogItem(DatasetProduct.MDT02, "source.tif", "COG", "1"),), 1, 0
+        )
+        events: list[TransferProgress] = []
+        with TemporaryDirectory() as temporary:
+            elevation = Path(temporary) / "elevation" / "source.tif"
+            elevation.parent.mkdir()
+            elevation.write_bytes(
+                b"II\x2b\x00\x08\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x00"
+                + b"\x00" * 8
+            )
+            deliver_plan_sources(
+                plan, discovery, Path(temporary), FakeElevationClient(),
+                FakeImageryClient(), events.append,
+            )
+
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0].cached)
+        self.assertEqual(events[0].written_bytes, events[0].expected_bytes)
+
 
 if __name__ == "__main__":
     unittest.main()

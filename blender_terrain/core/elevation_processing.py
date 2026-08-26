@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +36,7 @@ class ProcessedElevationTile:
 def process_elevation_tiles(
     source_paths: tuple[Path, ...],
     plan: ImportPlan,
+    progress_callback: Callable[[int, int], None] | None = None,
     maximum_source_window_pixels: int = DEFAULT_MAX_SOURCE_WINDOW_PIXELS,
 ) -> tuple[ProcessedElevationTile, ...]:
     """Build every planned terrain tile while bounding native source windows."""
@@ -43,6 +45,9 @@ def process_elevation_tiles(
         raise ValueError("Maximum source window pixels must be positive")
     readers = tuple(BigTiffFloatTileReader(path) for path in source_paths)
     outputs: list[ProcessedElevationTile] = []
+    total_tiles = sum(len(tile_grid(grid)) for grid in plan.grids)
+    if progress_callback is not None:
+        progress_callback(0, total_tiles)
     for zone_index, grid in enumerate(plan.grids):
         zone_readers = tuple(
             reader for reader in readers if reader.georeference.epsg == grid.bounds.epsg
@@ -55,6 +60,8 @@ def process_elevation_tiles(
                     zone_index, tile, zone_readers, maximum_source_window_pixels
                 )
             )
+            if progress_callback is not None:
+                progress_callback(len(outputs), total_tiles)
     return tuple(outputs)
 
 

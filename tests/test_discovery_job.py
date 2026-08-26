@@ -215,6 +215,14 @@ class DeliveryWorkerTests(unittest.TestCase):
             self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
             self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
             self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])
+            processing_messages = [
+                event["message"]
+                for event in events
+                if event["state"] == "PROCESSING_ELEVATION"
+            ]
+            self.assertIn("Processing terrain tile 1 of 1", processing_messages)
+            self.assertIn("Processed 1 terrain tile(s)", processing_messages)
+            self.assertIn("Writing terrain tile 1 of 1", processing_messages)
 
     def test_honours_cancellation_before_network_delivery(self) -> None:
         with TemporaryDirectory() as temporary_directory:
@@ -248,10 +256,13 @@ class DeliveryWorkerTests(unittest.TestCase):
 
 
 def _fake_elevation_processor(
-    paths: tuple[Path, ...], plan,
+    paths: tuple[Path, ...], plan, progress_callback=None,
 ) -> tuple[ProcessedElevationTile, ...]:
     tile = tile_grid(plan.grids[0])[0]
     data = np.zeros((tile.rows + 1, tile.columns + 1), dtype=np.float32)
+    if progress_callback is not None:
+        progress_callback(0, 1)
+        progress_callback(1, 1)
     return (ProcessedElevationTile(0, tile, data, -9999.0, 0, 0, 0.0),)
 
 

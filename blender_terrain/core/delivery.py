@@ -28,6 +28,7 @@ class TransferProgress:
     filename: str
     written_bytes: int
     expected_bytes: int | None
+    cached: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +85,9 @@ def deliver_plan_sources(
         if destination.is_file():
             validate_tiff_header(destination)
             elevation_paths.append(destination)
+            _report_cached(
+                "elevation", index, len(discovery.items), destination, progress_callback
+            )
             continue
         callback = _file_progress(
             "elevation", index, len(discovery.items), item.filename, progress_callback
@@ -100,6 +104,9 @@ def deliver_plan_sources(
             if destination.is_file():
                 validate_png(destination, request.width, request.height)
                 imagery_paths.append(destination)
+                _report_cached(
+                    "imagery", index, len(imagery_requests), destination, progress_callback
+                )
                 continue
             callback = _file_progress(
                 "imagery", index, len(imagery_requests), request.filename, progress_callback
@@ -137,6 +144,19 @@ def _file_progress(
         callback(TransferProgress(kind, index, count, filename, written_bytes, expected_bytes))
 
     return report
+
+
+def _report_cached(
+    kind: str,
+    index: int,
+    count: int,
+    path: Path,
+    callback: Callable[[TransferProgress], None] | None,
+) -> None:
+    if callback is None:
+        return
+    size = path.stat().st_size
+    callback(TransferProgress(kind, index, count, path.name, size, size, cached=True))
 
 
 def _imagery_cache_key(requests: tuple[ImageryTileRequest, ...]) -> str:
