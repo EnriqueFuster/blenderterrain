@@ -1,7 +1,7 @@
 # Manual test for the current BlenderTerrain build
 
 This build is intended to validate the first complete terrain and PNOA material path. It is
-not yet a finished user release.
+the initial MVP release candidate.
 
 ## Install
 

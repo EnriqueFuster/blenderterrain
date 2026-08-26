@@ -1,8 +1,7 @@
 # BlenderTerrain
 
-BlenderTerrain is an independent, from-scratch Blender terrain importer under
-active technical validation. Its first supported data sources will be Spain's
-official IGN/CNIG MDT02, MDS02, and PNOA services.
+BlenderTerrain is an independent, from-scratch Blender terrain importer for
+Spain's official IGN/CNIG MDT02, MDS02, and PNOA services.
 
 The repository name is intentionally broader than its initial geographic
 coverage. Version 1 will remain focused on Spain; support for another country
@@ -28,9 +27,15 @@ The current implementation includes:
 6. local Blender coordinates with CRS, ROI, source and attribution metadata;
 7. optional packing of PNOA images into the `.blend` file.
 
-The first MVP is still under validation. Interactive ROI selection, user-defined
-terrain subdivision, non-destructive displacement controls, job recovery, and
-large-shader performance tuning remain future work.
+The first MVP workflow was validated end to end from an isolated Blender 4.5.3
+extension installation on 2026-08-26 with both MDT02 and MDS02, including live
+PNOA imagery, terrain processing and Blender object creation.
+
+Current limitations are deliberate: ROI entry uses a manual WGS84 bounding box,
+terrain subdivision is automatic, elevation is baked into mesh geometry, and a
+large number of PNOA tiles has not yet been GPU-benchmarked. Interactive ROI
+selection, user-defined subdivision and non-destructive displacement controls
+remain future work.
 
 No elevation or imagery data is redistributed in this repository.
 
