@@ -10,12 +10,13 @@ abstractions.
 
 ## Current status
 
-The Blender 4.5 extension implements the first end-to-end workflow: enter a
-manual WGS84 bounding box, choose MDT02 or MDS02 and an output resolution,
-optionally request PNOA imagery, discover and download the official sources,
-process bounded terrain tiles, and create georeferenced Blender mesh objects and
-materials. Network and raster work runs in a background Blender process with
-observable states and cooperative cancellation.
+The Blender 4.5 extension implements an end-to-end workflow: define a WGS84
+bounding box directly or from a centre and metric dimensions, choose MDT02 or
+MDS02 and an output resolution, optionally request PNOA imagery, discover and
+download the official sources, process bounded terrain tiles, and create
+georeferenced Blender mesh objects and materials. Network and raster work runs
+in a background Blender process with observable states and cooperative
+cancellation.
 
 The current implementation includes:
 
@@ -25,17 +26,20 @@ The current implementation includes:
 4. deterministic terrain tiling with identical shared-edge elevations;
 5. PNOA WMS textures in the supported Spanish ETRS89 UTM zones;
 6. local Blender coordinates with CRS, ROI, source and attribution metadata;
-7. optional packing of PNOA images into the `.blend` file.
+7. automatic or explicit row-by-column terrain division;
+8. non-destructive displacement with persistent heightmaps;
+9. import-wide and per-object vertical scale and subdivision controls;
+10. optional packing of PNOA images into the `.blend` file.
 
 The first MVP workflow was validated end to end from an isolated Blender 4.5.3
 extension installation on 2026-08-26 with both MDT02 and MDS02, including live
 PNOA imagery, terrain processing and Blender object creation.
 
-Current limitations are deliberate: ROI entry uses a manual WGS84 bounding box,
-terrain subdivision is automatic, elevation is baked into mesh geometry, and a
-large number of PNOA tiles has not yet been GPU-benchmarked. Interactive ROI
-selection, user-defined subdivision and non-destructive displacement controls
-remain future work.
+Current limitations are deliberate: there is no interactive map or complex
+polygon ROI yet, terrain creation is synchronous, and a large number of PNOA
+tiles has not yet been GPU-benchmarked. Per-object displacement overrides can
+also create visible seams when adjacent objects use different strengths; the
+extension warns when it detects that situation.
 
 No elevation or imagery data is redistributed in this repository.
 

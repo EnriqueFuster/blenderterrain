@@ -11,6 +11,8 @@ import bpy
 def main() -> None:
     arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     module_name = arguments[0] if arguments else "bl_ext.user_default.blender_terrain"
+    if len(arguments) > 1:
+        sys.path.insert(0, arguments[1])
     extension = importlib.import_module(module_name)
     if not hasattr(bpy.types.Scene, "blender_terrain_roi"):
         extension.register()
