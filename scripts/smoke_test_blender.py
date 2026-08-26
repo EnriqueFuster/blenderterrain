@@ -165,8 +165,16 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert len(terrain.data.polygons) == 1
         assert terrain["blender_terrain_epsg"] == 25830
         assert terrain["blender_terrain_schema_version"] == 2
-        assert terrain["blender_terrain_representation"] == "BAKED"
+        assert terrain["blender_terrain_representation"] == "DISPLACEMENT"
         assert terrain["blender_terrain_strength_multiplier"] == 1.0
+        assert tuple(modifier.type for modifier in terrain.modifiers) == (
+            "SUBSURF",
+            "DISPLACE",
+        )
+        assert terrain.modifiers[0].subdivision_type == "SIMPLE"
+        assert terrain.modifiers[1].texture_coords == "UV"
+        assert terrain.modifiers[1].uv_layer == "TerrainUV"
+        _assert_evaluated_elevation(terrain)
         assert len(terrain.data.materials) == (1 if use_imagery else 0)
         if use_imagery:
             assert terrain.data.materials[0].use_nodes
@@ -191,8 +199,10 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert collection["blender_terrain_import_id"] == properties.import_id
         assert collection["blender_terrain_product"] == "MDT02"
         assert collection["blender_terrain_schema_version"] == 2
-        assert collection["blender_terrain_representation"] == "BAKED"
+        assert collection["blender_terrain_representation"] == "DISPLACEMENT"
         assert collection["blender_terrain_vertical_scale"] == 1.0
+        assert collection["blender_terrain_elevation_minimum"] == 1.0
+        assert collection["blender_terrain_elevation_maximum"] == 4.0
         assert collection["blender_terrain_source"].startswith(
             "Instituto Geográfico Nacional"
         )
@@ -200,12 +210,27 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             candidate.get("blender_terrain_import_id") == properties.import_id
             for candidate in bpy.data.collections
         )
+        if use_imagery:
+            blend_path = directory / "displacement-terrain.blend"
+            assert bpy.ops.wm.save_as_mainfile(filepath=str(blend_path)) == {"FINISHED"}
+            assert bpy.ops.wm.open_mainfile(filepath=str(blend_path)) == {"FINISHED"}
+            terrain = bpy.data.objects["BT_12345678_Terrain_000"]
+            _assert_evaluated_elevation(terrain)
+            assert terrain.modifiers[1].texture.image.packed_file is not None
+            collection = bpy.data.collections["BlenderTerrain_12345678"]
         materials = tuple(
             material
             for object_ in collection.objects
             if isinstance(object_.data, bpy.types.Mesh)
             for material in object_.data.materials
         )
+        heightmap_textures = tuple(
+            modifier.texture
+            for object_ in collection.objects
+            for modifier in object_.modifiers
+            if modifier.type == "DISPLACE"
+        )
+        heightmap_images = tuple(texture.image for texture in heightmap_textures)
         for object_ in tuple(collection.objects):
             mesh = object_.data if isinstance(object_.data, bpy.types.Mesh) else None
             bpy.data.objects.remove(object_, do_unlink=True)
@@ -214,9 +239,26 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         bpy.data.collections.remove(collection)
         for material in materials:
             bpy.data.materials.remove(material)
+        for texture in heightmap_textures:
+            bpy.data.textures.remove(texture)
+        for image in heightmap_images:
+            bpy.data.images.remove(image)
         if use_imagery:
             for image_path in image_paths:
                 bpy.data.images.remove(bpy.data.images[image_path.name])
+
+
+def _assert_evaluated_elevation(terrain: bpy.types.Object) -> None:
+    evaluated = terrain.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    evaluated_mesh = evaluated.to_mesh()
+    try:
+        np.testing.assert_allclose(
+            [vertex.co.z for vertex in evaluated_mesh.vertices],
+            [1.0, 2.0, 3.0, 4.0],
+            atol=1e-5,
+        )
+    finally:
+        evaluated.to_mesh_clear()
 
 
 def _write_png(path: Path) -> None:

@@ -15,7 +15,9 @@ from ..core import (
     TERRAIN_SCHEMA_VERSION,
     TerrainRepresentation,
     bounds_fully_covered,
-    build_terrain_mesh_geometry,
+    build_displacement_mesh_geometry,
+    calculate_elevation_range,
+    normalize_heightmap,
     projected_texture_transform,
 )
 from ..errors import RasterFormatError
@@ -50,12 +52,24 @@ def create_terrain_objects(
         )
         for epsg in {bounds.epsg for _, bounds, *_ in parsed}
     }
+    loaded = tuple(
+        (np.load(path, mmap_mode="r", allow_pickle=False), nodata)
+        for path, _bounds, _rows, _columns, nodata in parsed
+    )
+    for (elevation, _nodata), (path, _bounds, rows, columns, _entry_nodata) in zip(
+        loaded, parsed, strict=True
+    ):
+        if elevation.dtype != np.float32 or elevation.shape != (rows + 1, columns + 1):
+            raise RasterFormatError(f"Processed elevation dimensions do not match: {path.name}")
+    elevation_range = calculate_elevation_range(loaded)
     import_id = str(result["import_id"])
     task_id = str(result["task_id"])
     short_id = import_id[:8]
     collection = bpy.data.collections.new(f"BlenderTerrain_{short_id}")
     collection["blender_terrain_schema_version"] = TERRAIN_SCHEMA_VERSION
-    collection["blender_terrain_representation"] = TerrainRepresentation.BAKED.value
+    collection["blender_terrain_representation"] = (
+        TerrainRepresentation.DISPLACEMENT.value
+    )
     collection["blender_terrain_import_id"] = import_id
     collection["blender_terrain_task_id"] = task_id
     collection["blender_terrain_product"] = request["product"]
@@ -85,10 +99,15 @@ def create_terrain_objects(
     collection["blender_terrain_subdivision_viewport"] = 0
     collection["blender_terrain_subdivision_render"] = 0
     collection["blender_terrain_displacement_enabled"] = True
+    collection["blender_terrain_elevation_minimum"] = elevation_range.minimum
+    collection["blender_terrain_elevation_maximum"] = elevation_range.maximum
+    collection["blender_terrain_elevation_range"] = elevation_range.span
     context.scene.collection.children.link(collection)
     parents: dict[int, bpy.types.Object] = {}
     objects: list[bpy.types.Object] = []
     materials: list[bpy.types.Material] = []
+    heightmap_images: list[bpy.types.Image] = []
+    heightmap_textures: list[bpy.types.Texture] = []
     try:
         for epsg, (origin_x, origin_y) in origins.items():
             parent = bpy.data.objects.new(f"BT_{short_id}_EPSG_{epsg}", None)
@@ -98,13 +117,17 @@ def create_terrain_objects(
             parent["blender_terrain_origin_northing"] = origin_y
             collection.objects.link(parent)
             parents[epsg] = parent
-        for index, (path, bounds, rows, columns, nodata) in enumerate(parsed):
-            elevation = np.load(path, mmap_mode="r", allow_pickle=False)
-            if elevation.dtype != np.float32 or elevation.shape != (rows + 1, columns + 1):
-                raise RasterFormatError(f"Processed elevation dimensions do not match: {path.name}")
-            geometry = build_terrain_mesh_geometry(elevation, bounds, nodata)
+        for index, ((elevation, nodata), (path, bounds, _rows, _columns, _)) in enumerate(
+            zip(loaded, parsed, strict=True)
+        ):
+            geometry = build_displacement_mesh_geometry(
+                elevation, bounds, nodata, elevation_range.minimum
+            )
             mesh = _create_mesh(
-                f"BT_{short_id}_Mesh_{index:03d}", geometry.vertices, geometry.faces
+                f"BT_{short_id}_Mesh_{index:03d}",
+                geometry.vertices,
+                geometry.faces,
+                uv_shape=elevation.shape,
             )
             object_ = bpy.data.objects.new(f"BT_{short_id}_Terrain_{index:03d}", mesh)
             origin_x, origin_y = origins[bounds.epsg]
@@ -113,8 +136,12 @@ def create_terrain_objects(
             object_.parent = parents[bounds.epsg]
             object_["blender_terrain_epsg"] = bounds.epsg
             object_["blender_terrain_schema_version"] = TERRAIN_SCHEMA_VERSION
-            object_["blender_terrain_representation"] = TerrainRepresentation.BAKED.value
+            object_["blender_terrain_representation"] = (
+                TerrainRepresentation.DISPLACEMENT.value
+            )
             object_["blender_terrain_strength_multiplier"] = 1.0
+            object_["blender_terrain_elevation_minimum"] = elevation_range.minimum
+            object_["blender_terrain_elevation_range"] = elevation_range.span
             object_["blender_terrain_west"] = bounds.west
             object_["blender_terrain_south"] = bounds.south
             object_["blender_terrain_east"] = bounds.east
@@ -122,6 +149,28 @@ def create_terrain_objects(
             object_["blender_terrain_source"] = str(path)
             object_["blender_terrain_import_id"] = import_id
             object_["blender_terrain_task_id"] = task_id
+            heightmap = normalize_heightmap(elevation, nodata, elevation_range)
+            image = _create_heightmap_image(
+                f"BT_{short_id}_Heightmap_{index:03d}", heightmap
+            )
+            texture = bpy.data.textures.new(
+                f"BT_{short_id}_Displacement_{index:03d}", type="IMAGE"
+            )
+            texture.image = image
+            texture.extension = "EXTEND"
+            heightmap_images.append(image)
+            heightmap_textures.append(texture)
+            subdivision = object_.modifiers.new("Terrain Subdivision", "SUBSURF")
+            subdivision.subdivision_type = "SIMPLE"
+            subdivision.levels = 0
+            subdivision.render_levels = 0
+            displacement = object_.modifiers.new("Terrain Displacement", "DISPLACE")
+            displacement.texture = texture
+            displacement.texture_coords = "UV"
+            displacement.uv_layer = "TerrainUV"
+            displacement.direction = "Z"
+            displacement.mid_level = 0.0
+            displacement.strength = elevation_range.span
             material = _create_imagery_material(
                 f"BT_{short_id}_Material_{index:03d}", bounds, imagery, import_id
             )
@@ -139,6 +188,10 @@ def create_terrain_objects(
         bpy.data.collections.remove(collection)
         for material in materials:
             bpy.data.materials.remove(material)
+        for texture in heightmap_textures:
+            bpy.data.textures.remove(texture)
+        for image in heightmap_images:
+            bpy.data.images.remove(image)
         raise
     _select_created_objects(context, objects)
     if pack_images:
@@ -187,7 +240,12 @@ def pack_collection_images(collection: bpy.types.Collection) -> tuple[bpy.types.
     return tuple(images.values())
 
 
-def _create_mesh(name: str, vertices: Any, faces: Any) -> bpy.types.Mesh:
+def _create_mesh(
+    name: str,
+    vertices: Any,
+    faces: Any,
+    uv_shape: tuple[int, int] | None = None,
+) -> bpy.types.Mesh:
     mesh = bpy.data.meshes.new(name)
     mesh.vertices.add(len(vertices))
     mesh.vertices.foreach_set("co", vertices.ravel())
@@ -197,7 +255,52 @@ def _create_mesh(name: str, vertices: Any, faces: Any) -> bpy.types.Mesh:
     mesh.polygons.foreach_set("loop_start", np.arange(len(faces), dtype=np.int32) * 4)
     mesh.polygons.foreach_set("loop_total", np.full(len(faces), 4, dtype=np.int32))
     mesh.update(calc_edges=True)
+    if uv_shape is not None:
+        width = float(vertices[:, 0].max())
+        height = float(vertices[:, 1].max())
+        if width <= 0.0 or height <= 0.0:
+            raise RasterFormatError("Terrain mesh cannot create UVs for empty bounds")
+        rows, columns = uv_shape
+        if rows < 2 or columns < 2:
+            raise RasterFormatError("Terrain heightmap requires at least two rows and columns")
+        loop_vertices = faces.ravel()
+        uv = np.column_stack(
+            (
+                (
+                    vertices[loop_vertices, 0] / width * (columns - 1) + 0.5
+                )
+                / columns,
+                (
+                    vertices[loop_vertices, 1] / height * (rows - 1) + 0.5
+                )
+                / rows,
+            )
+        ).astype(np.float32, copy=False)
+        uv_layer = mesh.uv_layers.new(name="TerrainUV")
+        uv_layer.uv.foreach_set("vector", uv.ravel())
     return mesh
+
+
+def _create_heightmap_image(
+    name: str, heightmap: np.ndarray[Any, np.dtype[np.float32]]
+) -> bpy.types.Image:
+    rows, columns = heightmap.shape
+    image = bpy.data.images.new(
+        name,
+        width=columns,
+        height=rows,
+        alpha=False,
+        float_buffer=True,
+        is_data=True,
+    )
+    pixels = np.empty((rows, columns, 4), dtype=np.float32)
+    south_up = np.flipud(heightmap)
+    pixels[:, :, :3] = south_up[:, :, None]
+    pixels[:, :, 3] = 1.0
+    image.pixels.foreach_set(pixels.ravel())
+    image.update()
+    image.pack()
+    return image
 
 
 def _create_imagery_material(
