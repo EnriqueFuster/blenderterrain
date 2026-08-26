@@ -12,8 +12,13 @@ from .grid import (
     align_projected_grid,
     tile_grid,
 )
+from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
 from .imagery import ImageryTileRequest, plan_imagery_tiles
-from .mesh_geometry import TerrainMeshGeometry, build_terrain_mesh_geometry
+from .mesh_geometry import (
+    TerrainMeshGeometry,
+    build_displacement_mesh_geometry,
+    build_terrain_mesh_geometry,
+)
 from .planning import ImageryEstimate, ImportPlan, create_import_plan
 from .projection import ProjectedPoint, project_wgs84_to_utm, project_work_area_bounds
 from .roi import BBoxWGS84
@@ -38,6 +43,7 @@ __all__ = [
     "CRSInfo",
     "DeliveryResult",
     "DiscoveryResult",
+    "ElevationRange",
     "GridSpec",
     "GridTile",
     "ImageryEstimate",
@@ -56,12 +62,15 @@ __all__ = [
     "UTMWorkArea",
     "align_projected_grid",
     "bounds_fully_covered",
+    "build_displacement_mesh_geometry",
     "build_terrain_mesh_geometry",
+    "calculate_elevation_range",
     "classify_territory_envelope",
     "create_import_plan",
     "deliver_plan_sources",
     "discover_sources",
     "estimate_bbox",
+    "normalize_heightmap",
     "plan_imagery_tiles",
     "process_elevation_tiles",
     "project_wgs84_to_utm",

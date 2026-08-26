@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -52,3 +53,19 @@ def build_terrain_mesh_geometry(
         & valid[:-1, 1:]
     )
     return TerrainMeshGeometry(vertices, faces[valid_faces].reshape(-1, 4))
+
+
+def build_displacement_mesh_geometry(
+    elevation: NDArray[np.float32],
+    bounds: ProjectedBounds,
+    nodata: float,
+    baseline: float,
+) -> TerrainMeshGeometry:
+    """Build a flat grid whose valid topology matches the elevation nodes."""
+
+    if not math.isfinite(baseline):
+        raise RasterFormatError("Terrain displacement baseline must be finite")
+    baked = build_terrain_mesh_geometry(elevation, bounds, nodata)
+    vertices = baked.vertices.copy()
+    vertices[:, 2] = baseline
+    return TerrainMeshGeometry(vertices, baked.faces)
