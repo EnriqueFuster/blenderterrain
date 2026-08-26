@@ -63,6 +63,9 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
                 actions.operator("blender_terrain.download_data", icon="IMPORT")
             if properties.delivery_summary:
                 actions.label(text=properties.delivery_summary, icon="CHECKMARK")
+            if properties.delivery_ready:
+                actions.prop(properties, "vertical_scale")
+                actions.operator("blender_terrain.create_terrain", icon="MESH_GRID")
             if properties.job_message and properties.job_state:
                 icon = "CHECKMARK" if properties.job_state == "COMPLETE" else "ERROR"
                 actions.label(text=properties.job_message, icon=icon)

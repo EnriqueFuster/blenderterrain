@@ -22,6 +22,7 @@ class PortableImportTests(unittest.TestCase):
             "ui/panels.py",
             "ui/preferences.py",
             "ui/properties.py",
+            "ui/terrain_builder.py",
         }
         offenders: list[str] = []
         for path in package_root.rglob("*.py"):

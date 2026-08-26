@@ -13,6 +13,7 @@ from .grid import (
     tile_grid,
 )
 from .imagery import ImageryTileRequest, plan_imagery_tiles
+from .mesh_geometry import TerrainMeshGeometry, build_terrain_mesh_geometry
 from .planning import ImageryEstimate, ImportPlan, create_import_plan
 from .projection import ProjectedPoint, project_wgs84_to_utm, project_work_area_bounds
 from .roi import BBoxWGS84
@@ -32,10 +33,12 @@ __all__ = [
     "ProcessedElevationTile",
     "ProjectedPoint",
     "ROIEstimate",
+    "TerrainMeshGeometry",
     "TerritoryGroup",
     "TransferProgress",
     "UTMWorkArea",
     "align_projected_grid",
+    "build_terrain_mesh_geometry",
     "classify_territory_envelope",
     "create_import_plan",
     "deliver_plan_sources",

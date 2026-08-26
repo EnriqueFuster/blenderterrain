@@ -10,6 +10,7 @@ from bpy.props import PointerProperty
 from .ui import job_controller
 from .ui.operators import (
     BLENDERTERRAIN_OT_cancel_discovery,
+    BLENDERTERRAIN_OT_create_terrain,
     BLENDERTERRAIN_OT_discover_sources,
     BLENDERTERRAIN_OT_download_data,
     BLENDERTERRAIN_OT_validate_roi,
@@ -24,6 +25,7 @@ _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_OT_validate_roi,
     BLENDERTERRAIN_OT_discover_sources,
     BLENDERTERRAIN_OT_download_data,
+    BLENDERTERRAIN_OT_create_terrain,
     BLENDERTERRAIN_OT_cancel_discovery,
     BLENDERTERRAIN_PT_main,
 )

@@ -213,7 +213,7 @@ def _fake_elevation_processor(
     paths: tuple[Path, ...], plan,
 ) -> tuple[ProcessedElevationTile, ...]:
     tile = tile_grid(plan.grids[0])[0]
-    data = np.zeros((tile.rows, tile.columns), dtype=np.float32)
+    data = np.zeros((tile.rows + 1, tile.columns + 1), dtype=np.float32)
     return (ProcessedElevationTile(0, tile, data, -9999.0, 0, 0, 0.0),)
 
 

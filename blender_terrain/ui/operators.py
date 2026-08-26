@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import bpy
 
 from ..core import BBoxWGS84, create_import_plan
 from ..errors import BlenderTerrainError
 from ..models import DatasetProduct
 from . import job_controller
+from .terrain_builder import create_terrain_objects
 
 
 class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
@@ -125,4 +128,25 @@ class BLENDERTERRAIN_OT_download_data(bpy.types.Operator):
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
         self.report({"INFO"}, "Data download started in the background")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
+    """Create Blender terrain objects from the completed delivery result."""
+
+    bl_idname = "blender_terrain.create_terrain"
+    bl_label = "Create Terrain"
+    bl_description = "Create one georeferenced mesh object per processed terrain tile"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            objects = create_terrain_objects(
+                context, Path(properties.delivery_result_path), properties.vertical_scale
+            )
+        except (BlenderTerrainError, OSError, ValueError) as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        properties.terrain_created = True
+        self.report({"INFO"}, f"Created {len(objects)} terrain object(s)")
         return {"FINISHED"}

@@ -229,6 +229,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
             imagery_count = len(result.get("imagery_paths", []))
             terrain_count = len(result.get("processed_elevation", []))
             properties.delivery_ready = True
+            properties.delivery_result_path = str(active.directory / "result.json")
             properties.delivery_summary = (
                 f"Prepared {elevation_count} elevation, {imagery_count} imagery and "
                 f"{terrain_count} terrain tile(s)"

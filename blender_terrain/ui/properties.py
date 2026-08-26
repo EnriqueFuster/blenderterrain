@@ -15,6 +15,8 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.discovery_ready = False
     properties.delivery_ready = False
     properties.delivery_summary = ""
+    properties.delivery_result_path = ""
+    properties.terrain_created = False
 
 
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
@@ -93,3 +95,6 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     discovery_ready: BoolProperty(default=False, options={"HIDDEN"})
     delivery_ready: BoolProperty(default=False, options={"HIDDEN"})
     delivery_summary: StringProperty(default="", options={"HIDDEN"})
+    delivery_result_path: StringProperty(default="", options={"HIDDEN"})
+    vertical_scale: FloatProperty(name="Vertical Scale", default=1.0, min=0.001, max=100.0)
+    terrain_created: BoolProperty(default=False, options={"HIDDEN"})

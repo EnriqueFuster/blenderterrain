@@ -77,7 +77,7 @@ def _resample_tile(
     nodata = readers[0].layout.nodata
     if nodata is None:
         raise RasterFormatError("Elevation sources must declare NoData")
-    output = np.full((tile.rows, tile.columns), nodata, dtype=np.float32)
+    output = np.full((tile.rows + 1, tile.columns + 1), nodata, dtype=np.float32)
     overlap = 0
     conflicts = 0
     maximum_difference = 0.0
@@ -94,15 +94,15 @@ def _resample_tile(
             mosaic = read_elevation_mosaic(
                 readers, requested, maximum_pixels=maximum_source_window_pixels
             )
-            output[row : row + block_rows, column : column + block_columns] = (
-                _bilinear_resample(
+            output[row : row + block_rows + 1, column : column + block_columns + 1] = (
+                _bilinear_sample_grid(
                     mosaic.data,
                     mosaic.bounds.west,
                     mosaic.bounds.north,
                     source_resolution,
                     requested,
-                    block_rows,
-                    block_columns,
+                    block_rows + 1,
+                    block_columns + 1,
                     mosaic.nodata,
                 )
             )
@@ -134,8 +134,47 @@ def _bilinear_resample(
     east = target_bounds.east
     north = target_bounds.north
     south = target_bounds.south
-    target_x = west + (np.arange(target_columns) + 0.5) * ((east - west) / target_columns)
-    target_y = north - (np.arange(target_rows) + 0.5) * ((north - south) / target_rows)
+    target_x = west + (np.arange(target_columns, dtype=np.float64) + 0.5) * (
+        (east - west) / target_columns
+    )
+    target_y = north - (np.arange(target_rows, dtype=np.float64) + 0.5) * (
+        (north - south) / target_rows
+    )
+    return _bilinear_sample(
+        source, source_west, source_north, source_resolution, target_x, target_y, nodata
+    )
+
+
+def _bilinear_sample_grid(
+    source: NDArray[np.float32],
+    source_west: float,
+    source_north: float,
+    source_resolution: float,
+    target_bounds: ProjectedBounds,
+    target_rows: int,
+    target_columns: int,
+    nodata: float,
+) -> NDArray[np.float32]:
+    target_x = np.linspace(
+        target_bounds.west, target_bounds.east, target_columns, dtype=np.float64
+    )
+    target_y = np.linspace(
+        target_bounds.north, target_bounds.south, target_rows, dtype=np.float64
+    )
+    return _bilinear_sample(
+        source, source_west, source_north, source_resolution, target_x, target_y, nodata
+    )
+
+
+def _bilinear_sample(
+    source: NDArray[np.float32],
+    source_west: float,
+    source_north: float,
+    source_resolution: float,
+    target_x: NDArray[np.float64],
+    target_y: NDArray[np.float64],
+    nodata: float,
+) -> NDArray[np.float32]:
     source_x = (target_x - source_west) / source_resolution - 0.5
     source_y = (source_north - target_y) / source_resolution - 0.5
     column0 = np.floor(source_x).astype(np.int64)
@@ -147,7 +186,7 @@ def _bilinear_resample(
     dx = source_x - np.floor(source_x)
     dy = source_y - np.floor(source_y)
 
-    result = np.zeros((target_rows, target_columns), dtype=np.float64)
+    result = np.zeros((len(target_y), len(target_x)), dtype=np.float64)
     weight_sum = np.zeros(result.shape, dtype=np.float64)
     for rows, columns, weights in (
         (row0[:, None], column0[None, :], (1.0 - dy)[:, None] * (1.0 - dx)[None, :]),
