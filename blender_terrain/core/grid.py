@@ -120,3 +120,51 @@ def tile_grid(
                 )
             )
     return tuple(tiles)
+
+
+def tile_grid_manual(
+    grid: GridSpec,
+    tile_rows: int,
+    tile_columns: int,
+    maximum_tile_cells: int = DEFAULT_MAX_TILE_CELLS,
+) -> tuple[GridTile, ...]:
+    """Split a grid into an exact balanced row/column layout."""
+
+    if tile_rows <= 0 or tile_columns <= 0:
+        raise RasterAlignmentError("Manual tile rows and columns must be positive")
+    if tile_rows > grid.rows or tile_columns > grid.columns:
+        raise RasterAlignmentError("Manual tile layout exceeds the available grid cells")
+    row_sizes = _partition_cells(grid.rows, tile_rows)
+    column_sizes = _partition_cells(grid.columns, tile_columns)
+    if max(row_sizes) > maximum_tile_cells or max(column_sizes) > maximum_tile_cells:
+        raise RasterAlignmentError(
+            "Manual terrain tiles exceed the safe 512 by 512 cell limit; use more rows or columns"
+        )
+    tiles: list[GridTile] = []
+    row_offset = 0
+    for tile_row, rows in enumerate(row_sizes):
+        north = grid.bounds.north - row_offset * grid.resolution
+        south = north - rows * grid.resolution
+        column_offset = 0
+        for tile_column, columns in enumerate(column_sizes):
+            west = grid.bounds.west + column_offset * grid.resolution
+            east = west + columns * grid.resolution
+            tiles.append(
+                GridTile(
+                    tile_row,
+                    tile_column,
+                    row_offset,
+                    column_offset,
+                    rows,
+                    columns,
+                    ProjectedBounds(west, south, east, north, grid.bounds.epsg),
+                )
+            )
+            column_offset += columns
+        row_offset += rows
+    return tuple(tiles)
+
+
+def _partition_cells(cell_count: int, part_count: int) -> tuple[int, ...]:
+    size, remainder = divmod(cell_count, part_count)
+    return tuple(size + (1 if index < remainder else 0) for index in range(part_count))

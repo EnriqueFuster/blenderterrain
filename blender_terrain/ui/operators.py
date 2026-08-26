@@ -54,6 +54,16 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 imagery_gsd_metres=(
                     None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
                 ),
+                manual_tile_rows=(
+                    properties.manual_tile_rows
+                    if properties.tiling_mode == "MANUAL"
+                    else None
+                ),
+                manual_tile_columns=(
+                    properties.manual_tile_columns
+                    if properties.tiling_mode == "MANUAL"
+                    else None
+                ),
             )
         except BlenderTerrainError as exc:
             properties.is_valid = False
@@ -64,6 +74,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             properties.selected_resolution = 0.0
             properties.imagery_summary = ""
             properties.terrain_tile_count = 0
+            properties.terrain_tile_summary = ""
             properties.estimated_memory_mib = 0.0
             properties.planning_warning = ""
             self.report({"ERROR"}, str(exc))
@@ -78,6 +89,15 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         properties.sample_count = plan.elevation_sample_count
         properties.selected_resolution = plan.elevation_resolution_metres
         properties.terrain_tile_count = plan.terrain_tile_count
+        terrain_tiles = tuple(
+            tile
+            for grid_index in range(len(plan.grids))
+            for tile in plan.tiles_for_grid(grid_index)
+        )
+        largest_tile = max(terrain_tiles, key=lambda tile: tile.sample_count)
+        properties.terrain_tile_summary = (
+            f"Largest object: {largest_tile.columns} x {largest_tile.rows} cells"
+        )
         properties.estimated_memory_mib = plan.estimated_combined_bytes / (1024 * 1024)
         properties.planning_warning = " | ".join(plan.warnings)
         properties.imagery_summary = (

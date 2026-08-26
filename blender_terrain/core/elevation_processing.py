@@ -14,7 +14,7 @@ from ..errors import RasterFormatError
 from ..io.bigtiff_tiles import BigTiffFloatTileReader
 from ..io.elevation_mosaic import read_elevation_mosaic
 from ..models import ProjectedBounds
-from .grid import GridTile, tile_grid
+from .grid import GridTile
 from .planning import ImportPlan
 
 DEFAULT_MAX_SOURCE_WINDOW_PIXELS = 4_194_304
@@ -45,7 +45,7 @@ def process_elevation_tiles(
         raise ValueError("Maximum source window pixels must be positive")
     readers = tuple(BigTiffFloatTileReader(path) for path in source_paths)
     outputs: list[ProcessedElevationTile] = []
-    total_tiles = sum(len(tile_grid(grid)) for grid in plan.grids)
+    total_tiles = plan.terrain_tile_count
     if progress_callback is not None:
         progress_callback(0, total_tiles)
     for zone_index, grid in enumerate(plan.grids):
@@ -54,7 +54,7 @@ def process_elevation_tiles(
         )
         if not zone_readers:
             raise RasterFormatError(f"No elevation source is available for EPSG:{grid.bounds.epsg}")
-        for tile in tile_grid(grid):
+        for tile in plan.tiles_for_grid(zone_index):
             outputs.append(
                 _resample_tile(
                     zone_index, tile, zone_readers, maximum_source_window_pixels

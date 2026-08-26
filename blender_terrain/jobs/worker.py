@@ -226,6 +226,8 @@ def run_delivery_job(
                 "imagery_gsd_metres": (
                     None if plan.imagery is None else plan.imagery.gsd_metres
                 ),
+                "manual_tile_rows": plan.manual_tile_rows,
+                "manual_tile_columns": plan.manual_tile_columns,
             },
             "crs": [asdict(work_area.crs) for work_area in plan.work_areas],
             "sources": [
@@ -300,6 +302,8 @@ def _create_plan(job: DiscoveryJob) -> ImportPlan:
         job.elevation_resolution_metres,
         job.use_imagery,
         job.imagery_gsd_metres,
+        job.manual_tile_rows,
+        job.manual_tile_columns,
     )
 
 

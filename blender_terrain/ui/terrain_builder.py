@@ -77,6 +77,11 @@ def create_terrain_objects(
         "elevation_resolution_metres"
     ]
     collection["blender_terrain_use_imagery"] = request["use_imagery"]
+    if request.get("manual_tile_rows") is not None:
+        collection["blender_terrain_manual_tile_rows"] = request["manual_tile_rows"]
+        collection["blender_terrain_manual_tile_columns"] = request[
+            "manual_tile_columns"
+        ]
     if request["imagery_gsd_metres"] is not None:
         collection["blender_terrain_imagery_gsd_metres"] = request[
             "imagery_gsd_metres"

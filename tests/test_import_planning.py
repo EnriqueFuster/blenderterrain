@@ -82,6 +82,49 @@ class ImportPlanningTests(unittest.TestCase):
         self.assertTrue(plan.crosses_utm_zones)
         self.assertIn("crosses UTM zones", plan.warnings[0])
 
+    def test_builds_an_exact_manual_grid(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+            DatasetProduct.MDT02,
+            10.0,
+            False,
+            None,
+            manual_tile_rows=2,
+            manual_tile_columns=3,
+        )
+
+        self.assertEqual(plan.terrain_tile_count, 6)
+        self.assertEqual(plan.terrain_tile_rows, 2)
+        self.assertEqual(plan.terrain_tile_columns, 3)
+        self.assertEqual(len(plan.tiles_for_grid(0)), 6)
+
+    def test_auto_resolution_accounts_for_manual_object_size(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+            DatasetProduct.MDT02,
+            None,
+            False,
+            None,
+            manual_tile_rows=1,
+            manual_tile_columns=1,
+        )
+
+        tile = plan.tiles_for_grid(0)[0]
+        self.assertLessEqual(tile.rows, 512)
+        self.assertLessEqual(tile.columns, 512)
+
+    def test_rejects_an_unsafe_requested_manual_layout(self) -> None:
+        with self.assertRaises(PlanningLimitExceeded):
+            create_import_plan(
+                BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+                DatasetProduct.MDT02,
+                2.0,
+                False,
+                None,
+                manual_tile_rows=1,
+                manual_tile_columns=1,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

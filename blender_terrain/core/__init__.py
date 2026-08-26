@@ -11,6 +11,7 @@ from .grid import (
     GridTile,
     align_projected_grid,
     tile_grid,
+    tile_grid_manual,
 )
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
 from .imagery import ImageryTileRequest, plan_imagery_tiles
@@ -80,4 +81,5 @@ __all__ = [
     "select_catalog_items",
     "split_bbox_by_utm_zone",
     "tile_grid",
+    "tile_grid_manual",
 ]

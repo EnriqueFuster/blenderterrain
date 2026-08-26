@@ -365,6 +365,16 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
             imagery_gsd_metres=(
                 None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
             ),
+            manual_tile_rows=(
+                properties.manual_tile_rows
+                if properties.tiling_mode == "MANUAL"
+                else None
+            ),
+            manual_tile_columns=(
+                properties.manual_tile_columns
+                if properties.tiling_mode == "MANUAL"
+                else None
+            ),
         )
     except (JobFormatError, ValueError) as exc:
         raise UserInputError(f"Cannot create the discovery job: {exc}") from exc

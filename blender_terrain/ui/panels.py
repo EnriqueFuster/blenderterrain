@@ -33,6 +33,11 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
         elevation.label(text="Elevation", icon="MOD_DISPLACE")
         elevation.prop(properties, "product")
         elevation.prop(properties, "elevation_resolution")
+        elevation.prop(properties, "tiling_mode")
+        if properties.tiling_mode == "MANUAL":
+            row = elevation.row(align=True)
+            row.prop(properties, "manual_tile_rows")
+            row.prop(properties, "manual_tile_columns")
 
         imagery = self.layout.box()
         imagery.enabled = not properties.job_active
@@ -134,6 +139,7 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
             result.label(text=f"Elevation: {properties.selected_resolution:g} m")
             result.label(text=f"Samples: {properties.sample_count:,}")
             result.label(text=f"Terrain objects: {properties.terrain_tile_count}")
+            result.label(text=properties.terrain_tile_summary)
             result.label(text=f"Estimated memory: {properties.estimated_memory_mib:.1f} MiB+")
             result.label(text=properties.imagery_summary)
             if properties.planning_warning:

@@ -78,6 +78,21 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         default="AUTO",
         update=_invalidate_validation,
     )
+    tiling_mode: EnumProperty(
+        name="Terrain Division",
+        items=(
+            ("AUTOMATIC", "Automatic", "Choose safe terrain object dimensions"),
+            ("MANUAL", "Manual Grid", "Set exact rows and columns per projected CRS"),
+        ),
+        default="AUTOMATIC",
+        update=_invalidate_validation,
+    )
+    manual_tile_rows: IntProperty(
+        name="Rows", default=1, min=1, max=64, update=_invalidate_validation
+    )
+    manual_tile_columns: IntProperty(
+        name="Columns", default=1, min=1, max=64, update=_invalidate_validation
+    )
     use_imagery: BoolProperty(
         name="Use PNOA Orthophoto", default=True, update=_invalidate_validation
     )
@@ -102,6 +117,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     selected_resolution: FloatProperty(default=0.0, options={"HIDDEN"})
     imagery_summary: StringProperty(default="", options={"HIDDEN"})
     terrain_tile_count: IntProperty(default=0, min=0, options={"HIDDEN"})
+    terrain_tile_summary: StringProperty(default="", options={"HIDDEN"})
     estimated_memory_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     planning_warning: StringProperty(default="", options={"HIDDEN"})
     job_active: BoolProperty(default=False, options={"HIDDEN"})

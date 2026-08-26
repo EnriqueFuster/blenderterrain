@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from blender_terrain.core import GridSpec, align_projected_grid, tile_grid
+from blender_terrain.core import GridSpec, align_projected_grid, tile_grid, tile_grid_manual
 from blender_terrain.errors import RasterAlignmentError
 from blender_terrain.models import ProjectedBounds
 
@@ -62,6 +62,31 @@ class GridTilingTests(unittest.TestCase):
 
         with self.assertRaises(RasterAlignmentError):
             tile_grid(grid, 0)
+
+    def test_builds_an_exact_balanced_manual_layout(self) -> None:
+        grid = align_projected_grid(
+            ProjectedBounds(0.0, 0.0, 1_010.0, 1_006.0, 25830), 2.0
+        )
+
+        tiles = tile_grid_manual(grid, tile_rows=2, tile_columns=3)
+
+        self.assertEqual(len(tiles), 6)
+        self.assertEqual([tile.rows for tile in tiles[::3]], [252, 251])
+        self.assertEqual([tile.columns for tile in tiles[:3]], [169, 168, 168])
+        self.assertEqual(sum(tile.sample_count for tile in tiles), grid.sample_count)
+        self.assertEqual(tiles[0].bounds.east, tiles[1].bounds.west)
+        self.assertEqual(tiles[0].bounds.south, tiles[3].bounds.north)
+
+    def test_rejects_unsafe_or_impossible_manual_layouts(self) -> None:
+        grid = align_projected_grid(
+            ProjectedBounds(0.0, 0.0, 2_000.0, 2_000.0, 25830), 2.0
+        )
+
+        for rows, columns in ((0, 2), (2, 0), (1001, 2), (1, 1)):
+            with self.subTest(rows=rows, columns=columns), self.assertRaises(
+                RasterAlignmentError
+            ):
+                tile_grid_manual(grid, rows, columns)
 
 
 if __name__ == "__main__":

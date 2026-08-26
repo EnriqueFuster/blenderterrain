@@ -108,6 +108,26 @@ class DiscoveryJobStorageTests(unittest.TestCase):
             self.assertEqual(read_discovery_job(path), expected)
             self.assertFalse(path.with_name("job.json.part").exists())
 
+    def test_round_trips_manual_terrain_layout(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "job.json"
+            base = job()
+            expected = DiscoveryJob(
+                task_id=base.task_id,
+                import_id=base.import_id,
+                bounds=base.bounds,
+                product=base.product,
+                elevation_resolution_metres=base.elevation_resolution_metres,
+                use_imagery=base.use_imagery,
+                imagery_gsd_metres=base.imagery_gsd_metres,
+                manual_tile_rows=2,
+                manual_tile_columns=3,
+            )
+
+            write_discovery_job(path, expected)
+
+            self.assertEqual(read_discovery_job(path), expected)
+
     def test_cancellation_request_is_idempotent(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

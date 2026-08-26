@@ -12,7 +12,7 @@ from ..core.roi import BBoxWGS84
 from ..errors import JobFormatError
 from ..models import DatasetProduct
 
-JOB_SCHEMA_VERSION = 2
+JOB_SCHEMA_VERSION = 3
 RESULT_SCHEMA_VERSION = 2
 
 
@@ -44,6 +44,8 @@ class DiscoveryJob:
     elevation_resolution_metres: float | None
     use_imagery: bool
     imagery_gsd_metres: float | None
+    manual_tile_rows: int | None = None
+    manual_tile_columns: int | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -64,6 +66,8 @@ class DiscoveryJob:
             "elevation_resolution_metres": self.elevation_resolution_metres,
             "use_imagery": self.use_imagery,
             "imagery_gsd_metres": self.imagery_gsd_metres,
+            "manual_tile_rows": self.manual_tile_rows,
+            "manual_tile_columns": self.manual_tile_columns,
         }
 
     @classmethod
@@ -87,6 +91,10 @@ class DiscoveryJob:
                 payload.get("elevation_resolution_metres")
             )
             imagery_gsd = _optional_finite_float(payload.get("imagery_gsd_metres"))
+            manual_tile_rows = _optional_positive_int(payload.get("manual_tile_rows"))
+            manual_tile_columns = _optional_positive_int(
+                payload.get("manual_tile_columns")
+            )
             use_imagery = payload["use_imagery"]
             if not isinstance(use_imagery, bool):
                 raise TypeError
@@ -104,6 +112,8 @@ class DiscoveryJob:
             elevation_resolution_metres=elevation_resolution,
             use_imagery=use_imagery,
             imagery_gsd_metres=imagery_gsd,
+            manual_tile_rows=manual_tile_rows,
+            manual_tile_columns=manual_tile_columns,
         )
 
 
@@ -144,3 +154,11 @@ def _optional_finite_float(value: object) -> float | None:
     if not math.isfinite(converted):
         raise ValueError
     return converted
+
+
+def _optional_positive_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 64:
+        raise ValueError
+    return value
