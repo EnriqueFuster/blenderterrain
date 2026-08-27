@@ -8,11 +8,11 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from ..core.roi import BBoxWGS84
-from ..errors import JobFormatError
+from ..core.roi import BBoxWGS84, RegionOfInterest
+from ..errors import JobFormatError, UserInputError
 from ..models import DatasetProduct
 
-JOB_SCHEMA_VERSION = 3
+JOB_SCHEMA_VERSION = 4
 RESULT_SCHEMA_VERSION = 2
 
 
@@ -46,6 +46,7 @@ class DiscoveryJob:
     imagery_gsd_metres: float | None
     manual_tile_rows: int | None = None
     manual_tile_columns: int | None = None
+    region: RegionOfInterest | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -53,6 +54,8 @@ class DiscoveryJob:
             UUID(self.import_id)
         except ValueError as exc:
             raise JobFormatError("Task and import identifiers must be UUIDs") from exc
+        if self.region is not None and self.region.bounds != self.bounds:
+            raise JobFormatError("ROI geometry bounds do not match the job bounds")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize using only JSON-compatible stable fields."""
@@ -68,6 +71,9 @@ class DiscoveryJob:
             "imagery_gsd_metres": self.imagery_gsd_metres,
             "manual_tile_rows": self.manual_tile_rows,
             "manual_tile_columns": self.manual_tile_columns,
+            "roi_geometry_wgs84": (
+                None if self.region is None else self.region.to_geojson_geometry()
+            ),
         }
 
     @classmethod
@@ -95,6 +101,12 @@ class DiscoveryJob:
             manual_tile_columns = _optional_positive_int(
                 payload.get("manual_tile_columns")
             )
+            raw_region = payload.get("roi_geometry_wgs84")
+            region = (
+                None
+                if raw_region is None
+                else RegionOfInterest.from_geojson_geometry(raw_region)
+            )
             use_imagery = payload["use_imagery"]
             if not isinstance(use_imagery, bool):
                 raise TypeError
@@ -102,7 +114,7 @@ class DiscoveryJob:
             import_id = payload["import_id"]
             if not isinstance(task_id, str) or not isinstance(import_id, str):
                 raise TypeError
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError, UserInputError) as exc:
             raise JobFormatError("Job JSON contains invalid fields") from exc
         return cls(
             task_id=task_id,
@@ -114,6 +126,7 @@ class DiscoveryJob:
             imagery_gsd_metres=imagery_gsd,
             manual_tile_rows=manual_tile_rows,
             manual_tile_columns=manual_tile_columns,
+            region=region,
         )
 
 

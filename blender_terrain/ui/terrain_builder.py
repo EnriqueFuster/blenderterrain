@@ -94,7 +94,7 @@ def create_terrain_objects(
             "imagery_gsd_metres"
         ]
     collection["blender_terrain_roi_wgs84"] = json.dumps(
-        request["bounds_wgs84"], sort_keys=True
+        request.get("roi_geometry_wgs84") or request["bounds_wgs84"], sort_keys=True
     )
     collection["blender_terrain_crs"] = json.dumps(crs, ensure_ascii=False, sort_keys=True)
     collection["blender_terrain_sources"] = json.dumps(

@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import bpy
 
-from ..core import BBoxWGS84
+from ..core import BBoxWGS84, RegionOfInterest
 from ..errors import JobFormatError, UserInputError
 from ..jobs.models import DiscoveryJob, JobState
 from ..jobs.storage import read_progress_events, request_cancellation, write_discovery_job
@@ -376,6 +376,9 @@ def _cache_directory(context: bpy.types.Context) -> Path:
 
 def _job_from_properties(task_id: str, import_id: str, properties: Any) -> DiscoveryJob:
     try:
+        region = RegionOfInterest.from_geojson_geometry(
+            json.loads(properties.roi_geometry_json)
+        )
         return DiscoveryJob(
             task_id=task_id,
             import_id=import_id,
@@ -405,8 +408,9 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
                 if properties.tiling_mode == "MANUAL"
                 else None
             ),
+            region=region,
         )
-    except (JobFormatError, ValueError) as exc:
+    except (JobFormatError, json.JSONDecodeError, ValueError) as exc:
         raise UserInputError(f"Cannot create the discovery job: {exc}") from exc
 
 

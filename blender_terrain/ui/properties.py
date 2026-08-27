@@ -38,6 +38,7 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.imagery_packed = False
     properties.imagery_available = False
     properties.imagery_size_mib = 0.0
+    properties.roi_geometry_json = ""
 
 
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
@@ -57,6 +58,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         items=(
             ("BOUNDING_BOX", "Bounding Box", "Enter WGS84 rectangle coordinates"),
             ("CENTER_SIZE", "Center + Size", "Enter a WGS84 centre and metric dimensions"),
+            ("FILE", "Polygon File", "Load Polygon or MultiPolygon geometry from a GIS file"),
         ),
         default="BOUNDING_BOX",
         update=_invalidate_validation,
@@ -93,6 +95,13 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         name="Height (m)", default=2_000.0, min=1.0, max=1_000_000.0,
         update=_invalidate_validation,
     )
+    roi_file_path: StringProperty(
+        name="ROI File",
+        description="GeoJSON, KML, or Shapefile (.shp with .prj) polygon file",
+        subtype="FILE_PATH",
+        update=_invalidate_validation,
+    )
+    roi_geometry_json: StringProperty(default="", options={"HIDDEN"})
     product: EnumProperty(
         name="Elevation Product",
         items=(("MDT02", "DTM (MDT02)", "Bare-earth terrain"),

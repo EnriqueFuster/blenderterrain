@@ -30,7 +30,7 @@ from .projection import (
     project_wgs84_to_utm,
     project_work_area_bounds,
 )
-from .roi import BBoxWGS84
+from .roi import BBoxWGS84, PolygonWGS84, RegionOfInterest, closed_ring
 from .roi_input import bbox_from_center_size, format_bbox, parse_bbox
 from .terrain_schema import (
     MAX_SUBDIVISION_LEVEL,
@@ -67,9 +67,11 @@ __all__ = [
     "ImageryEstimate",
     "ImageryTileRequest",
     "ImportPlan",
+    "PolygonWGS84",
     "ProcessedElevationTile",
     "ProjectedPoint",
     "ROIEstimate",
+    "RegionOfInterest",
     "TerrainMeshGeometry",
     "TerrainMetadata",
     "TerrainRepresentation",
@@ -85,6 +87,7 @@ __all__ = [
     "build_terrain_mesh_geometry",
     "calculate_elevation_range",
     "classify_territory_envelope",
+    "closed_ring",
     "create_import_plan",
     "deliver_plan_sources",
     "discover_sources",

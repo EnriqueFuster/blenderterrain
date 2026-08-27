@@ -11,12 +11,13 @@ abstractions.
 ## Current status
 
 The Blender 4.5 extension implements an end-to-end workflow: define a WGS84
-bounding box directly or from a centre and metric dimensions, choose MDT02 or
-MDS02 and an output resolution, optionally request PNOA imagery, discover and
-download the official sources, process bounded terrain tiles, and create
+bounding box directly or from a centre and metric dimensions, or load Polygon
+and MultiPolygon geometry from GeoJSON, KML, or Shapefile; choose MDT02 or MDS02
+and an output resolution; optionally request PNOA imagery; and create
 georeferenced Blender mesh objects and materials. Network and raster work runs
 in a background Blender process with observable states and cooperative
-cancellation.
+cancellation. Shapefiles require their matching `.prj`; supported input CRSs
+are WGS84, ETRS89, REGCAN95 and their common Spanish UTM zones.
 
 The current implementation includes:
 
@@ -40,9 +41,9 @@ The first MVP workflow was validated end to end from an isolated Blender 4.5.3
 extension installation on 2026-08-26 with both MDT02 and MDS02, including live
 PNOA imagery, terrain processing and Blender object creation.
 
-Current limitations are deliberate: there is no interactive map or complex
-polygon ROI yet, terrain creation is synchronous, and a large number of PNOA
-tiles has not yet been GPU-benchmarked. The default progressive mesh approaches
+Current limitations are deliberate: the interactive map ROI is not implemented
+yet, terrain creation is synchronous, and a large number of PNOA tiles has not
+yet been GPU-benchmarked. The default progressive mesh approaches
 the processed heightmap density around subdivision level 4; higher levels only
 interpolate the available raster samples. Per-object displacement overrides can
 also create visible seams when adjacent objects use different strengths; the

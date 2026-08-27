@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import bpy
 
 from ..core import (
     BBoxWGS84,
+    RegionOfInterest,
     bbox_from_center_size,
     create_import_plan,
     format_bbox,
@@ -15,6 +17,7 @@ from ..core import (
     subdivision_risk_message,
 )
 from ..errors import BlenderTerrainError
+from ..io.roi_files import read_roi_file
 from ..models import DatasetProduct
 from . import job_controller
 from .terrain_builder import (
@@ -178,6 +181,14 @@ class BLENDERTERRAIN_OT_paste_bbox(bpy.types.Operator):
 def _bounds_from_properties(
     properties: object, *, store_derived: bool = False
 ) -> BBoxWGS84:
+    if properties.roi_input_mode == "FILE":
+        region = read_roi_file(Path(bpy.path.abspath(properties.roi_file_path)))
+        properties.roi_geometry_json = json.dumps(
+            region.to_geojson_geometry(), separators=(",", ":")
+        )
+        if store_derived:
+            _store_bounds(properties, region.bounds)
+        return region.bounds
     if properties.roi_input_mode == "CENTER_SIZE":
         bounds = bbox_from_center_size(
             properties.center_longitude,
@@ -187,10 +198,20 @@ def _bounds_from_properties(
         )
         if store_derived:
             _store_bounds(properties, bounds)
+            properties.roi_geometry_json = json.dumps(
+                RegionOfInterest.from_bbox(bounds).to_geojson_geometry(),
+                separators=(",", ":"),
+            )
         return bounds
-    return BBoxWGS84(
+    bounds = BBoxWGS84(
         properties.west, properties.south, properties.east, properties.north
     )
+    if store_derived:
+        properties.roi_geometry_json = json.dumps(
+            RegionOfInterest.from_bbox(bounds).to_geojson_geometry(),
+            separators=(",", ":"),
+        )
+    return bounds
 
 
 def _store_bounds(properties: object, bounds: BBoxWGS84) -> None:

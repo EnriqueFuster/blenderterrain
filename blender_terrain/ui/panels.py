@@ -56,16 +56,20 @@ class BLENDERTERRAIN_PT_area(bpy.types.Panel):
                     f"{properties.east:.6f}, {properties.north:.6f}"
                 )
             )
-        else:
+        elif properties.roi_input_mode == "BOUNDING_BOX":
             row = inputs.row(align=True)
             row.prop(properties, "west")
             row.prop(properties, "east")
             row = inputs.row(align=True)
             row.prop(properties, "south")
             row.prop(properties, "north")
-        row = inputs.row(align=True)
-        row.operator("blender_terrain.copy_bbox", icon="COPYDOWN")
-        row.operator("blender_terrain.paste_bbox", icon="PASTEDOWN")
+        else:
+            inputs.prop(properties, "roi_file_path")
+            inputs.label(text="GeoJSON, KML, or SHP + PRJ", icon="INFO")
+        if properties.roi_input_mode != "FILE":
+            row = inputs.row(align=True)
+            row.operator("blender_terrain.copy_bbox", icon="COPYDOWN")
+            row.operator("blender_terrain.paste_bbox", icon="PASTEDOWN")
         inputs.operator("blender_terrain.validate_roi", icon="CHECKMARK")
         self.layout.separator()
         self.layout.label(

@@ -290,7 +290,11 @@ class DeliveryWorkerTests(unittest.TestCase):
 
 
 def _fake_elevation_processor(
-    paths: tuple[Path, ...], plan, progress_callback=None,
+    paths: tuple[Path, ...],
+    plan,
+    progress_callback=None,
+    maximum_source_window_pixels=4_194_304,
+    region=None,
 ) -> tuple[ProcessedElevationTile, ...]:
     tile = tile_grid(plan.grids[0])[0]
     data = np.zeros((tile.rows + 1, tile.columns + 1), dtype=np.float32)

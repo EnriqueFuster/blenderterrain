@@ -7,10 +7,12 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
+from typing import Protocol
 
 from ..core import (
     ImportPlan,
     ProcessedElevationTile,
+    RegionOfInterest,
     TransferProgress,
     create_import_plan,
     deliver_plan_sources,
@@ -41,10 +43,19 @@ from .storage import (
 )
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
-ElevationProcessor = Callable[
-    [tuple[Path, ...], ImportPlan, Callable[[int, int], None] | None],
-    tuple[ProcessedElevationTile, ...],
-]
+
+
+class ElevationProcessor(Protocol):
+    """Callable contract for the replaceable elevation processing stage."""
+
+    def __call__(
+        self,
+        source_paths: tuple[Path, ...],
+        plan: ImportPlan,
+        progress_callback: Callable[[int, int], None] | None = None,
+        maximum_source_window_pixels: int = 4_194_304,
+        region: RegionOfInterest | None = None,
+    ) -> tuple[ProcessedElevationTile, ...]: ...
 
 
 def run_discovery_job(
@@ -194,7 +205,10 @@ def run_delivery_job(
 
         processed_directory = job_path.parents[2] / "processed" / job.task_id
         processed_tiles = elevation_processor(
-            delivered.elevation_paths, plan, report_processing
+            delivered.elevation_paths,
+            plan,
+            report_processing,
+            region=job.region,
         )
         processed_payload: list[dict[str, object]] = []
         for processed in processed_tiles:
@@ -234,6 +248,9 @@ def run_delivery_job(
             "warnings": list(delivered.warnings),
             "request": {
                 "bounds_wgs84": asdict(job.bounds),
+                "roi_geometry_wgs84": (
+                    None if job.region is None else job.region.to_geojson_geometry()
+                ),
                 "product": job.product.value,
                 "elevation_resolution_metres": plan.elevation_resolution_metres,
                 "use_imagery": job.use_imagery,
