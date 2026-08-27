@@ -81,7 +81,15 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         directory = Path(temporary)
         array_path = directory / "terrain.npy"
         image_paths = (directory / "pnoa-west.png", directory / "pnoa-east.png")
-        np.save(array_path, np.array([[1, 2], [3, 4]], dtype=np.float32))
+        elevation = np.array([[1, 2], [3, 4]], dtype=np.float32)
+        if use_imagery:
+            elevation = np.linspace(1, 4, 17 * 17, dtype=np.float32).reshape(17, 17)
+            elevation[0, 0] = 1
+            elevation[0, -1] = 2
+            elevation[-1, 0] = 3
+            elevation[-1, -1] = 4
+            elevation[8, 8] = 10
+        np.save(array_path, elevation)
         if use_imagery:
             for image_path in image_paths:
                 _write_png(image_path)
@@ -139,8 +147,8 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                                 "north": 4300010,
                                 "epsg": 25830,
                             },
-                            "rows": 1,
-                            "columns": 1,
+                            "rows": elevation.shape[0] - 1,
+                            "columns": elevation.shape[1] - 1,
                             "nodata": -9999,
                         }
                     ],
@@ -172,6 +180,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         )
         properties.delivery_result_path = str(result_path)
         properties.import_id = "12345678-1234-4234-8234-123456789abc"
+        properties.full_resolution_mesh = not use_imagery
         assert bpy.ops.blender_terrain.create_terrain() == {"FINISHED"}
         terrain = bpy.data.objects["BT_12345678_Terrain_000"]
         assert bpy.context.view_layer.objects.active == terrain
@@ -187,10 +196,17 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             "DISPLACE",
         )
         assert terrain.modifiers[0].subdivision_type == "SIMPLE"
+        assert terrain.modifiers[0].levels == (0 if properties.full_resolution_mesh else 1)
         assert terrain.modifiers[1].texture_coords == "UV"
         assert terrain.modifiers[1].uv_layer == "TerrainUV"
         assert properties.active_import_id == properties.import_id
         assert properties.active_import_representation == "DISPLACEMENT"
+        assert (
+            properties.active_import_full_resolution_mesh
+            == properties.full_resolution_mesh
+        )
+        if not properties.full_resolution_mesh:
+            _assert_progressive_peak(terrain)
         properties.terrain_vertical_scale = 1.5
         properties.terrain_subdivision_viewport = 0
         properties.terrain_subdivision_render = 2
@@ -204,11 +220,12 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         properties.selected_subdivision_render = 3
         assert bpy.ops.blender_terrain.apply_selected_settings() == {"FINISHED"}
         assert terrain["blender_terrain_strength_multiplier"] == 1.25
-        assert terrain.modifiers[1].strength == 3.75
+        expected_range = 9.0 if use_imagery else 3.0
+        assert terrain.modifiers[1].strength == expected_range * 1.25
         assert terrain.modifiers[0].levels == 1
         assert bpy.ops.blender_terrain.restore_selected_settings() == {"FINISHED"}
         assert terrain["blender_terrain_strength_multiplier"] == 1.0
-        assert terrain.modifiers[1].strength == 3.0
+        assert terrain.modifiers[1].strength == expected_range
         assert terrain.modifiers[0].levels == 0
         assert bpy.ops.blender_terrain.select_import_objects() == {"FINISHED"}
         _assert_evaluated_elevation(terrain)
@@ -237,9 +254,13 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert collection["blender_terrain_product"] == "MDT02"
         assert collection["blender_terrain_schema_version"] == 2
         assert collection["blender_terrain_representation"] == "DISPLACEMENT"
+        assert (
+            collection["blender_terrain_full_resolution_mesh"]
+            == properties.full_resolution_mesh
+        )
         assert collection["blender_terrain_vertical_scale"] == 1.5
         assert collection["blender_terrain_elevation_minimum"] == 1.0
-        assert collection["blender_terrain_elevation_maximum"] == 4.0
+        assert collection["blender_terrain_elevation_maximum"] == (10.0 if use_imagery else 4.0)
         assert collection["blender_terrain_source"].startswith(
             "Instituto Geográfico Nacional"
         )
@@ -296,6 +317,17 @@ def _assert_evaluated_elevation(terrain: bpy.types.Object) -> None:
             [1.0, 2.0, 3.0, 4.0],
             atol=1e-5,
         )
+    finally:
+        evaluated.to_mesh_clear()
+
+
+def _assert_progressive_peak(terrain: bpy.types.Object) -> None:
+    evaluated = terrain.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    evaluated_mesh = evaluated.to_mesh()
+    try:
+        assert len(terrain.data.vertices) == 4
+        assert len(evaluated_mesh.vertices) == 9
+        assert max(vertex.co.z for vertex in evaluated_mesh.vertices) > 9.9
     finally:
         evaluated.to_mesh_clear()
 

@@ -208,6 +208,12 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
     bl_description = "Find the official CNIG elevation files needed for this area"
 
     def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        if not properties.is_valid:
+            validation = bpy.ops.blender_terrain.validate_roi()
+            if validation != {"FINISHED"}:
+                self.report({"ERROR"}, "Correct the area or data settings before discovery")
+                return {"CANCELLED"}
         try:
             job_controller.start_discovery(context)
         except BlenderTerrainError as exc:
@@ -290,6 +296,7 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
                 Path(properties.delivery_result_path),
                 properties.vertical_scale,
                 properties.pack_imagery,
+                properties.full_resolution_mesh,
                 report_progress,
             )
         except (BlenderTerrainError, OSError, ValueError) as exc:

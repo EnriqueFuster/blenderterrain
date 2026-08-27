@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 
 from ..core import (
     ImportPlan,
@@ -134,10 +135,27 @@ def run_delivery_job(
         imagery_requests = plan_imagery_tiles(plan)
         imagery_count = len(imagery_requests)
         file_count = len(discovery.items) + imagery_count
+        last_transfer_event_time = 0.0
 
         def report(transfer: TransferProgress) -> None:
+            nonlocal last_transfer_event_time
             if cancelled():
                 raise JobCancelled("Data delivery was cancelled")
+            now = monotonic()
+            complete = (
+                transfer.cached
+                or (
+                    transfer.expected_bytes is not None
+                    and transfer.written_bytes >= transfer.expected_bytes
+                )
+            )
+            if (
+                last_transfer_event_time
+                and not complete
+                and now - last_transfer_event_time < 0.25
+            ):
+                return
+            last_transfer_event_time = now
             offset = transfer.file_index
             state = JobState.DOWNLOADING_ELEVATION
             if transfer.kind == "imagery":

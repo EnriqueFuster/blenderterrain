@@ -23,7 +23,15 @@ from .ui.operators import (
     BLENDERTERRAIN_OT_update_bbox_from_center,
     BLENDERTERRAIN_OT_validate_roi,
 )
-from .ui.panels import BLENDERTERRAIN_PT_main
+from .ui.panels import (
+    BLENDERTERRAIN_PT_acquisition,
+    BLENDERTERRAIN_PT_activity,
+    BLENDERTERRAIN_PT_area,
+    BLENDERTERRAIN_PT_creation,
+    BLENDERTERRAIN_PT_data,
+    BLENDERTERRAIN_PT_imported,
+    BLENDERTERRAIN_PT_main,
+)
 from .ui.preferences import BLENDERTERRAIN_AddonPreferences
 from .ui.properties import BLENDERTERRAIN_ROIProperties
 
@@ -44,6 +52,12 @@ _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_OT_restore_selected_settings,
     BLENDERTERRAIN_OT_cancel_discovery,
     BLENDERTERRAIN_PT_main,
+    BLENDERTERRAIN_PT_area,
+    BLENDERTERRAIN_PT_data,
+    BLENDERTERRAIN_PT_acquisition,
+    BLENDERTERRAIN_PT_activity,
+    BLENDERTERRAIN_PT_creation,
+    BLENDERTERRAIN_PT_imported,
 )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ import bpy
 from ..core import BBoxWGS84
 from ..errors import JobFormatError, UserInputError
 from ..jobs.models import DiscoveryJob, JobState
-from ..jobs.storage import request_cancellation, write_discovery_job
+from ..jobs.storage import read_progress_events, request_cancellation, write_discovery_job
 from ..models import DatasetProduct
 
 _POLL_INTERVAL_SECONDS = 0.25
@@ -38,6 +39,8 @@ class _ActiveJob:
     mode: str
     last_sequence: int = -1
     result_applied: bool = False
+    event_offset: int = 0
+    started_monotonic: float = 0.0
 
 
 _active_job: _ActiveJob | None = None
@@ -157,12 +160,19 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
     except OSError as exc:
         raise UserInputError(f"Cannot start the Blender background worker: {exc}") from exc
 
-    _active_job = _ActiveJob(process, job_directory, context.scene.name, mode)
+    _active_job = _ActiveJob(
+        process,
+        job_directory,
+        context.scene.name,
+        mode,
+        started_monotonic=time.monotonic(),
+    )
     properties.job_active = True
     properties.active_job_mode = mode
     properties.job_state = JobState.VALIDATING.value
     properties.job_progress = 0.0
     properties.job_message = message
+    properties.job_event_history = json.dumps([message])
     if mode == "discovery":
         properties.discovery_summary = ""
     if not bpy.app.timers.is_registered(_poll_active_job):
@@ -225,7 +235,7 @@ def _poll_active_job() -> float | None:
         _active_job = None
         return None
 
-    _apply_new_events(active, properties)
+    changed = _apply_new_events(active, properties)
     result_path = active.directory / "result.json"
     if result_path.is_file() and not active.result_applied:
         try:
@@ -234,6 +244,10 @@ def _poll_active_job() -> float | None:
             return _POLL_INTERVAL_SECONDS
         _apply_result(active, properties, result)
         active.result_applied = True
+        changed = True
+
+    if changed:
+        _redraw_extension_ui()
 
     return_code = active.process.poll()
     if active.result_applied and return_code is not None:
@@ -250,29 +264,45 @@ def _poll_active_job() -> float | None:
     return _POLL_INTERVAL_SECONDS
 
 
-def _apply_new_events(active: _ActiveJob, properties: Any) -> None:
+def _apply_new_events(active: _ActiveJob, properties: Any) -> bool:
     events_path = active.directory / "events.jsonl"
-    if not events_path.is_file():
-        return
     try:
-        lines = events_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return
-    for line in lines:
-        try:
-            event = json.loads(line)
-            sequence = int(event["sequence"])
-            state = str(event["state"])
-            progress = float(event["progress"])
-            message = str(event["message"])
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        events, active.event_offset = read_progress_events(
+            events_path, active.event_offset
+        )
+    except JobFormatError:
+        return False
+    changed = False
+    history = _event_history(properties.job_event_history)
+    for event in events:
+        if event.sequence <= active.last_sequence:
             continue
-        if sequence <= active.last_sequence:
-            continue
-        active.last_sequence = sequence
-        properties.job_state = state
-        properties.job_progress = max(0.0, min(1.0, progress))
-        properties.job_message = message
+        active.last_sequence = event.sequence
+        properties.job_state = event.state.value
+        properties.job_progress = event.progress
+        properties.job_message = event.message
+        history.append(event.message)
+        changed = True
+    if changed:
+        properties.job_event_history = json.dumps(history[-6:])
+    return changed
+
+
+def _event_history(serialized: str) -> list[str]:
+    try:
+        values = json.loads(serialized)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(values, list):
+        return []
+    return [value for value in values if isinstance(value, str)]
+
+
+def _redraw_extension_ui() -> None:
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type in {"VIEW_3D", "PROPERTIES", "STATUSBAR"}:
+                area.tag_redraw()
 
 
 def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -> None:

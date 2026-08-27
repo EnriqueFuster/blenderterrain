@@ -13,6 +13,8 @@ import bpy
 import numpy as np
 
 from ..core import (
+    DEFAULT_PREVIEW_SUBDIVISION_LEVEL,
+    PREVIEW_MESH_REDUCTION_FACTOR,
     TERRAIN_SCHEMA_VERSION,
     TerrainRepresentation,
     bounds_fully_covered,
@@ -36,6 +38,7 @@ def create_terrain_objects(
     result_path: Path,
     vertical_scale: float,
     pack_images: bool = False,
+    full_resolution_mesh: bool = False,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[bpy.types.Object, ...]:
     """Create one mesh object per processed tile using local projected coordinates."""
@@ -105,9 +108,14 @@ def create_terrain_objects(
     collection["blender_terrain_data_license"] = provenance["license"]
     collection["blender_terrain_retrieved_at_utc"] = provenance["retrieved_at_utc"]
     collection["blender_terrain_vertical_scale"] = vertical_scale
-    collection["blender_terrain_subdivision_viewport"] = 0
-    collection["blender_terrain_subdivision_render"] = 0
+    initial_subdivision = 0 if full_resolution_mesh else DEFAULT_PREVIEW_SUBDIVISION_LEVEL
+    collection["blender_terrain_subdivision_viewport"] = initial_subdivision
+    collection["blender_terrain_subdivision_render"] = initial_subdivision
     collection["blender_terrain_displacement_enabled"] = True
+    collection["blender_terrain_full_resolution_mesh"] = full_resolution_mesh
+    collection["blender_terrain_base_mesh_reduction_factor"] = (
+        1 if full_resolution_mesh else PREVIEW_MESH_REDUCTION_FACTOR
+    )
     collection["blender_terrain_elevation_minimum"] = elevation_range.minimum
     collection["blender_terrain_elevation_maximum"] = elevation_range.maximum
     collection["blender_terrain_elevation_range"] = elevation_range.span
@@ -136,7 +144,13 @@ def create_terrain_objects(
                 f"Creating terrain object {index + 1} of {len(parsed)}",
             )
             geometry = build_displacement_mesh_geometry(
-                elevation, bounds, nodata, elevation_range.minimum
+                elevation,
+                bounds,
+                nodata,
+                elevation_range.minimum,
+                reduction_factor=(
+                    1 if full_resolution_mesh else PREVIEW_MESH_REDUCTION_FACTOR
+                ),
             )
             mesh = _create_mesh(
                 f"BT_{short_id}_Mesh_{index:03d}",
@@ -155,6 +169,9 @@ def create_terrain_objects(
                 TerrainRepresentation.DISPLACEMENT.value
             )
             object_["blender_terrain_strength_multiplier"] = 1.0
+            object_["blender_terrain_full_resolution_mesh"] = full_resolution_mesh
+            object_["blender_terrain_heightmap_rows"] = elevation.shape[0]
+            object_["blender_terrain_heightmap_columns"] = elevation.shape[1]
             object_["blender_terrain_elevation_minimum"] = elevation_range.minimum
             object_["blender_terrain_elevation_range"] = elevation_range.span
             object_["blender_terrain_west"] = bounds.west
@@ -177,8 +194,8 @@ def create_terrain_objects(
             heightmap_textures.append(texture)
             subdivision = object_.modifiers.new("Terrain Subdivision", "SUBSURF")
             subdivision.subdivision_type = "SIMPLE"
-            subdivision.levels = 0
-            subdivision.render_levels = 0
+            subdivision.levels = initial_subdivision
+            subdivision.render_levels = initial_subdivision
             displacement = object_.modifiers.new("Terrain Displacement", "DISPLACE")
             displacement.texture = texture
             displacement.texture_coords = "UV"
@@ -292,19 +309,26 @@ def _create_mesh(
         loop_vertices = faces.ravel()
         uv = np.column_stack(
             (
-                (
-                    vertices[loop_vertices, 0] / width * (columns - 1) + 0.5
-                )
-                / columns,
-                (
-                    vertices[loop_vertices, 1] / height * (rows - 1) + 0.5
-                )
-                / rows,
+                _heightmap_uv_coordinates(
+                    vertices[loop_vertices, 0], width, columns
+                ),
+                _heightmap_uv_coordinates(vertices[loop_vertices, 1], height, rows),
             )
         ).astype(np.float32, copy=False)
         uv_layer = mesh.uv_layers.new(name="TerrainUV")
         uv_layer.uv.foreach_set("vector", uv.ravel())
     return mesh
+
+
+def _heightmap_uv_coordinates(
+    positions: Any, extent: float, pixel_count: int
+) -> Any:
+    """Map geographic endpoints to legacy Blender image-texture sample centres."""
+
+    normalized = positions / extent
+    if pixel_count == 2:
+        return (normalized * (pixel_count - 1) + 0.5) / pixel_count
+    return (normalized * pixel_count - 0.5) / (pixel_count - 1)
 
 
 def _create_heightmap_image(

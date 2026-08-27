@@ -144,6 +144,27 @@ class ProgressEvent:
             "message": self.message,
         }
 
+    @classmethod
+    def from_dict(cls, payload: object) -> ProgressEvent:
+        """Validate one persisted progress event."""
+
+        if not isinstance(payload, dict):
+            raise JobFormatError("Progress event must be a JSON object")
+        try:
+            sequence = payload["sequence"]
+            state = JobState(payload["state"])
+            progress = payload["progress"]
+            message = payload["message"]
+            if isinstance(sequence, bool) or not isinstance(sequence, int):
+                raise TypeError
+            if isinstance(progress, bool) or not isinstance(progress, (int, float)):
+                raise TypeError
+            if not isinstance(message, str):
+                raise TypeError
+            return cls(sequence, state, float(progress), message)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise JobFormatError("Progress event contains invalid fields") from exc
+
 
 def _optional_finite_float(value: object) -> float | None:
     if value is None:

@@ -43,6 +43,15 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     """Store manual WGS84 bounds and their latest validation result."""
 
+    data_settings_tab: EnumProperty(
+        name="Data Settings",
+        items=(
+            ("ELEVATION", "Elevation", "Configure terrain elevation data"),
+            ("IMAGERY", "Imagery", "Configure optional PNOA imagery"),
+        ),
+        default="ELEVATION",
+    )
+
     roi_input_mode: EnumProperty(
         name="ROI Input",
         items=(
@@ -152,6 +161,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         default=0.0, min=0.0, max=1.0, subtype="FACTOR", options={"HIDDEN"}
     )
     job_message: StringProperty(default="", options={"HIDDEN"})
+    job_event_history: StringProperty(default="[]", options={"HIDDEN"})
     discovered_file_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     estimated_download_mb: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     discovery_summary: StringProperty(default="", options={"HIDDEN"})
@@ -167,6 +177,14 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         description="Embed PNOA images in the blend file when creating the terrain",
         default=False,
     )
+    full_resolution_mesh: BoolProperty(
+        name="Full-Resolution Base Mesh",
+        description=(
+            "Create one base vertex per elevation sample; this can use substantially more "
+            "memory than the progressive mesh"
+        ),
+        default=False,
+    )
     imagery_packed: BoolProperty(default=False, options={"HIDDEN"})
     imagery_available: BoolProperty(default=False, options={"HIDDEN"})
     imagery_size_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
@@ -176,6 +194,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         update=_active_import_changed,
     )
     active_import_representation: StringProperty(default="", options={"HIDDEN"})
+    active_import_full_resolution_mesh: BoolProperty(default=False, options={"HIDDEN"})
     terrain_vertical_scale: FloatProperty(
         name="Vertical Scale", default=1.0, min=0.001, max=100.0
     )

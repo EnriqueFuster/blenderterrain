@@ -41,9 +41,13 @@ def load_import_settings(properties: Any) -> None:
     collection = _collection(properties.active_import_id)
     if collection is None:
         properties.active_import_representation = ""
+        properties.active_import_full_resolution_mesh = False
         return
     metadata = read_terrain_metadata(dict(collection.items()))
     properties.active_import_representation = metadata.representation.value
+    properties.active_import_full_resolution_mesh = bool(
+        collection.get("blender_terrain_full_resolution_mesh", False)
+    )
     properties.terrain_vertical_scale = metadata.settings.vertical_scale
     properties.terrain_subdivision_viewport = metadata.settings.subdivision_viewport
     properties.terrain_subdivision_render = metadata.settings.subdivision_render

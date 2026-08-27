@@ -16,6 +16,8 @@ from .grid import (
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
 from .imagery import ImageryTileRequest, plan_imagery_tiles
 from .mesh_geometry import (
+    DEFAULT_PREVIEW_SUBDIVISION_LEVEL,
+    PREVIEW_MESH_REDUCTION_FACTOR,
     TerrainMeshGeometry,
     build_displacement_mesh_geometry,
     build_terrain_mesh_geometry,
@@ -49,7 +51,9 @@ from .texture_mapping import (
 
 __all__ = [
     "DEFAULT_MAX_TILE_CELLS",
+    "DEFAULT_PREVIEW_SUBDIVISION_LEVEL",
     "MAX_SUBDIVISION_LEVEL",
+    "PREVIEW_MESH_REDUCTION_FACTOR",
     "SUBDIVISION_WARNING_LEVEL",
     "TERRAIN_SCHEMA_VERSION",
     "BBoxWGS84",

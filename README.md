@@ -27,7 +27,8 @@ The current implementation includes:
 5. PNOA WMS textures in the supported Spanish ETRS89 UTM zones;
 6. local Blender coordinates with CRS, ROI, source and attribution metadata;
 7. automatic or explicit row-by-column terrain division;
-8. non-destructive displacement with persistent heightmaps;
+8. full-resolution persistent heightmaps with a lightweight progressive base mesh
+   or an opt-in full-resolution base mesh;
 9. import-wide and per-object vertical scale and subdivision controls;
 10. optional packing of PNOA images into the `.blend` file.
 
@@ -41,7 +42,9 @@ PNOA imagery, terrain processing and Blender object creation.
 
 Current limitations are deliberate: there is no interactive map or complex
 polygon ROI yet, terrain creation is synchronous, and a large number of PNOA
-tiles has not yet been GPU-benchmarked. Per-object displacement overrides can
+tiles has not yet been GPU-benchmarked. The default progressive mesh approaches
+the processed heightmap density around subdivision level 4; higher levels only
+interpolate the available raster samples. Per-object displacement overrides can
 also create visible seams when adjacent objects use different strengths; the
 extension warns when it detects that situation.
 
