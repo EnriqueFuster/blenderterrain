@@ -9,6 +9,7 @@ import sys
 import zlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 import bpy
 import numpy as np
@@ -57,6 +58,26 @@ def main() -> None:
         assert properties.estimated_memory_mib > 0.0
         assert "CNIG discovery" in properties.planning_warning
         assert properties.imagery_summary.startswith("PNOA 0.25 m:")
+        original_geometry = properties.roi_geometry_json
+        precise_west = float(properties.west) + 1e-10
+        properties.roi_geometry_json = json.dumps(
+            {
+                "type": "Polygon",
+                "coordinates": [[
+                    [precise_west, properties.south],
+                    [properties.east, properties.south],
+                    [properties.east, properties.north],
+                    [precise_west, properties.north],
+                    [precise_west, properties.south],
+                ]],
+            }
+        )
+        precision_job = job_controller._job_from_properties(
+            str(uuid4()), str(uuid4()), properties
+        )
+        assert precision_job.region is not None
+        assert precision_job.bounds == precision_job.region.bounds
+        properties.roi_geometry_json = original_geometry
         assert bpy.ops.blender_terrain.copy_bbox() == {"FINISHED"}
         assert not properties.job_active
         assert not job_controller.timer_is_registered()

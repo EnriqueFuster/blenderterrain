@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import bpy
 
-from ..core import BBoxWGS84, RegionOfInterest
+from ..core import RegionOfInterest
 from ..errors import JobFormatError, UserInputError
 from ..jobs.models import DiscoveryJob, JobState
 from ..jobs.storage import read_progress_events, request_cancellation, write_discovery_job
@@ -382,12 +382,7 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
         return DiscoveryJob(
             task_id=task_id,
             import_id=import_id,
-            bounds=BBoxWGS84(
-                properties.west,
-                properties.south,
-                properties.east,
-                properties.north,
-            ),
+            bounds=region.bounds,
             product=DatasetProduct(properties.product),
             elevation_resolution_metres=(
                 None
