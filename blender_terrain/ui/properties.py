@@ -26,6 +26,8 @@ def _active_import_changed(properties: object, context: bpy.types.Context) -> No
 def _invalidate_validation(properties: object, context: bpy.types.Context) -> None:
     """Mark estimates stale whenever an input option changes."""
 
+    if properties.internal_update:
+        return
     properties.is_valid = False
     properties.validation_message = "Options changed; validate ROI again"
     properties.discovery_summary = ""
@@ -59,6 +61,8 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
             ("BOUNDING_BOX", "Bounding Box", "Enter WGS84 rectangle coordinates"),
             ("CENTER_SIZE", "Center + Size", "Enter a WGS84 centre and metric dimensions"),
             ("FILE", "Polygon File", "Load Polygon or MultiPolygon geometry from a GIS file"),
+            ("MAP_RECTANGLE", "Draw Rectangle on Map", "Draw a rectangle in the browser map"),
+            ("MAP_POLYGON", "Draw Polygon on Map", "Draw a polygon in the browser map"),
         ),
         default="BOUNDING_BOX",
         update=_invalidate_validation,
@@ -102,6 +106,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         update=_invalidate_validation,
     )
     roi_geometry_json: StringProperty(default="", options={"HIDDEN"})
+    internal_update: BoolProperty(default=False, options={"HIDDEN"})
     product: EnumProperty(
         name="Elevation Product",
         items=(("MDT02", "DTM (MDT02)", "Bare-earth terrain"),

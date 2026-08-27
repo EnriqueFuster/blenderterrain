@@ -63,9 +63,21 @@ class BLENDERTERRAIN_PT_area(bpy.types.Panel):
             row = inputs.row(align=True)
             row.prop(properties, "south")
             row.prop(properties, "north")
-        else:
+        elif properties.roi_input_mode == "FILE":
             inputs.prop(properties, "roi_file_path")
             inputs.label(text="GeoJSON, KML, or SHP + PRJ", icon="INFO")
+        else:
+            inputs.operator("blender_terrain.open_roi_map", icon="URL")
+            if properties.roi_geometry_json:
+                inputs.label(
+                    text=(
+                        f"Selected: {properties.west:.6f}, {properties.south:.6f}, "
+                        f"{properties.east:.6f}, {properties.north:.6f}"
+                    ),
+                    icon="CHECKMARK",
+                )
+            else:
+                inputs.label(text="The selector opens in your browser", icon="INFO")
         if properties.roi_input_mode != "FILE":
             row = inputs.row(align=True)
             row.operator("blender_terrain.copy_bbox", icon="COPYDOWN")

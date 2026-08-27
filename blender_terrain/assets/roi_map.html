@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlenderTerrain — Select Area</title>
+  <style>
+    html, body { height: 100%; margin: 0; font: 14px system-ui, sans-serif; color: #eee; background: #222; }
+    #map { position: fixed; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+    .panel { position: fixed; z-index: 2; top: 16px; left: 16px; width: min(390px, calc(100% - 32px));
+      box-sizing: border-box; padding: 14px; border-radius: 8px; background: #252525ee;
+      box-shadow: 0 3px 18px #0008; }
+    h1 { font-size: 17px; margin: 0 0 7px; } p { margin: 5px 0; line-height: 1.4; }
+    #status { color: #b9d9ff; min-height: 20px; }
+    label { display: block; margin-top: 9px; }
+    select { width: 100%; margin-top: 4px; padding: 7px; color: #eee; background: #3a3a3a;
+      border: 1px solid #666; border-radius: 4px; }
+    button { margin: 5px 5px 0 0; padding: 7px 11px; border: 0; border-radius: 4px; cursor: pointer; }
+    #use { background: #3b82f6; color: white; } button:disabled { opacity: .45; cursor: default; }
+    .zoom { position: fixed; z-index: 2; right: 16px; top: 16px; }
+    .zoom button { display: block; width: 38px; height: 38px; margin-bottom: 4px; font-size: 20px; }
+    .attribution { position: fixed; z-index: 2; right: 5px; bottom: 3px; padding: 2px 5px;
+      font-size: 11px; color: #222; background: #fffc; }
+    .attribution a { color: #0645ad; }
+  </style>
+</head>
+<body>
+  <canvas id="map"></canvas>
+  <section class="panel">
+    <h1>BlenderTerrain area selector</h1>
+    <p id="help">Loading…</p>
+    <label for="base-layer">Background map</label><select id="base-layer"></select>
+    <p id="status"></p>
+    <button id="undo" disabled>Undo</button><button id="clear" disabled>Clear</button>
+    <button id="cancel">Cancel</button><button id="use" disabled>Use this area</button>
+  </section>
+  <div class="zoom"><button id="zoom-in">+</button><button id="zoom-out">−</button></div>
+  <div class="attribution"><a id="attribution" href="https://www.ign.es/">Map attribution</a></div>
+  <script src="/app.js"></script>
+</body>
+</html>

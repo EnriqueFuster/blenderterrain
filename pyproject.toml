@@ -38,6 +38,9 @@ oracle = [
 [tool.setuptools.packages.find]
 include = ["blender_terrain*"]
 
+[tool.setuptools.package-data]
+blender_terrain = ["assets/*.html", "assets/*.js"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -68,4 +71,3 @@ markers = [
   "online: contacts an external service and is disabled by default",
   "oracle: requires a development-only raster oracle",
 ]
-

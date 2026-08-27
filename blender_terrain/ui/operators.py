@@ -16,8 +16,9 @@ from ..core import (
     parse_bbox,
     subdivision_risk_message,
 )
-from ..errors import BlenderTerrainError
+from ..errors import BlenderTerrainError, UserInputError
 from ..io.roi_files import read_roi_file
+from ..io.roi_map_server import ROIMapSession
 from ..models import DatasetProduct
 from . import job_controller
 from .terrain_builder import (
@@ -32,6 +33,97 @@ from .terrain_controls import (
     restore_selected_settings,
     select_import_objects,
 )
+
+_active_map_session: ROIMapSession | None = None
+
+
+class BLENDERTERRAIN_OT_open_roi_map(bpy.types.Operator):
+    """Open the authenticated browser map and wait without blocking Blender."""
+
+    bl_idname = "blender_terrain.open_roi_map"
+    bl_label = "Open Map Selector"
+    bl_description = "Open a browser map to draw the area and return it to Blender"
+
+    _timer: object | None = None
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        global _active_map_session
+        properties = context.scene.blender_terrain_roi
+        mode = {
+            "MAP_RECTANGLE": "RECTANGLE",
+            "MAP_POLYGON": "POLYGON",
+        }.get(properties.roi_input_mode)
+        if mode is None:
+            self.report({"ERROR"}, "Choose a map drawing ROI mode first")
+            return {"CANCELLED"}
+        shutdown_map_selector()
+        try:
+            bounds = BBoxWGS84(
+                properties.west, properties.south, properties.east, properties.north
+            )
+            _active_map_session = ROIMapSession(mode, bounds)
+            url = _active_map_session.start()
+            if bpy.ops.wm.url_open(url=url) != {"FINISHED"}:
+                raise RuntimeError("Blender could not launch the default browser")
+        except (BlenderTerrainError, OSError, RuntimeError) as exc:
+            shutdown_map_selector()
+            self.report({"ERROR"}, f"Cannot open the ROI map: {exc}")
+            return {"CANCELLED"}
+        self._timer = context.window_manager.event_timer_add(0.25, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        properties.validation_message = "Waiting for an area from the browser map"
+        self.report({"INFO"}, "ROI map opened in the default browser")
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
+        session = _active_map_session
+        if event.type == "ESC":
+            self._finish(context)
+            shutdown_map_selector()
+            self.report({"INFO"}, "ROI map selection cancelled")
+            return {"CANCELLED"}
+        if event.type != "TIMER" or session is None or not session.finished.is_set():
+            return {"PASS_THROUGH"}
+        self._finish(context)
+        if session.cancelled:
+            shutdown_map_selector()
+            self.report({"INFO"}, "ROI map selection cancelled")
+            return {"CANCELLED"}
+        if session.result is None:
+            message = session.error or "The browser returned no ROI geometry"
+            shutdown_map_selector()
+            self.report({"ERROR"}, message)
+            return {"CANCELLED"}
+        properties = context.scene.blender_terrain_roi
+        result = session.result
+        shutdown_map_selector()
+        _store_bounds(properties, result.bounds)
+        properties.roi_geometry_json = json.dumps(
+            result.to_geojson_geometry(), separators=(",", ":")
+        )
+        validation = bpy.ops.blender_terrain.validate_roi()
+        if validation != {"FINISHED"}:
+            return {"CANCELLED"}
+        self.report({"INFO"}, "ROI received and validated from the browser map")
+        return {"FINISHED"}
+
+    def cancel(self, context: bpy.types.Context) -> None:
+        self._finish(context)
+        shutdown_map_selector()
+
+    def _finish(self, context: bpy.types.Context) -> None:
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+
+
+def shutdown_map_selector() -> None:
+    """Close an active browser-map callback server during cancellation or unload."""
+
+    global _active_map_session
+    if _active_map_session is not None:
+        _active_map_session.close()
+        _active_map_session = None
 
 
 class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
@@ -183,11 +275,20 @@ def _bounds_from_properties(
 ) -> BBoxWGS84:
     if properties.roi_input_mode == "FILE":
         region = read_roi_file(Path(bpy.path.abspath(properties.roi_file_path)))
-        properties.roi_geometry_json = json.dumps(
-            region.to_geojson_geometry(), separators=(",", ":")
-        )
         if store_derived:
             _store_bounds(properties, region.bounds)
+            properties.roi_geometry_json = json.dumps(
+                region.to_geojson_geometry(), separators=(",", ":")
+            )
+        return region.bounds
+    if properties.roi_input_mode in {"MAP_RECTANGLE", "MAP_POLYGON"}:
+        if not properties.roi_geometry_json:
+            raise UserInputError("Open the map and select an area first")
+        try:
+            serialized = json.loads(properties.roi_geometry_json)
+        except json.JSONDecodeError as exc:
+            raise UserInputError("Stored map geometry is invalid; select the area again") from exc
+        region = RegionOfInterest.from_geojson_geometry(serialized)
         return region.bounds
     if properties.roi_input_mode == "CENTER_SIZE":
         bounds = bbox_from_center_size(
@@ -215,10 +316,14 @@ def _bounds_from_properties(
 
 
 def _store_bounds(properties: object, bounds: BBoxWGS84) -> None:
-    properties.west = bounds.west
-    properties.south = bounds.south
-    properties.east = bounds.east
-    properties.north = bounds.north
+    properties.internal_update = True
+    try:
+        properties.west = bounds.west
+        properties.south = bounds.south
+        properties.east = bounds.east
+        properties.north = bounds.north
+    finally:
+        properties.internal_update = False
 
 
 class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
