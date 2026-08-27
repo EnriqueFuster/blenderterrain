@@ -9,7 +9,7 @@ __pycache__/
 build/
 dist/
 
-# Phase 0 research outputs and downloaded source data must stay local.
+# Research outputs and downloaded source data must stay local.
 .artifacts/
 .cache/
 *.part

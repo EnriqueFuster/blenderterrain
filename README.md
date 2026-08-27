@@ -81,9 +81,6 @@ Portable geospatial logic must not import `bpy`. Blender integration will be a
 consumer of tested artifacts produced by the portable layers. Provider-specific
 HTTP and parsing behavior will remain isolated from core geospatial models.
 
-See the proposed decisions in [`docs/adr`](docs/adr) and the verified-source
-inventory in [`docs/data-sources.md`](docs/data-sources.md).
-
 ## Install in Blender
 
 Build the extension ZIP with Blender 4.5:
@@ -100,8 +97,9 @@ that order. `Balanced` is the recommended resource profile. `Large` permits a
 larger processing budget but does not bypass the per-object mesh safeguards and
 can exhaust RAM or GPU memory. The **Cache** panel reports disk use by category;
 its cleanup actions require confirmation and are disabled while a job is active.
-A compact manual feedback test is available in
-[`docs/manual-testing.md`](docs/manual-testing.md).
+A useful manual check is to validate a small ROI, discover and download its
+sources, create the terrain, adjust its displacement, save the `.blend`, and
+open it again before testing a larger area.
 
 ## Development
 
@@ -124,8 +122,7 @@ python -m scripts.discover_cnig --product PNOA_MA --online
 
 An explicit `--download-one` mode exists for controlled provider validation.
 Complete MDT02 and MDS02 samples were downloaded and validated on 2026-08-19
-through the first-party CNIG initialization and delivery endpoints. See
-`docs/provider-cnig.md` for the observed contract and current limitations.
+through the first-party CNIG initialization and delivery endpoints.
 
 PNOA results can contain several revisions with the same filename. A research
 download must therefore select the exact identifier printed by discovery:

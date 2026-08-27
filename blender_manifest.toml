@@ -28,7 +28,6 @@ paths_exclude_pattern = [
   "/*.egg-info/",
   "/build/",
   "/dist/",
-  "/docs/",
   "/scripts/",
   "/tests/",
   "/.gitattributes",
