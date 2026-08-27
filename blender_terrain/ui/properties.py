@@ -39,7 +39,7 @@ def _import_settings_tab_changed(properties: object, context: bpy.types.Context)
 
 
 def _invalidate_validation(properties: object, context: bpy.types.Context) -> None:
-    """Mark estimates stale whenever an input option changes."""
+    """Mark estimates stale while preserving the current ROI definition."""
 
     if properties.internal_update:
         return
@@ -55,13 +55,21 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.imagery_packed = False
     properties.imagery_available = False
     properties.imagery_size_mib = 0.0
-    properties.roi_geometry_json = ""
+
+
+def _roi_definition_changed(properties: object, context: bpy.types.Context) -> None:
+    """Invalidate planning and discard geometry superseded by an ROI input change."""
+
+    _invalidate_validation(properties, context)
+    if not properties.internal_update:
+        properties.roi_geometry_json = ""
 
 
 def _roi_file_changed(properties: object, context: bpy.types.Context) -> None:
     """Refresh lightweight GeoPackage layer metadata after choosing a file."""
 
     _invalidate_validation(properties, context)
+    properties.roi_geometry_json = ""
     properties.gpkg_layers_json = "[]"
     properties.gpkg_inspection_message = ""
     if Path(properties.roi_file_path).suffix.lower() != ".gpkg":
@@ -105,6 +113,22 @@ def _gpkg_layer_items(
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     """Store manual WGS84 bounds and their latest validation result."""
 
+    elevation_source: EnumProperty(
+        name="Elevation Source",
+        items=(
+            ("CNIG", "Download from CNIG", "Discover and download official elevation data"),
+            ("LOCAL", "Local Raster", "Process a compatible local TIFF or a folder of TIFFs"),
+        ),
+        default="CNIG",
+        update=_invalidate_validation,
+    )
+    local_elevation_path: StringProperty(
+        name="Raster or Folder",
+        description="Compatible elevation .tif/.tiff file or folder containing source tiles",
+        subtype="FILE_PATH",
+        update=_invalidate_validation,
+    )
+
     data_settings_tab: EnumProperty(
         name="Data Settings",
         items=(
@@ -124,39 +148,39 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
             ("MAP_POLYGON", "Draw Polygon on Map", "Draw a polygon in the browser map"),
         ),
         default="BOUNDING_BOX",
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     west: FloatProperty(
         name="West", default=-0.39, min=-180.0, max=180.0, precision=6,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     south: FloatProperty(
         name="South", default=39.46, min=-90.0, max=90.0, precision=6,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     east: FloatProperty(
         name="East", default=-0.37, min=-180.0, max=180.0, precision=6,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     north: FloatProperty(
         name="North", default=39.48, min=-90.0, max=90.0, precision=6,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     center_longitude: FloatProperty(
         name="Longitude", default=-0.38, min=-180.0, max=180.0, precision=6,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     center_latitude: FloatProperty(
         name="Latitude", default=39.47, min=-90.0, max=90.0, precision=6,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     roi_width_metres: FloatProperty(
         name="Width (m)", default=2_000.0, min=1.0, max=1_000_000.0,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     roi_height_metres: FloatProperty(
         name="Height (m)", default=2_000.0, min=1.0, max=1_000_000.0,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     roi_file_path: StringProperty(
         name="ROI File",
@@ -169,14 +193,22 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     gpkg_layer: EnumProperty(
         name="Polygon Layer",
         items=_gpkg_layer_items,
-        update=_invalidate_validation,
+        update=_roi_definition_changed,
     )
     roi_geometry_json: StringProperty(default="", options={"HIDDEN"})
     internal_update: BoolProperty(default=False, options={"HIDDEN"})
     product: EnumProperty(
         name="Elevation Product",
-        items=(("MDT02", "DTM (MDT02)", "Bare-earth terrain"),
-               ("MDS02", "DSM (MDS02)", "Terrain, buildings and vegetation")),
+        items=(
+            ("MDT50CM", "DTM (MDT50 cm, 3rd)", "0.5 m terrain; coverage is incomplete"),
+            ("MDT02", "DTM (MDT02, 2nd)", "2 m bare-earth terrain"),
+            ("MDT05", "DTM (MDT05, 1st)", "5 m bare-earth terrain"),
+            ("MDT25", "DTM (MDT25, 2nd)", "25 m bare-earth terrain"),
+            ("MDT200", "DTM (MDT200, 2nd)", "200 m bare-earth terrain"),
+            ("MDS50CM", "DSM (MDS50 cm, 3rd)", "0.5 m surface; coverage is incomplete"),
+            ("MDS02", "DSM (MDS02, 2nd)", "2 m buildings and vegetation"),
+            ("MDS05", "DSM (MDS05, 1st)", "5 m buildings and vegetation"),
+        ),
         default="MDT02",
         update=_invalidate_validation,
     )
@@ -186,7 +218,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
             ("AUTO", "Auto", "Choose the finest safe resolution"),
             *tuple(
                 (str(value), f"{value} m", "Output grid spacing")
-                for value in (2, 5, 10, 20, 50, 100)
+                for value in (0.5, 2, 5, 10, 20, 25, 50, 100, 200)
             ),
         ),
         default="AUTO",
@@ -264,6 +296,11 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         ),
         default=False,
     )
+    adjust_viewport_clip_end: BoolProperty(
+        name="Adjust Viewport Clip End",
+        description="Increase viewport clipping distance to fit the created terrain",
+        default=True,
+    )
     imagery_packed: BoolProperty(default=False, options={"HIDDEN"})
     imagery_available: BoolProperty(default=False, options={"HIDDEN"})
     imagery_size_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
@@ -289,6 +326,13 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     terrain_strength_multiplier: FloatProperty(
         name="Strength Multiplier", default=1.0, min=0.0, max=10.0
     )
+    terrain_displacement_midlevel: FloatProperty(
+        name="Midlevel",
+        description="Texture value treated as zero displacement; 0 preserves source elevations",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+    )
     terrain_subdivision_viewport: IntProperty(
         name="Viewport Subdivision",
         description="Subdivision shown in the viewport; cost grows fourfold per level",
@@ -306,6 +350,13 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     terrain_displacement_enabled: BoolProperty(name="Enable Displacement", default=True)
     selected_strength_multiplier: FloatProperty(
         name="Strength Multiplier", default=1.0, min=0.0, max=10.0
+    )
+    selected_displacement_midlevel: FloatProperty(
+        name="Midlevel",
+        description="Midlevel for the selected terrain objects",
+        default=0.0,
+        min=0.0,
+        max=1.0,
     )
     selected_object_name: StringProperty(default="", options={"HIDDEN"})
     selected_objects_signature: StringProperty(default="", options={"HIDDEN"})

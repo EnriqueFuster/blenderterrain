@@ -119,16 +119,31 @@ class BLENDERTERRAIN_PT_data(bpy.types.Panel):
         layout.enabled = not properties.job_active
         layout.row().prop(properties, "data_settings_tab", expand=True)
         if properties.data_settings_tab == "ELEVATION":
+            layout.prop(properties, "elevation_source")
+            if properties.elevation_source == "LOCAL":
+                layout.prop(properties, "local_elevation_path")
+                layout.label(text="Supports the verified CNIG elevation TIFF layout", icon="INFO")
             layout.prop(properties, "product")
+            if properties.product in {"MDT50CM", "MDS50CM"}:
+                layout.label(text="Third-coverage availability is still incomplete", icon="INFO")
             layout.prop(properties, "elevation_resolution")
             layout.prop(properties, "tiling_mode", text="Terrain Object Grid")
+            layout.label(
+                text="The object grid keeps elevation and imagery mapping together",
+                icon="INFO",
+            )
             if properties.tiling_mode == "MANUAL":
                 row = layout.row(align=True)
                 row.prop(properties, "manual_tile_rows")
                 row.prop(properties, "manual_tile_columns")
             if properties.is_valid:
                 layout.separator()
-                layout.label(text=f"Selected output: {properties.selected_resolution:g} m")
+                prefix = (
+                    "Auto resolved to"
+                    if properties.elevation_resolution == "AUTO"
+                    else "Output"
+                )
+                layout.label(text=f"{prefix}: {properties.selected_resolution:g} m")
                 layout.label(text=f"Elevation samples: {properties.sample_count:,}")
                 layout.label(text=f"Terrain objects: {properties.terrain_tile_count}")
                 layout.label(text=properties.terrain_tile_summary)
@@ -141,6 +156,8 @@ class BLENDERTERRAIN_PT_data(bpy.types.Panel):
                 )
             if properties.is_valid:
                 layout.label(text=properties.imagery_summary)
+                if properties.use_imagery and properties.imagery_gsd == "AUTO":
+                    layout.label(text="The value above is the resolved Auto GSD", icon="CHECKMARK")
         if properties.is_valid and properties.planning_warning:
             layout.label(text=properties.planning_warning, icon="INFO")
 
@@ -160,11 +177,14 @@ class BLENDERTERRAIN_PT_acquisition(bpy.types.Panel):
         controls = layout.column()
         controls.enabled = not properties.job_active
         discover = controls.row()
-        discover.enabled = bpy.app.online_access
+        discover.enabled = bpy.app.online_access or properties.elevation_source == "LOCAL"
         discover.operator("blender_terrain.discover_sources", icon="VIEWZOOM")
         controls.label(text="Discovery checks coverage and size; it does not download", icon="INFO")
         download = controls.row()
-        download.enabled = properties.discovery_ready and bpy.app.online_access
+        download.enabled = properties.discovery_ready and (
+            bpy.app.online_access
+            or (properties.elevation_source == "LOCAL" and not properties.use_imagery)
+        )
         download.operator("blender_terrain.download_data", icon="IMPORT")
         if not bpy.app.online_access:
             layout.label(text="Online access is disabled in Preferences", icon="ERROR")
@@ -176,11 +196,13 @@ class BLENDERTERRAIN_PT_acquisition(bpy.types.Panel):
         activity = layout.box()
         activity.label(text="Job Activity", icon="TIME")
         if properties.job_state:
-            activity.prop(
-                properties,
-                "job_progress",
-                text=_job_state_label(properties.job_state),
-                slider=True,
+            activity.progress(
+                factor=properties.job_progress,
+                type="BAR",
+                text=(
+                    f"{_job_state_label(properties.job_state)}: "
+                    f"{properties.job_progress:.0%}"
+                ),
             )
         else:
             activity.label(text="No job has been started")
@@ -227,6 +249,7 @@ class BLENDERTERRAIN_PT_creation(bpy.types.Panel):
                 text=f"PNOA cache size: {properties.imagery_size_mib:.1f} MiB",
                 icon="INFO",
             )
+        controls.prop(properties, "adjust_viewport_clip_end")
         controls.operator("blender_terrain.create_terrain", icon="MESH_GRID")
         if properties.terrain_created and properties.imagery_available:
             if properties.imagery_packed:
@@ -274,6 +297,8 @@ class BLENDERTERRAIN_PT_imported(bpy.types.Panel):
         if properties.import_settings_tab == "WHOLE":
             editable.prop(properties, "terrain_vertical_scale")
             editable.prop(properties, "terrain_strength_multiplier")
+            editable.prop(properties, "terrain_displacement_midlevel")
+            editable.label(text="Midlevel 0 preserves source elevations", icon="INFO")
             editable.prop(properties, "terrain_subdivision_viewport")
             editable.prop(properties, "terrain_subdivision_render")
             _draw_subdivision_warning(
@@ -295,6 +320,7 @@ class BLENDERTERRAIN_PT_imported(bpy.types.Panel):
             selected = editable.column()
             selected.enabled = has_selection
             selected.prop(properties, "selected_strength_multiplier")
+            selected.prop(properties, "selected_displacement_midlevel")
             selected.prop(properties, "selected_subdivision_viewport")
             selected.prop(properties, "selected_subdivision_render")
             _draw_subdivision_warning(

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 from ..core import (
     BBoxWGS84,
@@ -343,7 +344,11 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
     def execute(self, context: bpy.types.Context) -> set[str]:
         properties = context.scene.blender_terrain_roi
         if not properties.is_valid:
-            validation = bpy.ops.blender_terrain.validate_roi()
+            try:
+                validation = bpy.ops.blender_terrain.validate_roi()
+            except RuntimeError as exc:
+                self.report({"ERROR"}, str(exc).removeprefix("Error: "))
+                return {"CANCELLED"}
             if validation != {"FINISHED"}:
                 self.report({"ERROR"}, "Correct the area or data settings before discovery")
                 return {"CANCELLED"}
@@ -444,8 +449,43 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
         properties.imagery_packed = (
             properties.pack_imagery and properties.imagery_available
         )
-        self.report({"INFO"}, f"Created {len(objects)} terrain object(s)")
+        clip_summary = ""
+        if properties.adjust_viewport_clip_end:
+            viewport_count, clip_end = _adjust_viewport_clip_end(context, objects)
+            if viewport_count:
+                clip_summary = f"; Clip End at least {clip_end:g} m"
+        self.report({"INFO"}, f"Created {len(objects)} terrain object(s){clip_summary}")
         return {"FINISHED"}
+
+
+def _adjust_viewport_clip_end(
+    context: bpy.types.Context, objects: tuple[bpy.types.Object, ...]
+) -> tuple[int, float]:
+    """Increase every open 3D viewport clipping distance to fit the terrain."""
+
+    world_corners = [
+        object_.matrix_world @ Vector(corner)
+        for object_ in objects
+        for corner in object_.bound_box
+    ]
+    if not world_corners:
+        return 0, 0.0
+    extents = tuple(
+        max(corner[axis] for corner in world_corners)
+        - min(corner[axis] for corner in world_corners)
+        for axis in range(3)
+    )
+    target = max(1_000.0, 2.0 * sum(value * value for value in extents) ** 0.5)
+    updated = 0
+    for window in context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            for space in area.spaces:
+                if space.type == "VIEW_3D":
+                    space.clip_end = max(space.clip_end, target)
+                    updated += 1
+    return updated, target
 
 
 class BLENDERTERRAIN_OT_select_import_objects(bpy.types.Operator):

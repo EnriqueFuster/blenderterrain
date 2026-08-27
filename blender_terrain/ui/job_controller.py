@@ -119,7 +119,8 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
     global _active_job
     if _active_job is not None:
         raise UserInputError("Another BlenderTerrain job is already running")
-    if not bpy.app.online_access:
+    requires_network = properties.elevation_source == "CNIG" or properties.use_imagery
+    if requires_network and not bpy.app.online_access:
         raise UserInputError("Blender online access is disabled in Preferences")
     cache_directory = _cache_directory(context)
     task_id = str(uuid4())
@@ -379,6 +380,11 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
         region = RegionOfInterest.from_geojson_geometry(
             json.loads(properties.roi_geometry_json)
         )
+        local_paths = (
+            _local_elevation_paths(properties.local_elevation_path)
+            if properties.elevation_source == "LOCAL"
+            else ()
+        )
         return DiscoveryJob(
             task_id=task_id,
             import_id=import_id,
@@ -404,9 +410,25 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
                 else None
             ),
             region=region,
+            local_elevation_paths=local_paths,
         )
     except (JobFormatError, json.JSONDecodeError, ValueError) as exc:
         raise UserInputError(f"Cannot create the discovery job: {exc}") from exc
+
+
+def _local_elevation_paths(raw_path: str) -> tuple[str, ...]:
+    path = Path(bpy.path.abspath(raw_path)).expanduser().resolve()
+    if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}:
+        return (str(path),)
+    if path.is_dir():
+        paths = tuple(
+            str(candidate.resolve())
+            for candidate in sorted(path.iterdir())
+            if candidate.is_file() and candidate.suffix.lower() in {".tif", ".tiff"}
+        )
+        if paths:
+            return paths
+    raise UserInputError("Choose an elevation TIFF or a folder containing TIFF files")
 
 
 def _scene_properties(scene_name: str) -> Any | None:

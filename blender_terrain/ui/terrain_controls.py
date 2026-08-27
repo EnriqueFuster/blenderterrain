@@ -52,6 +52,7 @@ def load_import_settings(properties: Any) -> None:
     properties.terrain_strength_multiplier = float(
         collection.get("blender_terrain_strength_multiplier", 1.0)
     )
+    properties.terrain_displacement_midlevel = metadata.settings.displacement_midlevel
     properties.terrain_subdivision_viewport = metadata.settings.subdivision_viewport
     properties.terrain_subdivision_render = metadata.settings.subdivision_render
     properties.terrain_displacement_enabled = metadata.settings.displacement_enabled
@@ -63,6 +64,7 @@ def apply_global_settings(properties: Any) -> int:
     collection = _required_displacement_collection(properties.active_import_id)
     settings = TerrainSettings(
         vertical_scale=properties.terrain_vertical_scale,
+        displacement_midlevel=properties.terrain_displacement_midlevel,
         subdivision_viewport=properties.terrain_subdivision_viewport,
         subdivision_render=properties.terrain_subdivision_render,
         displacement_enabled=properties.terrain_displacement_enabled,
@@ -72,6 +74,7 @@ def apply_global_settings(properties: Any) -> int:
     if not math.isfinite(multiplier) or multiplier < 0.0:
         raise UserInputError("Strength multiplier must be a non-negative finite value")
     collection["blender_terrain_strength_multiplier"] = multiplier
+    collection["blender_terrain_displacement_midlevel"] = settings.displacement_midlevel
     collection["blender_terrain_subdivision_viewport"] = settings.subdivision_viewport
     collection["blender_terrain_subdivision_render"] = settings.subdivision_render
     collection["blender_terrain_displacement_enabled"] = settings.displacement_enabled
@@ -81,11 +84,13 @@ def apply_global_settings(properties: Any) -> int:
         subdivision, displacement = _modifiers(object_)
         elevation_range = float(object_["blender_terrain_elevation_range"])
         displacement.strength = elevation_range * multiplier
+        displacement.mid_level = settings.displacement_midlevel
         subdivision.levels = settings.subdivision_viewport
         subdivision.render_levels = settings.subdivision_render
         displacement.show_viewport = settings.displacement_enabled
         displacement.show_render = settings.displacement_enabled
         object_["blender_terrain_strength_multiplier"] = multiplier
+        object_["blender_terrain_displacement_midlevel"] = settings.displacement_midlevel
         object_["blender_terrain_subdivision_viewport"] = settings.subdivision_viewport
         object_["blender_terrain_subdivision_render"] = settings.subdivision_render
     return len(objects)
@@ -99,15 +104,20 @@ def apply_selected_settings(context: bpy.types.Context, properties: Any) -> tupl
     if not selected:
         raise UserInputError("Select at least one object from the active terrain import")
     multiplier = float(properties.selected_strength_multiplier)
+    midlevel = float(properties.selected_displacement_midlevel)
+    if not math.isfinite(midlevel) or not 0.0 <= midlevel <= 1.0:
+        raise UserInputError("Midlevel must be between zero and one")
     viewport = int(properties.selected_subdivision_viewport)
     render = int(properties.selected_subdivision_render)
     for object_ in selected:
         subdivision, displacement = _modifiers(object_)
         elevation_range = float(object_["blender_terrain_elevation_range"])
         displacement.strength = elevation_range * multiplier
+        displacement.mid_level = midlevel
         subdivision.levels = viewport
         subdivision.render_levels = render
         object_["blender_terrain_strength_multiplier"] = multiplier
+        object_["blender_terrain_displacement_midlevel"] = midlevel
         object_["blender_terrain_subdivision_viewport"] = viewport
         object_["blender_terrain_subdivision_render"] = render
     return len(selected), count_strength_seams(collection)
@@ -122,12 +132,15 @@ def restore_selected_settings(context: bpy.types.Context, properties: Any) -> in
         raise UserInputError("Select at least one object from the active terrain import")
     metadata = read_terrain_metadata(dict(collection.items()))
     multiplier = float(collection.get("blender_terrain_strength_multiplier", 1.0))
+    midlevel = metadata.settings.displacement_midlevel
     for object_ in selected:
         subdivision, displacement = _modifiers(object_)
         displacement.strength = float(object_["blender_terrain_elevation_range"]) * multiplier
+        displacement.mid_level = midlevel
         subdivision.levels = metadata.settings.subdivision_viewport
         subdivision.render_levels = metadata.settings.subdivision_render
         object_["blender_terrain_strength_multiplier"] = multiplier
+        object_["blender_terrain_displacement_midlevel"] = midlevel
         object_["blender_terrain_subdivision_viewport"] = (
             metadata.settings.subdivision_viewport
         )
@@ -160,6 +173,7 @@ def sync_selected_settings(
     elevation_range = float(source["blender_terrain_elevation_range"])
     multiplier = displacement.strength / elevation_range if elevation_range else 0.0
     properties.selected_strength_multiplier = multiplier
+    properties.selected_displacement_midlevel = displacement.mid_level
     properties.selected_subdivision_viewport = subdivision.levels
     properties.selected_subdivision_render = subdivision.render_levels
     properties.selected_object_name = source.name

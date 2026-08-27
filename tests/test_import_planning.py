@@ -8,6 +8,28 @@ from blender_terrain.models import DatasetProduct
 
 
 class ImportPlanningTests(unittest.TestCase):
+    def test_auto_respects_each_products_native_resolution(self) -> None:
+        bounds = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
+
+        self.assertEqual(
+            create_import_plan(
+                bounds, DatasetProduct.MDT50CM, None, False, None
+            ).elevation_resolution_metres,
+            0.5,
+        )
+        self.assertEqual(
+            create_import_plan(
+                bounds, DatasetProduct.MDT25, None, False, None
+            ).elevation_resolution_metres,
+            25.0,
+        )
+        self.assertEqual(
+            create_import_plan(
+                bounds, DatasetProduct.MDT200, None, False, None
+            ).elevation_resolution_metres,
+            200.0,
+        )
+
     def test_builds_an_mdt_plan_without_imagery(self) -> None:
         plan = create_import_plan(
             BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
@@ -33,7 +55,7 @@ class ImportPlanningTests(unittest.TestCase):
             None,
         )
 
-        self.assertEqual(plan.elevation_resolution_metres, 50.0)
+        self.assertEqual(plan.elevation_resolution_metres, 25.0)
         self.assertLessEqual(plan.elevation_sample_count, 16_777_216)
 
     def test_estimates_optional_imagery_tiles(self) -> None:

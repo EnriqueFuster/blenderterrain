@@ -20,7 +20,17 @@ from .grid import (
 from .projection import project_work_area_bounds
 from .roi import BBoxWGS84
 
-ELEVATION_RESOLUTIONS = (2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
+ELEVATION_RESOLUTIONS = (0.5, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0, 200.0)
+PRODUCT_NATIVE_RESOLUTION = {
+    DatasetProduct.MDT50CM: 0.5,
+    DatasetProduct.MDT02: 2.0,
+    DatasetProduct.MDT05: 5.0,
+    DatasetProduct.MDT25: 25.0,
+    DatasetProduct.MDT200: 200.0,
+    DatasetProduct.MDS50CM: 0.5,
+    DatasetProduct.MDS02: 2.0,
+    DatasetProduct.MDS05: 5.0,
+}
 IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0)
 MAX_ELEVATION_SAMPLES = 16_777_216
 PLANNING_WMS_TILE_DIMENSION = 4_096
@@ -154,14 +164,15 @@ def create_import_plan(
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
-    if product not in (DatasetProduct.MDT02, DatasetProduct.MDS02):
-        raise UserInputError("Elevation product must be MDT02 or MDS02")
+    if product not in PRODUCT_NATIVE_RESOLUTION:
+        raise UserInputError("The selected product is not an elevation raster")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
     work_areas = split_bbox_by_utm_zone(bounds)
     elevation_resolution, elevation, grids = _select_elevation_resolution(
         bounds,
         work_areas,
         elevation_resolution_metres,
+        PRODUCT_NATIVE_RESOLUTION[product],
         manual_tile_rows,
         manual_tile_columns,
     )
@@ -201,11 +212,13 @@ def _select_elevation_resolution(
     bounds: BBoxWGS84,
     work_areas: tuple[UTMWorkArea, ...],
     requested: float | None,
+    native_resolution: float,
     manual_tile_rows: int | None,
     manual_tile_columns: int | None,
 ) -> tuple[float, ROIEstimate, tuple[GridSpec, ...]]:
-    candidates = ELEVATION_RESOLUTIONS if requested is None else (requested,)
-    if requested is not None and requested not in ELEVATION_RESOLUTIONS:
+    available = tuple(value for value in ELEVATION_RESOLUTIONS if value >= native_resolution)
+    candidates = available if requested is None else (requested,)
+    if requested is not None and requested not in available:
         raise UserInputError("Unsupported elevation resolution")
     for resolution in candidates:
         estimate = estimate_bbox(bounds, resolution)

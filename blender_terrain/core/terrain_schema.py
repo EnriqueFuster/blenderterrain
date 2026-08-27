@@ -26,6 +26,7 @@ class TerrainSettings:
     """Editable settings shared by one terrain import."""
 
     vertical_scale: float = 1.0
+    displacement_midlevel: float = 0.0
     subdivision_viewport: int = 0
     subdivision_render: int = 0
     displacement_enabled: bool = True
@@ -33,6 +34,10 @@ class TerrainSettings:
     def __post_init__(self) -> None:
         if not math.isfinite(self.vertical_scale) or self.vertical_scale <= 0.0:
             raise ValueError("Terrain vertical scale must be finite and positive")
+        if not math.isfinite(self.displacement_midlevel) or not (
+            0.0 <= self.displacement_midlevel <= 1.0
+        ):
+            raise ValueError("Terrain displacement midlevel must be between zero and one")
         if not 0 <= self.subdivision_viewport <= MAX_SUBDIVISION_LEVEL:
             raise ValueError("Viewport subdivision exceeds Blender's supported range")
         if not 0 <= self.subdivision_render <= MAX_SUBDIVISION_LEVEL:
@@ -91,6 +96,9 @@ def read_terrain_metadata(properties: Mapping[str, object]) -> TerrainMetadata:
             vertical_scale=_positive_float(
                 properties, "blender_terrain_vertical_scale", 1.0
             ),
+            displacement_midlevel=_bounded_float(
+                properties, "blender_terrain_displacement_midlevel", 0.0, 0.0, 1.0
+            ),
             subdivision_viewport=_integer(
                 properties, "blender_terrain_subdivision_viewport", 0
             ),
@@ -121,6 +129,18 @@ def _integer(properties: Mapping[str, object], key: str, default: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError
     return value
+
+
+def _bounded_float(
+    properties: Mapping[str, object], key: str, default: float, minimum: float, maximum: float
+) -> float:
+    value = properties.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError
+    converted = float(value)
+    if not math.isfinite(converted) or not minimum <= converted <= maximum:
+        raise ValueError
+    return converted
 
 
 def _boolean(properties: Mapping[str, object], key: str, default: bool) -> bool:

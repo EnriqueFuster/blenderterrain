@@ -20,7 +20,8 @@ from ..core import (
     plan_imagery_tiles,
     process_elevation_tiles,
 )
-from ..core.discovery import CatalogDiscoveryProvider
+from ..core.delivery import ElevationDownloader
+from ..core.discovery import CatalogDiscoveryProvider, DiscoveryResult
 from ..errors import (
     CatalogContractChanged,
     DownloadAuthorizationRequired,
@@ -29,9 +30,12 @@ from ..errors import (
     JobFormatError,
     NoCoverageError,
     ProviderUnavailableError,
+    RasterFormatError,
     UserInputError,
 )
+from ..io.bigtiff_tiles import BigTiffFloatTileReader
 from ..io.elevation_output import write_elevation_array
+from ..models import CatalogItem
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
@@ -43,6 +47,26 @@ from .storage import (
 )
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
+
+
+class _LocalElevationClient:
+    """Expose already-local sources through the delivery downloader contract."""
+
+    def __init__(self, paths: tuple[Path, ...]) -> None:
+        self._paths = {path.name: path for path in paths}
+
+    def download_item(
+        self,
+        item: CatalogItem,
+        cache_directory: Path,
+        maximum_bytes: int = 1_073_741_824,
+        progress_callback: Callable[[int, int | None], None] | None = None,
+    ) -> Path:
+        path = self._paths[item.filename]
+        size = path.stat().st_size
+        if progress_callback is not None:
+            progress_callback(size, size)
+        return path
 
 
 class ElevationProcessor(Protocol):
@@ -86,8 +110,12 @@ def run_discovery_job(
         job = read_discovery_job(job_path)
         plan = _create_plan(job)
         check_cancelled()
-        emit(JobState.DISCOVERING, 0.25, "Discovering CNIG elevation sources")
-        discovery = discover_sources(plan, provider_factory())
+        if job.local_elevation_paths:
+            emit(JobState.DISCOVERING, 0.25, "Validating local elevation sources")
+            discovery = _local_discovery(job)
+        else:
+            emit(JobState.DISCOVERING, 0.25, "Discovering CNIG elevation sources")
+            discovery = discover_sources(plan, provider_factory())
         check_cancelled()
         payload = {
             "schema_version": RESULT_SCHEMA_VERSION,
@@ -110,7 +138,7 @@ def run_discovery_job(
         return _finish_error(result_path, emit, JobState.PROVIDER_CHANGED, str(exc))
     except ProviderUnavailableError as exc:
         return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
-    except (JobFormatError, UserInputError) as exc:
+    except (JobFormatError, RasterFormatError, UserInputError) as exc:
         return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
 
 
@@ -140,9 +168,16 @@ def run_delivery_job(
         plan = _create_plan(job)
         if cancelled():
             raise JobCancelled("Data delivery was cancelled")
-        cnig = cnig_factory()
-        emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
-        discovery = discover_sources(plan, cnig)
+        if job.local_elevation_paths:
+            local_paths = tuple(Path(path) for path in job.local_elevation_paths)
+            elevation_client: ElevationDownloader = _LocalElevationClient(local_paths)
+            emit(JobState.DISCOVERING, 0.05, "Confirming local elevation sources")
+            discovery = _local_discovery(job)
+        else:
+            portal = cnig_factory()
+            elevation_client = portal
+            emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
+            discovery = discover_sources(plan, portal)
         imagery_requests = plan_imagery_tiles(plan)
         imagery_count = len(imagery_requests)
         file_count = len(discovery.items) + imagery_count
@@ -185,10 +220,11 @@ def run_delivery_job(
             plan,
             discovery,
             job_path.parents[2],
-            cnig,
+            elevation_client,
             imagery_factory(),
             report,
             cancelled,
+            local_paths if job.local_elevation_paths else (),
         )
 
         def report_processing(completed: int, total: int) -> None:
@@ -264,12 +300,20 @@ def run_delivery_job(
             "sources": [
                 {
                     **asdict(item),
-                    "detail_url": f"{BASE_URL}detalleArchivo?sec={item.sequential_id}",
+                    "detail_url": (
+                        None
+                        if job.local_elevation_paths
+                        else f"{BASE_URL}detalleArchivo?sec={item.sequential_id}"
+                    ),
                 }
                 for item in discovery.items
             ],
             "provenance": {
-                "source": "Instituto Geográfico Nacional de España (IGN-CNIG)",
+                "source": (
+                    "User-provided local elevation raster"
+                    if job.local_elevation_paths
+                    else "Instituto Geográfico Nacional de España (IGN-CNIG)"
+                ),
                 "portal_url": "https://centrodedescargas.cnig.es/",
                 "data_policy_url": (
                     "https://centrodedescargas.cnig.es/CentroDescargas/politica-datos"
@@ -320,6 +364,7 @@ def run_delivery_job(
         DownloadAuthorizationRequired,
         DownloadIntegrityError,
         JobFormatError,
+        RasterFormatError,
         UserInputError,
         ValueError,
     ) as exc:
@@ -351,6 +396,32 @@ def _create_plan(job: DiscoveryJob) -> ImportPlan:
         job.manual_tile_rows,
         job.manual_tile_columns,
     )
+
+
+def _local_discovery(job: DiscoveryJob) -> DiscoveryResult:
+    """Validate local files and represent them as traceable discovery items."""
+
+    paths = tuple(Path(value) for value in job.local_elevation_paths)
+    if not paths:
+        raise UserInputError("No local elevation rasters were provided")
+    if len({path.name.casefold() for path in paths}) != len(paths):
+        raise UserInputError("Local elevation raster filenames must be unique")
+    items: list[CatalogItem] = []
+    for index, path in enumerate(paths):
+        if not path.is_file():
+            raise UserInputError(f"Local elevation raster does not exist: {path}")
+        BigTiffFloatTileReader(path)
+        size_mb = path.stat().st_size / 1_000_000
+        items.append(
+            CatalogItem(
+                job.product,
+                path.name,
+                "LOCAL_COG",
+                f"local-{index}",
+                size_mb=size_mb,
+            )
+        )
+    return DiscoveryResult(tuple(items), len(items), 0)
 
 
 def _finish_error(

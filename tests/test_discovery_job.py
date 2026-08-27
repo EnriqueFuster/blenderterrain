@@ -128,6 +128,25 @@ class DiscoveryJobStorageTests(unittest.TestCase):
 
             self.assertEqual(read_discovery_job(path), expected)
 
+    def test_round_trips_local_elevation_paths(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "job.json"
+            base = job()
+            expected = DiscoveryJob(
+                task_id=base.task_id,
+                import_id=base.import_id,
+                bounds=base.bounds,
+                product=base.product,
+                elevation_resolution_metres=base.elevation_resolution_metres,
+                use_imagery=False,
+                imagery_gsd_metres=None,
+                local_elevation_paths=("C:/data/tile-a.tif", "C:/data/tile-b.tif"),
+            )
+
+            write_discovery_job(path, expected)
+
+            self.assertEqual(read_discovery_job(path), expected)
+
     def test_cancellation_request_is_idempotent(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

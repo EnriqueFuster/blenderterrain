@@ -1,7 +1,7 @@
 # BlenderTerrain
 
 BlenderTerrain is an independent, from-scratch Blender terrain importer for
-Spain's official IGN/CNIG MDT02, MDS02, and PNOA services.
+Spain's official IGN/CNIG MDT, MDS, and PNOA services.
 
 The repository name is intentionally broader than its initial geographic
 coverage. Version 1 will remain focused on Spain; support for another country
@@ -13,8 +13,8 @@ abstractions.
 The Blender 4.5 extension implements an end-to-end workflow: define a WGS84
 bounding box directly or from a centre and metric dimensions, or load Polygon
 and MultiPolygon geometry from GeoJSON, KML, Shapefile, or a selected GeoPackage
-polygon layer, or draw a rectangle or polygon on a browser map; choose MDT02 or MDS02
-and an output resolution; optionally request PNOA imagery; and create
+polygon layer, or draw a rectangle or polygon on a browser map; choose a supported
+MDT or MDS coverage and an output resolution; optionally request PNOA imagery; and create
 georeferenced Blender mesh objects and materials. Network and raster work runs
 in a background Blender process with observable states and cooperative
 cancellation. Shapefiles require their matching `.prj`; supported input CRSs
@@ -23,7 +23,8 @@ are opened read-only and require an explicit Polygon or MultiPolygon layer selec
 
 The current implementation includes:
 
-1. paginated MDT02 and MDS02 discovery without browser automation;
+1. paginated discovery for MDT50 cm, MDT02, MDT05, MDT25, MDT200, MDS50 cm,
+   MDS02 and MDS05 without browser automation;
 2. validated, atomic CNIG TIFF downloads and cache reuse;
 3. bounded BigTIFF reading, mosaicking, NoData handling and bilinear resampling;
 4. deterministic terrain tiling with identical shared-edge elevations;
@@ -32,8 +33,12 @@ The current implementation includes:
 7. automatic or explicit row-by-column terrain division;
 8. full-resolution persistent heightmaps with a lightweight progressive base mesh
    or an opt-in full-resolution base mesh;
-9. import-wide and per-object vertical scale and subdivision controls;
-10. optional packing of PNOA images into the `.blend` file.
+9. import-wide and per-object vertical scale, displacement strength, Midlevel and
+   subdivision controls;
+10. optional packing of PNOA images into the `.blend` file;
+11. compatible local elevation TIFF or TIFF-folder processing without copying the
+    source files;
+12. optional automatic 3D viewport `Clip End` adjustment after creation.
 
 Subdivision follows Blender's technical range from 0 to 11. The interface warns
 from level 3 because each additional level can multiply the generated face count
@@ -56,6 +61,10 @@ the processed heightmap density around subdivision level 4; higher levels only
 interpolate the available raster samples. Per-object displacement overrides can
 also create visible seams when adjacent objects use different strengths; the
 extension warns when it detects that situation.
+The local-raster mode accepts the constrained CNIG Float32 tiled BigTIFF layouts
+verified by this project, including TIFF horizontal differencing. Other GeoTIFF
+layouts fail explicitly; broad arbitrary-raster support would require shipping a
+larger GDAL-compatible runtime.
 
 No elevation or imagery data is redistributed in this repository.
 

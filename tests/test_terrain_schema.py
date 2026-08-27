@@ -27,6 +27,7 @@ class TerrainSchemaTests(unittest.TestCase):
                 "blender_terrain_schema_version": TERRAIN_SCHEMA_VERSION,
                 "blender_terrain_representation": "DISPLACEMENT",
                 "blender_terrain_vertical_scale": 1.5,
+                "blender_terrain_displacement_midlevel": 0.25,
                 "blender_terrain_subdivision_viewport": 2,
                 "blender_terrain_subdivision_render": 3,
                 "blender_terrain_displacement_enabled": False,
@@ -36,6 +37,7 @@ class TerrainSchemaTests(unittest.TestCase):
         self.assertFalse(metadata.legacy)
         self.assertEqual(metadata.representation, TerrainRepresentation.DISPLACEMENT)
         self.assertEqual(metadata.settings.vertical_scale, 1.5)
+        self.assertEqual(metadata.settings.displacement_midlevel, 0.25)
         self.assertEqual(metadata.settings.subdivision_viewport, 2)
         self.assertEqual(metadata.settings.subdivision_render, 3)
         self.assertFalse(metadata.settings.displacement_enabled)
@@ -55,6 +57,11 @@ class TerrainSchemaTests(unittest.TestCase):
                 "blender_terrain_representation": "DISPLACEMENT",
                 "blender_terrain_vertical_scale": -1.0,
             },
+            {
+                "blender_terrain_schema_version": TERRAIN_SCHEMA_VERSION,
+                "blender_terrain_representation": "DISPLACEMENT",
+                "blender_terrain_displacement_midlevel": 1.1,
+            },
         )
         for properties in examples:
             with self.subTest(properties=properties), self.assertRaises(RasterFormatError):
@@ -64,6 +71,8 @@ class TerrainSchemaTests(unittest.TestCase):
         self.assertEqual(TerrainSettings(subdivision_viewport=11).subdivision_viewport, 11)
         with self.assertRaises(ValueError):
             TerrainSettings(subdivision_render=12)
+        with self.assertRaises(ValueError):
+            TerrainSettings(displacement_midlevel=-0.1)
 
         self.assertIsNone(subdivision_risk_message(2, 2))
         self.assertIn("64 faces", subdivision_risk_message(3, 0) or "")
