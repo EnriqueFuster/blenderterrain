@@ -12,7 +12,7 @@ from ..core.roi import BBoxWGS84, RegionOfInterest
 from ..errors import JobFormatError, UserInputError
 from ..models import DatasetProduct
 
-JOB_SCHEMA_VERSION = 5
+JOB_SCHEMA_VERSION = 6
 RESULT_SCHEMA_VERSION = 2
 
 
@@ -48,6 +48,8 @@ class DiscoveryJob:
     manual_tile_columns: int | None = None
     region: RegionOfInterest | None = None
     local_elevation_paths: tuple[str, ...] = ()
+    maximum_elevation_samples: int = 16_777_216
+    maximum_imagery_pixels: int = 67_108_864
 
     def __post_init__(self) -> None:
         try:
@@ -59,6 +61,8 @@ class DiscoveryJob:
             raise JobFormatError("ROI geometry bounds do not match the job bounds")
         if any(not path for path in self.local_elevation_paths):
             raise JobFormatError("Local elevation paths must not be empty")
+        if self.maximum_elevation_samples <= 0 or self.maximum_imagery_pixels <= 0:
+            raise JobFormatError("Job resource limits must be positive")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize using only JSON-compatible stable fields."""
@@ -78,6 +82,8 @@ class DiscoveryJob:
                 None if self.region is None else self.region.to_geojson_geometry()
             ),
             "local_elevation_paths": list(self.local_elevation_paths),
+            "maximum_elevation_samples": self.maximum_elevation_samples,
+            "maximum_imagery_pixels": self.maximum_imagery_pixels,
         }
 
     @classmethod
@@ -123,6 +129,10 @@ class DiscoveryJob:
                 isinstance(path, str) and path for path in raw_local_paths
             ):
                 raise TypeError
+            maximum_elevation_samples = _positive_int(
+                payload.get("maximum_elevation_samples")
+            )
+            maximum_imagery_pixels = _positive_int(payload.get("maximum_imagery_pixels"))
         except (KeyError, TypeError, ValueError, UserInputError) as exc:
             raise JobFormatError("Job JSON contains invalid fields") from exc
         return cls(
@@ -137,6 +147,8 @@ class DiscoveryJob:
             manual_tile_columns=manual_tile_columns,
             region=region,
             local_elevation_paths=tuple(raw_local_paths),
+            maximum_elevation_samples=maximum_elevation_samples,
+            maximum_imagery_pixels=maximum_imagery_pixels,
         )
 
 
@@ -204,5 +216,11 @@ def _optional_positive_int(value: object) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 64:
+        raise ValueError
+    return value
+
+
+def _positive_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError
     return value

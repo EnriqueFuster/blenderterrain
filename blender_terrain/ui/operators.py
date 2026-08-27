@@ -9,6 +9,7 @@ import bpy
 from mathutils import Vector
 
 from ..core import (
+    RESOURCE_PROFILES,
     BBoxWGS84,
     RegionOfInterest,
     bbox_from_center_size,
@@ -17,6 +18,7 @@ from ..core import (
     parse_bbox,
     subdivision_risk_message,
 )
+from ..core.cache_inventory import clear_cache, inspect_cache
 from ..errors import BlenderTerrainError, UserInputError
 from ..io.roi_files import read_roi_file
 from ..io.roi_map_server import ROIMapSession
@@ -37,6 +39,100 @@ from .terrain_controls import (
 )
 
 _active_map_session: ROIMapSession | None = None
+
+
+class BLENDERTERRAIN_OT_refresh_cache(bpy.types.Operator):
+    """Inspect extension-owned cache categories without modifying them."""
+
+    bl_idname = "blender_terrain.refresh_cache"
+    bl_label = "Refresh Cache"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            inventory = inspect_cache(job_controller.configured_cache_directory(context))
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        properties.cache_inventory_json = json.dumps(
+            [
+                {
+                    "name": category.name,
+                    "files": category.file_count,
+                    "bytes": category.byte_count,
+                    "partials": category.partial_file_count,
+                }
+                for category in inventory.categories
+            ]
+        )
+        properties.cache_inventory_summary = (
+            f"{inventory.file_count} file(s), {_format_bytes(inventory.byte_count)}"
+        )
+        self.report({"INFO"}, "Cache inventory updated")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_clear_cache(bpy.types.Operator):
+    """Remove one explicitly selected, regenerable cache category."""
+
+    bl_idname = "blender_terrain.clear_cache"
+    bl_label = "Clear Selected Cache"
+
+    def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
+        return context.window_manager.invoke_confirm(
+            self,
+            event,
+            title="Clear BlenderTerrain Cache",
+            message="Remove the selected regenerable cache data?",
+            confirm_text="Remove",
+            icon="TRASH",
+        )
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        if job_controller.has_active_job():
+            self.report({"ERROR"}, "Cannot clean the cache while a job is active")
+            return {"CANCELLED"}
+        properties = context.scene.blender_terrain_roi
+        try:
+            result = clear_cache(
+                job_controller.configured_cache_directory(context),
+                properties.cache_cleanup_selection,
+            )
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        properties.cache_inventory_json = "[]"
+        properties.cache_inventory_summary = "Cache changed; refresh to inspect it"
+        self.report(
+            {"INFO"},
+            f"Removed {result.file_count} file(s), {_format_bytes(result.byte_count)}",
+        )
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_retry_job(bpy.types.Operator):
+    """Retry the last persisted request while reusing valid cached sources."""
+
+    bl_idname = "blender_terrain.retry_job"
+    bl_label = "Retry Last Job"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        try:
+            job_controller.retry_last_job(context)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Previous job restarted in the background")
+        return {"FINISHED"}
+
+
+def _format_bytes(byte_count: int) -> str:
+    value = float(byte_count)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024.0 or unit == "TiB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024.0
+    raise AssertionError("Unreachable byte unit")
 
 
 class BLENDERTERRAIN_OT_open_roi_map(bpy.types.Operator):
@@ -147,6 +243,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     "The availability check found no coverage for this product and ROI"
                 )
             bounds = _bounds_from_properties(properties, store_derived=True)
+            elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
             plan = create_import_plan(
                 bounds=bounds,
                 product=DatasetProduct(properties.product),
@@ -169,6 +266,8 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     if properties.tiling_mode == "MANUAL"
                     else None
                 ),
+                maximum_elevation_samples=elevation_limit,
+                maximum_imagery_pixels=imagery_limit,
             )
         except BlenderTerrainError as exc:
             properties.is_valid = False
@@ -181,6 +280,8 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             properties.terrain_tile_count = 0
             properties.terrain_tile_summary = ""
             properties.estimated_memory_mib = 0.0
+            properties.estimated_base_vertices = 0
+            properties.estimated_texture_gpu_mib = 0.0
             properties.planning_warning = ""
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -204,7 +305,16 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             f"Largest object: {largest_tile.columns} x {largest_tile.rows} cells"
         )
         properties.estimated_memory_mib = plan.estimated_combined_bytes / (1024 * 1024)
-        properties.planning_warning = " | ".join(plan.warnings)
+        properties.estimated_base_vertices = sum(
+            (tile.rows + 1) * (tile.columns + 1) for tile in terrain_tiles
+        )
+        properties.estimated_texture_gpu_mib = (
+            plan.estimated_imagery_decoded_bytes / (1024 * 1024)
+        )
+        warnings = list(plan.warnings)
+        if properties.resource_profile == "LARGE":
+            warnings.append("Large profile can exhaust system or GPU memory")
+        properties.planning_warning = " | ".join(warnings)
         properties.imagery_summary = (
             "PNOA disabled"
             if plan.imagery is None

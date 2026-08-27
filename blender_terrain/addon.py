@@ -13,6 +13,7 @@ from .ui.operators import (
     BLENDERTERRAIN_OT_apply_selected_settings,
     BLENDERTERRAIN_OT_cancel_discovery,
     BLENDERTERRAIN_OT_check_product_availability,
+    BLENDERTERRAIN_OT_clear_cache,
     BLENDERTERRAIN_OT_copy_bbox,
     BLENDERTERRAIN_OT_create_terrain,
     BLENDERTERRAIN_OT_discover_sources,
@@ -20,7 +21,9 @@ from .ui.operators import (
     BLENDERTERRAIN_OT_open_roi_map,
     BLENDERTERRAIN_OT_pack_imagery,
     BLENDERTERRAIN_OT_paste_bbox,
+    BLENDERTERRAIN_OT_refresh_cache,
     BLENDERTERRAIN_OT_restore_selected_settings,
+    BLENDERTERRAIN_OT_retry_job,
     BLENDERTERRAIN_OT_select_import_objects,
     BLENDERTERRAIN_OT_update_bbox_from_center,
     BLENDERTERRAIN_OT_validate_roi,
@@ -29,6 +32,7 @@ from .ui.operators import (
 from .ui.panels import (
     BLENDERTERRAIN_PT_acquisition,
     BLENDERTERRAIN_PT_area,
+    BLENDERTERRAIN_PT_cache,
     BLENDERTERRAIN_PT_creation,
     BLENDERTERRAIN_PT_data,
     BLENDERTERRAIN_PT_imported,
@@ -40,6 +44,9 @@ from .ui.properties import BLENDERTERRAIN_ROIProperties
 _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_AddonPreferences,
     BLENDERTERRAIN_ROIProperties,
+    BLENDERTERRAIN_OT_refresh_cache,
+    BLENDERTERRAIN_OT_clear_cache,
+    BLENDERTERRAIN_OT_retry_job,
     BLENDERTERRAIN_OT_update_bbox_from_center,
     BLENDERTERRAIN_OT_copy_bbox,
     BLENDERTERRAIN_OT_paste_bbox,
@@ -61,6 +68,7 @@ _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_PT_acquisition,
     BLENDERTERRAIN_PT_creation,
     BLENDERTERRAIN_PT_imported,
+    BLENDERTERRAIN_PT_cache,
 )
 
 

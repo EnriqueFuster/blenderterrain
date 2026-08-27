@@ -117,6 +117,23 @@ def _gpkg_layer_items(
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     """Store manual WGS84 bounds and their latest validation result."""
 
+    cache_cleanup_selection: EnumProperty(
+        name="Remove",
+        items=(
+            ("PARTIALS", "Incomplete Files", "Remove interrupted .part files only"),
+            ("PROCESSED", "Processed Terrain", "Remove generated elevation arrays"),
+            ("JOBS", "Job History", "Remove persisted jobs, events, and worker logs"),
+            ("IMAGERY", "PNOA Imagery", "Remove cached PNOA image tiles"),
+            ("ELEVATION", "Elevation Sources", "Remove downloaded elevation rasters"),
+            ("ALL", "All Cache Data", "Remove every BlenderTerrain cache category"),
+        ),
+        default="PARTIALS",
+    )
+    cache_inventory_json: StringProperty(default="[]", options={"HIDDEN"})
+    cache_inventory_summary: StringProperty(
+        default="Cache has not been inspected", options={"HIDDEN"}
+    )
+
     elevation_source: EnumProperty(
         name="Elevation Source",
         items=(
@@ -228,6 +245,16 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         default="AUTO",
         update=_invalidate_validation,
     )
+    resource_profile: EnumProperty(
+        name="Resource Profile",
+        items=(
+            ("CONSERVATIVE", "Conservative", "Lower RAM and GPU limits"),
+            ("BALANCED", "Balanced", "Recommended limits for most workstations"),
+            ("LARGE", "Large", "Higher limits; may exhaust RAM or GPU memory"),
+        ),
+        default="BALANCED",
+        update=_invalidate_validation,
+    )
     tiling_mode: EnumProperty(
         name="Terrain Division",
         items=(
@@ -271,6 +298,8 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     terrain_tile_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     terrain_tile_summary: StringProperty(default="", options={"HIDDEN"})
     estimated_memory_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
+    estimated_base_vertices: IntProperty(default=0, min=0, options={"HIDDEN"})
+    estimated_texture_gpu_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     planning_warning: StringProperty(default="", options={"HIDDEN"})
     job_active: BoolProperty(default=False, options={"HIDDEN"})
     active_job_mode: StringProperty(default="", options={"HIDDEN"})
@@ -280,12 +309,15 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
     job_message: StringProperty(default="", options={"HIDDEN"})
     job_event_history: StringProperty(default="[]", options={"HIDDEN"})
+    last_job_path: StringProperty(default="", options={"HIDDEN"})
+    last_job_mode: StringProperty(default="", options={"HIDDEN"})
     discovered_file_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     estimated_download_mb: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     discovery_summary: StringProperty(default="", options={"HIDDEN"})
     discovery_ready: BoolProperty(default=False, options={"HIDDEN"})
     delivery_ready: BoolProperty(default=False, options={"HIDDEN"})
     delivery_summary: StringProperty(default="", options={"HIDDEN"})
+    delivery_metrics_summary: StringProperty(default="", options={"HIDDEN"})
     delivery_result_path: StringProperty(default="", options={"HIDDEN"})
     terrain_created: BoolProperty(default=False, options={"HIDDEN"})
     import_id: StringProperty(default="", options={"HIDDEN"})

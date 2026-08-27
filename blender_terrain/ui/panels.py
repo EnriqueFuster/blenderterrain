@@ -149,6 +149,9 @@ class BLENDERTERRAIN_PT_data(bpy.types.Panel):
             if properties.product in {"MDT50CM", "MDS50CM"}:
                 layout.label(text="Third-coverage availability is still incomplete", icon="INFO")
             layout.prop(properties, "elevation_resolution")
+            layout.prop(properties, "resource_profile")
+            if properties.resource_profile == "LARGE":
+                layout.label(text="Higher limits may freeze Blender", icon="ERROR")
             layout.prop(properties, "tiling_mode", text="Terrain Object Grid")
             layout.label(
                 text="The object grid keeps elevation and imagery mapping together",
@@ -167,6 +170,9 @@ class BLENDERTERRAIN_PT_data(bpy.types.Panel):
                 )
                 layout.label(text=f"{prefix}: {properties.selected_resolution:g} m")
                 layout.label(text=f"Elevation samples: {properties.sample_count:,}")
+                layout.label(
+                    text=f"Full-resolution vertices: {properties.estimated_base_vertices:,}"
+                )
                 layout.label(text=f"Terrain objects: {properties.terrain_tile_count}")
                 layout.label(text=properties.terrain_tile_summary)
         else:
@@ -178,6 +184,12 @@ class BLENDERTERRAIN_PT_data(bpy.types.Panel):
                 )
             if properties.is_valid:
                 layout.label(text=properties.imagery_summary)
+                layout.label(
+                    text=(
+                        "Estimated decoded texture: "
+                        f"{properties.estimated_texture_gpu_mib:.1f} MiB"
+                    )
+                )
                 if properties.use_imagery and properties.imagery_gsd == "AUTO":
                     layout.label(text="The value above is the resolved Auto GSD", icon="CHECKMARK")
         if properties.is_valid and properties.planning_warning:
@@ -214,6 +226,8 @@ class BLENDERTERRAIN_PT_acquisition(bpy.types.Panel):
             layout.label(text=properties.discovery_summary, icon="FILE_TICK")
         if properties.delivery_summary:
             layout.label(text=properties.delivery_summary, icon="CHECKMARK")
+        if properties.delivery_metrics_summary:
+            layout.label(text=properties.delivery_metrics_summary, icon="TIME")
         layout.separator()
         activity = layout.box()
         activity.label(text="Job Activity", icon="TIME")
@@ -234,6 +248,8 @@ class BLENDERTERRAIN_PT_acquisition(bpy.types.Panel):
             row.label(text=message, icon="DOT")
         if properties.job_active:
             activity.operator("blender_terrain.cancel_discovery", icon="CANCEL")
+        elif properties.last_job_path:
+            activity.operator("blender_terrain.retry_job", icon="FILE_REFRESH")
 
 
 class BLENDERTERRAIN_PT_creation(bpy.types.Panel):
@@ -278,6 +294,31 @@ class BLENDERTERRAIN_PT_creation(bpy.types.Panel):
                 self.layout.label(text="PNOA images packed in .blend", icon="PACKAGE")
             else:
                 self.layout.operator("blender_terrain.pack_imagery", icon="PACKAGE")
+
+
+class BLENDERTERRAIN_PT_cache(bpy.types.Panel):
+    """Inspect and selectively maintain regenerable cache data."""
+
+    bl_idname = "BLENDERTERRAIN_PT_cache"
+    bl_label = "Cache"
+    bl_parent_id = "BLENDERTERRAIN_PT_main"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context: bpy.types.Context) -> None:
+        properties = context.scene.blender_terrain_roi
+        layout = self.layout
+        layout.label(text=properties.cache_inventory_summary, icon="DISK_DRIVE")
+        layout.operator("blender_terrain.refresh_cache", icon="FILE_REFRESH")
+        for name, files, bytes_, partials in _cache_entries(properties.cache_inventory_json):
+            suffix = f", {partials} incomplete" if partials else ""
+            layout.label(
+                text=f"{name.title()}: {files} file(s), {_format_bytes(bytes_)}{suffix}"
+            )
+        controls = layout.column()
+        controls.enabled = not properties.job_active
+        controls.prop(properties, "cache_cleanup_selection")
+        controls.operator("blender_terrain.clear_cache", icon="TRASH")
 
 
 class BLENDERTERRAIN_PT_imported(bpy.types.Panel):
@@ -396,6 +437,39 @@ def _availability_entries(serialized: str) -> tuple[tuple[str, str, int], ...]:
         ):
             entries.append((product, status, file_count))
     return tuple(entries)
+
+
+def _cache_entries(serialized: str) -> tuple[tuple[str, int, int, int], ...]:
+    try:
+        values = json.loads(serialized)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(values, list):
+        return ()
+    entries: list[tuple[str, int, int, int]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        fields = (
+            value.get("name"),
+            value.get("files"),
+            value.get("bytes"),
+            value.get("partials"),
+        )
+        if isinstance(fields[0], str) and all(
+            isinstance(field, int) for field in fields[1:]
+        ):
+            entries.append((fields[0], fields[1], fields[2], fields[3]))
+    return tuple(entries)
+
+
+def _format_bytes(byte_count: int) -> str:
+    value = float(byte_count)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024.0 or unit == "TiB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024.0
+    raise AssertionError("Unreachable byte unit")
 
 
 def _draw_subdivision_warning(layout: bpy.types.UILayout, viewport: int, render: int) -> None:

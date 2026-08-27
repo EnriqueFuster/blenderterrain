@@ -22,7 +22,7 @@ from .mesh_geometry import (
     build_displacement_mesh_geometry,
     build_terrain_mesh_geometry,
 )
-from .planning import ImageryEstimate, ImportPlan, create_import_plan
+from .planning import RESOURCE_PROFILES, ImageryEstimate, ImportPlan, create_import_plan
 from .projection import (
     GeographicPoint,
     ProjectedPoint,
@@ -54,6 +54,7 @@ __all__ = [
     "DEFAULT_PREVIEW_SUBDIVISION_LEVEL",
     "MAX_SUBDIVISION_LEVEL",
     "PREVIEW_MESH_REDUCTION_FACTOR",
+    "RESOURCE_PROFILES",
     "SUBDIVISION_WARNING_LEVEL",
     "TERRAIN_SCHEMA_VERSION",
     "BBoxWGS84",

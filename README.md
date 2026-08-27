@@ -39,6 +39,13 @@ The current implementation includes:
 11. compatible local elevation TIFF or TIFF-folder processing without copying the
     source files;
 12. optional automatic 3D viewport `Clip End` adjustment after creation.
+13. conservative, balanced and large resource profiles that change elevation and
+    imagery planning limits before any download starts;
+14. cache inspection and selective cleanup for elevation, imagery, processed
+    terrain, job records, or incomplete files;
+15. retry of the last interrupted or failed acquisition job, reusing every
+    validated cached file; and
+16. per-stage delivery timing and an explicit cached-file reuse summary.
 
 Subdivision follows Blender's technical range from 0 to 11. The interface warns
 from level 3 because each additional level can multiply the generated face count
@@ -89,7 +96,11 @@ Install the resulting ZIP from Blender through **Edit > Preferences > Get
 Extensions > Install from Disk**. Enable Blender online access, select a cache
 directory in the extension preferences, and open **3D View > Sidebar > Terrain**.
 Run `Validate ROI`, `Discover Sources`, `Download Data`, and `Create Terrain` in
-that order. A compact manual feedback test is available in
+that order. `Balanced` is the recommended resource profile. `Large` permits a
+larger processing budget but does not bypass the per-object mesh safeguards and
+can exhaust RAM or GPU memory. The **Cache** panel reports disk use by category;
+its cleanup actions require confirmation and are disabled while a job is active.
+A compact manual feedback test is available in
 [`docs/manual-testing.md`](docs/manual-testing.md).
 
 ## Development

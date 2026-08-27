@@ -139,6 +139,26 @@ class DiscoveryJobStorageTests(unittest.TestCase):
 
             self.assertEqual(read_discovery_job(path), expected)
 
+    def test_round_trips_resource_limits(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "job.json"
+            base = job()
+            expected = DiscoveryJob(
+                task_id=base.task_id,
+                import_id=base.import_id,
+                bounds=base.bounds,
+                product=base.product,
+                elevation_resolution_metres=base.elevation_resolution_metres,
+                use_imagery=base.use_imagery,
+                imagery_gsd_metres=base.imagery_gsd_metres,
+                maximum_elevation_samples=67_108_864,
+                maximum_imagery_pixels=268_435_456,
+            )
+
+            write_discovery_job(path, expected)
+
+            self.assertEqual(read_discovery_job(path), expected)
+
     def test_round_trips_local_elevation_paths(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "job.json"
@@ -281,6 +301,10 @@ class DeliveryWorkerTests(unittest.TestCase):
             self.assertEqual(result["sources"][0]["sequential_id"], "100")
             self.assertIn("IGN-CNIG", result["provenance"]["source"])
             self.assertIn("politica-datos", result["provenance"]["data_policy_url"])
+            self.assertEqual(result["cache_reuse"]["elevation_files"], 0)
+            self.assertEqual(result["cache_reuse"]["imagery_files"], 0)
+            self.assertGreaterEqual(result["timings_seconds"]["total"], 0.0)
+            self.assertGreaterEqual(result["timings_seconds"]["processing"], 0.0)
             self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
             self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
             self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])

@@ -245,6 +245,9 @@ def run_delivery_job(
     def cancelled() -> bool:
         return is_cancellation_requested(job_path.parent)
 
+    started_at = monotonic()
+    discovery_finished_at = started_at
+    delivery_finished_at = started_at
     try:
         emit(JobState.VALIDATING, 0.02, "Validating data delivery job")
         job = read_discovery_job(job_path)
@@ -261,6 +264,7 @@ def run_delivery_job(
             elevation_client = portal
             emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
             discovery = discover_sources(plan, portal)
+        discovery_finished_at = monotonic()
         imagery_requests = plan_imagery_tiles(plan)
         imagery_count = len(imagery_requests)
         file_count = len(discovery.items) + imagery_count
@@ -309,6 +313,7 @@ def run_delivery_job(
             cancelled,
             local_paths if job.local_elevation_paths else (),
         )
+        delivery_finished_at = monotonic()
 
         def report_processing(completed: int, total: int) -> None:
             if cancelled():
@@ -421,6 +426,16 @@ def run_delivery_job(
                 )
             ],
             "processed_elevation": processed_payload,
+            "cache_reuse": {
+                "elevation_files": delivered.cached_elevation_count,
+                "imagery_files": delivered.cached_imagery_count,
+            },
+            "timings_seconds": {
+                "discovery": round(discovery_finished_at - started_at, 3),
+                "delivery": round(delivery_finished_at - discovery_finished_at, 3),
+                "processing": round(monotonic() - delivery_finished_at, 3),
+                "total": round(monotonic() - started_at, 3),
+            },
         }
         write_result(result_path, payload)
         emit(
@@ -478,6 +493,8 @@ def _create_plan(job: DiscoveryJob) -> ImportPlan:
         job.imagery_gsd_metres,
         job.manual_tile_rows,
         job.manual_tile_columns,
+        job.maximum_elevation_samples,
+        job.maximum_imagery_pixels,
     )
 
 

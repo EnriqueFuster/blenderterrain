@@ -38,6 +38,8 @@ class DeliveryResult:
     elevation_paths: tuple[Path, ...]
     imagery_paths: tuple[Path, ...]
     warnings: tuple[str, ...] = ()
+    cached_elevation_count: int = 0
+    cached_imagery_count: int = 0
 
 
 class ElevationDownloader(Protocol):
@@ -79,6 +81,8 @@ def deliver_plan_sources(
     imagery_directory = cache_directory / "imagery" / _imagery_cache_key(imagery_requests)
     elevation_paths: list[Path] = list(local_elevation_paths)
     imagery_paths: list[Path] = []
+    cached_elevation_count = 0
+    cached_imagery_count = 0
 
     for index, item in enumerate(() if local_elevation_paths else discovery.items):
         _check_cancelled(cancellation_requested)
@@ -86,6 +90,7 @@ def deliver_plan_sources(
         if destination.is_file():
             validate_tiff_header(destination)
             elevation_paths.append(destination)
+            cached_elevation_count += 1
             _report_cached(
                 "elevation", index, len(discovery.items), destination, progress_callback
             )
@@ -105,6 +110,7 @@ def deliver_plan_sources(
             if destination.is_file():
                 validate_png(destination, request.width, request.height)
                 imagery_paths.append(destination)
+                cached_imagery_count += 1
                 _report_cached(
                     "imagery", index, len(imagery_requests), destination, progress_callback
                 )
@@ -128,7 +134,13 @@ def deliver_plan_sources(
         imagery_paths.clear()
         warnings.append(f"PNOA imagery could not be prepared: {exc}")
     _check_cancelled(cancellation_requested)
-    return DeliveryResult(tuple(elevation_paths), tuple(imagery_paths), tuple(warnings))
+    return DeliveryResult(
+        tuple(elevation_paths),
+        tuple(imagery_paths),
+        tuple(warnings),
+        cached_elevation_count,
+        cached_imagery_count,
+    )
 
 
 def _file_progress(
