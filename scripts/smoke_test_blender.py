@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import math
 import struct
 import sys
 import zlib
@@ -229,6 +230,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         if not properties.full_resolution_mesh:
             _assert_progressive_peak(terrain)
         properties.terrain_vertical_scale = 1.5
+        properties.terrain_strength_multiplier = 1.1
         properties.terrain_subdivision_viewport = 0
         properties.terrain_subdivision_render = 2
         properties.terrain_displacement_enabled = True
@@ -236,20 +238,33 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert terrain.scale.z == 1.5
         assert terrain.modifiers[0].levels == 0
         assert terrain.modifiers[0].render_levels == 2
+        expected_range = 9.0 if use_imagery else 3.0
+        assert math.isclose(
+            terrain.modifiers[1].strength, expected_range * 1.1, rel_tol=1e-6
+        )
+        assert math.isclose(properties.selected_strength_multiplier, 1.1, rel_tol=1e-6)
+        assert properties.selected_subdivision_viewport == 0
+        assert properties.selected_subdivision_render == 2
         properties.selected_strength_multiplier = 1.25
         properties.selected_subdivision_viewport = 1
         properties.selected_subdivision_render = 3
         assert bpy.ops.blender_terrain.apply_selected_settings() == {"FINISHED"}
         assert terrain["blender_terrain_strength_multiplier"] == 1.25
-        expected_range = 9.0 if use_imagery else 3.0
-        assert terrain.modifiers[1].strength == expected_range * 1.25
+        assert math.isclose(
+            terrain.modifiers[1].strength, expected_range * 1.25, rel_tol=1e-6
+        )
         assert terrain.modifiers[0].levels == 1
         assert bpy.ops.blender_terrain.restore_selected_settings() == {"FINISHED"}
-        assert terrain["blender_terrain_strength_multiplier"] == 1.0
-        assert terrain.modifiers[1].strength == expected_range
+        assert math.isclose(
+            terrain["blender_terrain_strength_multiplier"], 1.1, rel_tol=1e-6
+        )
+        assert math.isclose(
+            terrain.modifiers[1].strength, expected_range * 1.1, rel_tol=1e-6
+        )
+        assert math.isclose(properties.selected_strength_multiplier, 1.1, rel_tol=1e-6)
         assert terrain.modifiers[0].levels == 0
         assert bpy.ops.blender_terrain.select_import_objects() == {"FINISHED"}
-        _assert_evaluated_elevation(terrain)
+        _assert_evaluated_elevation(terrain, strength_multiplier=1.1)
         assert len(terrain.data.materials) == (1 if use_imagery else 0)
         if use_imagery:
             assert terrain.data.materials[0].use_nodes
@@ -280,6 +295,9 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             == properties.full_resolution_mesh
         )
         assert collection["blender_terrain_vertical_scale"] == 1.5
+        assert math.isclose(
+            collection["blender_terrain_strength_multiplier"], 1.1, rel_tol=1e-6
+        )
         assert collection["blender_terrain_elevation_minimum"] == 1.0
         assert collection["blender_terrain_elevation_maximum"] == (10.0 if use_imagery else 4.0)
         assert collection["blender_terrain_source"].startswith(
@@ -294,7 +312,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             assert bpy.ops.wm.save_as_mainfile(filepath=str(blend_path)) == {"FINISHED"}
             assert bpy.ops.wm.open_mainfile(filepath=str(blend_path)) == {"FINISHED"}
             terrain = bpy.data.objects["BT_12345678_Terrain_000"]
-            _assert_evaluated_elevation(terrain)
+            _assert_evaluated_elevation(terrain, strength_multiplier=1.1)
             assert terrain.modifiers[1].texture.image.packed_file is not None
             properties = bpy.context.scene.blender_terrain_roi
             assert properties.active_import_id == "12345678-1234-4234-8234-123456789abc"
@@ -329,13 +347,15 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                 bpy.data.images.remove(bpy.data.images[image_path.name])
 
 
-def _assert_evaluated_elevation(terrain: bpy.types.Object) -> None:
+def _assert_evaluated_elevation(
+    terrain: bpy.types.Object, *, strength_multiplier: float = 1.0
+) -> None:
     evaluated = terrain.evaluated_get(bpy.context.evaluated_depsgraph_get())
     evaluated_mesh = evaluated.to_mesh()
     try:
         np.testing.assert_allclose(
             [vertex.co.z for vertex in evaluated_mesh.vertices],
-            [1.0, 2.0, 3.0, 4.0],
+            [1.0 + value * strength_multiplier for value in (0.0, 1.0, 2.0, 3.0)],
             atol=1e-5,
         )
     finally:

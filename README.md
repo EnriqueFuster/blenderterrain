@@ -12,13 +12,14 @@ abstractions.
 
 The Blender 4.5 extension implements an end-to-end workflow: define a WGS84
 bounding box directly or from a centre and metric dimensions, or load Polygon
-and MultiPolygon geometry from GeoJSON, KML, or Shapefile, or draw a rectangle
-or polygon on an OpenStreetMap browser map; choose MDT02 or MDS02
+and MultiPolygon geometry from GeoJSON, KML, Shapefile, or a selected GeoPackage
+polygon layer, or draw a rectangle or polygon on a browser map; choose MDT02 or MDS02
 and an output resolution; optionally request PNOA imagery; and create
 georeferenced Blender mesh objects and materials. Network and raster work runs
 in a background Blender process with observable states and cooperative
 cancellation. Shapefiles require their matching `.prj`; supported input CRSs
-are WGS84, ETRS89, REGCAN95 and their common Spanish UTM zones.
+are WGS84, ETRS89, REGCAN95 and their common Spanish UTM zones. GeoPackage files
+are opened read-only and require an explicit Polygon or MultiPolygon layer selection.
 
 The current implementation includes:
 

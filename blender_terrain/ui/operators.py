@@ -32,6 +32,7 @@ from .terrain_controls import (
     apply_selected_settings,
     restore_selected_settings,
     select_import_objects,
+    sync_selected_settings,
 )
 
 _active_map_session: ROIMapSession | None = None
@@ -274,7 +275,13 @@ def _bounds_from_properties(
     properties: object, *, store_derived: bool = False
 ) -> BBoxWGS84:
     if properties.roi_input_mode == "FILE":
-        region = read_roi_file(Path(bpy.path.abspath(properties.roi_file_path)))
+        path = Path(bpy.path.abspath(properties.roi_file_path))
+        layer_name = (
+            properties.gpkg_layer
+            if path.suffix.lower() == ".gpkg" and properties.gpkg_layer != "__NONE__"
+            else None
+        )
+        region = read_roi_file(path, layer_name)
         if store_derived:
             _store_bounds(properties, region.bounds)
             properties.roi_geometry_json = json.dumps(
@@ -420,7 +427,7 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
             objects = create_terrain_objects(
                 context,
                 Path(properties.delivery_result_path),
-                properties.vertical_scale,
+                1.0,
                 properties.pack_imagery,
                 properties.full_resolution_mesh,
                 report_progress,
@@ -451,6 +458,7 @@ class BLENDERTERRAIN_OT_select_import_objects(bpy.types.Operator):
         properties = context.scene.blender_terrain_roi
         try:
             count = select_import_objects(context, properties.active_import_id)
+            sync_selected_settings(context, properties, force=True)
         except BlenderTerrainError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -468,6 +476,7 @@ class BLENDERTERRAIN_OT_apply_import_settings(bpy.types.Operator):
         properties = context.scene.blender_terrain_roi
         try:
             count = apply_global_settings(properties)
+            sync_selected_settings(context, properties, force=True)
         except (BlenderTerrainError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -492,6 +501,7 @@ class BLENDERTERRAIN_OT_apply_selected_settings(bpy.types.Operator):
         properties = context.scene.blender_terrain_roi
         try:
             count, seams = apply_selected_settings(context, properties)
+            sync_selected_settings(context, properties, force=True)
         except (BlenderTerrainError, ValueError) as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -524,6 +534,7 @@ class BLENDERTERRAIN_OT_restore_selected_settings(bpy.types.Operator):
         properties = context.scene.blender_terrain_roi
         try:
             count = restore_selected_settings(context, properties)
+            sync_selected_settings(context, properties, force=True)
         except BlenderTerrainError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}

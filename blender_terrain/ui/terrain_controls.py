@@ -49,6 +49,9 @@ def load_import_settings(properties: Any) -> None:
         collection.get("blender_terrain_full_resolution_mesh", False)
     )
     properties.terrain_vertical_scale = metadata.settings.vertical_scale
+    properties.terrain_strength_multiplier = float(
+        collection.get("blender_terrain_strength_multiplier", 1.0)
+    )
     properties.terrain_subdivision_viewport = metadata.settings.subdivision_viewport
     properties.terrain_subdivision_render = metadata.settings.subdivision_render
     properties.terrain_displacement_enabled = metadata.settings.displacement_enabled
@@ -65,6 +68,10 @@ def apply_global_settings(properties: Any) -> int:
         displacement_enabled=properties.terrain_displacement_enabled,
     )
     collection["blender_terrain_vertical_scale"] = settings.vertical_scale
+    multiplier = float(properties.terrain_strength_multiplier)
+    if not math.isfinite(multiplier) or multiplier < 0.0:
+        raise UserInputError("Strength multiplier must be a non-negative finite value")
+    collection["blender_terrain_strength_multiplier"] = multiplier
     collection["blender_terrain_subdivision_viewport"] = settings.subdivision_viewport
     collection["blender_terrain_subdivision_render"] = settings.subdivision_render
     collection["blender_terrain_displacement_enabled"] = settings.displacement_enabled
@@ -72,10 +79,15 @@ def apply_global_settings(properties: Any) -> int:
     for object_ in objects:
         object_.scale.z = settings.vertical_scale
         subdivision, displacement = _modifiers(object_)
+        elevation_range = float(object_["blender_terrain_elevation_range"])
+        displacement.strength = elevation_range * multiplier
         subdivision.levels = settings.subdivision_viewport
         subdivision.render_levels = settings.subdivision_render
         displacement.show_viewport = settings.displacement_enabled
         displacement.show_render = settings.displacement_enabled
+        object_["blender_terrain_strength_multiplier"] = multiplier
+        object_["blender_terrain_subdivision_viewport"] = settings.subdivision_viewport
+        object_["blender_terrain_subdivision_render"] = settings.subdivision_render
     return len(objects)
 
 
@@ -109,17 +121,49 @@ def restore_selected_settings(context: bpy.types.Context, properties: Any) -> in
     if not selected:
         raise UserInputError("Select at least one object from the active terrain import")
     metadata = read_terrain_metadata(dict(collection.items()))
+    multiplier = float(collection.get("blender_terrain_strength_multiplier", 1.0))
     for object_ in selected:
         subdivision, displacement = _modifiers(object_)
-        displacement.strength = float(object_["blender_terrain_elevation_range"])
+        displacement.strength = float(object_["blender_terrain_elevation_range"]) * multiplier
         subdivision.levels = metadata.settings.subdivision_viewport
         subdivision.render_levels = metadata.settings.subdivision_render
-        object_["blender_terrain_strength_multiplier"] = 1.0
+        object_["blender_terrain_strength_multiplier"] = multiplier
         object_["blender_terrain_subdivision_viewport"] = (
             metadata.settings.subdivision_viewport
         )
         object_["blender_terrain_subdivision_render"] = metadata.settings.subdivision_render
     return len(selected)
+
+
+def sync_selected_settings(
+    context: bpy.types.Context, properties: Any, *, force: bool = False
+) -> bool:
+    """Load actual modifier values from the active or last selected terrain object."""
+
+    collection = _collection(properties.active_import_id)
+    if collection is None:
+        properties.selected_object_name = ""
+        properties.selected_objects_signature = ""
+        return False
+    selected = _selected_terrain_objects(context, collection)
+    active = context.view_layer.objects.active
+    source = active if active in selected else (selected[-1] if selected else None)
+    signature = "|".join(str(object_.as_pointer()) for object_ in selected)
+    signature += f":{0 if source is None else source.as_pointer()}"
+    if not force and signature == properties.selected_objects_signature:
+        return source is not None
+    properties.selected_objects_signature = signature
+    if source is None:
+        properties.selected_object_name = ""
+        return False
+    subdivision, displacement = _modifiers(source)
+    elevation_range = float(source["blender_terrain_elevation_range"])
+    multiplier = displacement.strength / elevation_range if elevation_range else 0.0
+    properties.selected_strength_multiplier = multiplier
+    properties.selected_subdivision_viewport = subdivision.levels
+    properties.selected_subdivision_render = subdivision.render_levels
+    properties.selected_object_name = source.name
+    return True
 
 
 def select_import_objects(context: bpy.types.Context, import_id: str) -> int:

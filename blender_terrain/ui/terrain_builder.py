@@ -108,6 +108,7 @@ def create_terrain_objects(
     collection["blender_terrain_data_license"] = provenance["license"]
     collection["blender_terrain_retrieved_at_utc"] = provenance["retrieved_at_utc"]
     collection["blender_terrain_vertical_scale"] = vertical_scale
+    collection["blender_terrain_strength_multiplier"] = 1.0
     initial_subdivision = 0 if full_resolution_mesh else DEFAULT_PREVIEW_SUBDIVISION_LEVEL
     collection["blender_terrain_subdivision_viewport"] = initial_subdivision
     collection["blender_terrain_subdivision_render"] = initial_subdivision

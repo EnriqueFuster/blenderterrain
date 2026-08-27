@@ -7,6 +7,7 @@ import json
 import bpy
 
 from ..core import SUBDIVISION_WARNING_LEVEL
+from .terrain_controls import sync_selected_settings
 
 
 class BLENDERTERRAIN_PT_main(bpy.types.Panel):
@@ -65,7 +66,12 @@ class BLENDERTERRAIN_PT_area(bpy.types.Panel):
             row.prop(properties, "north")
         elif properties.roi_input_mode == "FILE":
             inputs.prop(properties, "roi_file_path")
-            inputs.label(text="GeoJSON, KML, or SHP + PRJ", icon="INFO")
+            if properties.roi_file_path.lower().endswith(".gpkg"):
+                inputs.prop(properties, "gpkg_layer")
+                if properties.gpkg_inspection_message:
+                    inputs.label(text=properties.gpkg_inspection_message, icon="INFO")
+            else:
+                inputs.label(text="GeoJSON, KML, SHP + PRJ, or GPKG", icon="INFO")
         else:
             inputs.operator("blender_terrain.open_roi_map", icon="URL")
             if properties.roi_geometry_json:
@@ -166,34 +172,24 @@ class BLENDERTERRAIN_PT_acquisition(bpy.types.Panel):
             layout.label(text=properties.discovery_summary, icon="FILE_TICK")
         if properties.delivery_summary:
             layout.label(text=properties.delivery_summary, icon="CHECKMARK")
-
-
-class BLENDERTERRAIN_PT_activity(bpy.types.Panel):
-    """Show current and recent background activity."""
-
-    bl_idname = "BLENDERTERRAIN_PT_activity"
-    bl_label = "Job Activity"
-    bl_parent_id = "BLENDERTERRAIN_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-
-    def draw(self, context: bpy.types.Context) -> None:
-        properties = context.scene.blender_terrain_roi
+        layout.separator()
+        activity = layout.box()
+        activity.label(text="Job Activity", icon="TIME")
         if properties.job_state:
-            self.layout.prop(
+            activity.prop(
                 properties,
                 "job_progress",
                 text=_job_state_label(properties.job_state),
                 slider=True,
             )
         else:
-            self.layout.label(text="No job has been started")
+            activity.label(text="No job has been started")
         for message in _job_history(properties.job_event_history)[-5:]:
-            row = self.layout.row()
+            row = activity.row()
             row.scale_y = 0.8
             row.label(text=message, icon="DOT")
         if properties.job_active:
-            self.layout.operator("blender_terrain.cancel_discovery", icon="CANCEL")
+            activity.operator("blender_terrain.cancel_discovery", icon="CANCEL")
 
 
 class BLENDERTERRAIN_PT_creation(bpy.types.Panel):
@@ -212,7 +208,6 @@ class BLENDERTERRAIN_PT_creation(bpy.types.Panel):
             return
         controls = self.layout.column()
         controls.enabled = not properties.job_active
-        controls.prop(properties, "vertical_scale")
         controls.prop(properties, "full_resolution_mesh")
         if properties.full_resolution_mesh:
             controls.label(
@@ -261,9 +256,6 @@ class BLENDERTERRAIN_PT_imported(bpy.types.Panel):
         controls = self.layout
         controls.prop(properties, "active_import_id")
         controls.operator("blender_terrain.select_import_objects", icon="RESTRICT_SELECT_OFF")
-        controls.label(
-            text=f"Representation: {properties.active_import_representation or 'Unknown'}"
-        )
         if properties.active_import_representation == "DISPLACEMENT":
             controls.label(
                 text=(
@@ -273,34 +265,46 @@ class BLENDERTERRAIN_PT_imported(bpy.types.Panel):
                 ),
                 icon="INFO",
             )
+        elif properties.active_import_representation == "BAKED":
+            controls.label(text="Legacy baked terrain: controls unavailable", icon="INFO")
+            return
         editable = controls.column()
         editable.enabled = properties.active_import_representation == "DISPLACEMENT"
-        editable.label(text="Whole Import")
-        editable.prop(properties, "terrain_vertical_scale")
-        editable.prop(properties, "terrain_subdivision_viewport")
-        editable.prop(properties, "terrain_subdivision_render")
-        _draw_subdivision_warning(
-            editable,
-            properties.terrain_subdivision_viewport,
-            properties.terrain_subdivision_render,
-        )
-        editable.prop(properties, "terrain_displacement_enabled")
-        editable.operator("blender_terrain.apply_import_settings")
-        editable.separator()
-        editable.label(text="Selected Objects")
-        editable.prop(properties, "selected_strength_multiplier")
-        editable.prop(properties, "selected_subdivision_viewport")
-        editable.prop(properties, "selected_subdivision_render")
-        _draw_subdivision_warning(
-            editable,
-            properties.selected_subdivision_viewport,
-            properties.selected_subdivision_render,
-        )
-        row = editable.row(align=True)
-        row.operator("blender_terrain.apply_selected_settings")
-        row.operator("blender_terrain.restore_selected_settings")
-        if properties.active_import_representation == "BAKED":
-            controls.label(text="Legacy baked terrain: controls unavailable", icon="INFO")
+        editable.row().prop(properties, "import_settings_tab", expand=True)
+        if properties.import_settings_tab == "WHOLE":
+            editable.prop(properties, "terrain_vertical_scale")
+            editable.prop(properties, "terrain_strength_multiplier")
+            editable.prop(properties, "terrain_subdivision_viewport")
+            editable.prop(properties, "terrain_subdivision_render")
+            _draw_subdivision_warning(
+                editable,
+                properties.terrain_subdivision_viewport,
+                properties.terrain_subdivision_render,
+            )
+            editable.prop(properties, "terrain_displacement_enabled")
+            editable.operator("blender_terrain.apply_import_settings")
+        else:
+            has_selection = sync_selected_settings(context, properties)
+            if has_selection:
+                editable.label(
+                    text=f"Values from: {properties.selected_object_name}",
+                    icon="OBJECT_DATA",
+                )
+            else:
+                editable.label(text="Select an object from this terrain", icon="INFO")
+            selected = editable.column()
+            selected.enabled = has_selection
+            selected.prop(properties, "selected_strength_multiplier")
+            selected.prop(properties, "selected_subdivision_viewport")
+            selected.prop(properties, "selected_subdivision_render")
+            _draw_subdivision_warning(
+                selected,
+                properties.selected_subdivision_viewport,
+                properties.selected_subdivision_render,
+            )
+            row = selected.row(align=True)
+            row.operator("blender_terrain.apply_selected_settings")
+            row.operator("blender_terrain.restore_selected_settings")
 
 
 def _job_state_label(state: str) -> str:

@@ -27,7 +27,6 @@ from .ui.operators import (
 )
 from .ui.panels import (
     BLENDERTERRAIN_PT_acquisition,
-    BLENDERTERRAIN_PT_activity,
     BLENDERTERRAIN_PT_area,
     BLENDERTERRAIN_PT_creation,
     BLENDERTERRAIN_PT_data,
@@ -58,7 +57,6 @@ _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_PT_area,
     BLENDERTERRAIN_PT_data,
     BLENDERTERRAIN_PT_acquisition,
-    BLENDERTERRAIN_PT_activity,
     BLENDERTERRAIN_PT_creation,
     BLENDERTERRAIN_PT_imported,
 )

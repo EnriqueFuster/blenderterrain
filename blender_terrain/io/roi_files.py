@@ -15,12 +15,13 @@ from ..core.crs import CRSInfo
 from ..core.projection import ProjectedPoint, project_utm_to_wgs84
 from ..core.roi import PolygonWGS84, RegionOfInterest, closed_ring
 from ..errors import UserInputError
+from .geopackage import read_geopackage_roi
 
 MAX_ROI_FILE_BYTES = 32 * 1024 * 1024
 
 
-def read_roi_file(path: str | Path) -> RegionOfInterest:
-    """Read a GeoJSON or KML polygon file as a WGS84 region of interest."""
+def read_roi_file(path: str | Path, layer_name: str | None = None) -> RegionOfInterest:
+    """Read a supported polygon file as a WGS84 region of interest."""
 
     source = Path(path)
     if not source.is_file():
@@ -28,17 +29,23 @@ def read_roi_file(path: str | Path) -> RegionOfInterest:
     size = source.stat().st_size
     if size == 0:
         raise UserInputError("ROI file is empty")
-    if size > MAX_ROI_FILE_BYTES:
+    suffix = source.suffix.lower()
+    if size > MAX_ROI_FILE_BYTES and suffix != ".gpkg":
         raise UserInputError("ROI file exceeds the 32 MiB safety limit")
 
-    suffix = source.suffix.lower()
     if suffix in {".geojson", ".json"}:
         return read_geojson_roi(source.read_text(encoding="utf-8-sig"))
     if suffix == ".kml":
         return read_kml_roi(source.read_text(encoding="utf-8-sig"))
     if suffix == ".shp":
         return read_shapefile_roi(source)
-    raise UserInputError("ROI file must use the .geojson, .json, .kml, or .shp extension")
+    if suffix == ".gpkg":
+        if not layer_name:
+            raise UserInputError("Choose a polygon layer from the GeoPackage")
+        return read_geopackage_roi(source, layer_name)
+    raise UserInputError(
+        "ROI file must use the .geojson, .json, .kml, .shp, or .gpkg extension"
+    )
 
 
 def read_geojson_roi(text: str) -> RegionOfInterest:

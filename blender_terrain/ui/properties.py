@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
+from ..errors import BlenderTerrainError
+
 _IMPORT_ITEMS_CACHE: list[tuple[str, str, str]] = []
+_GPKG_LAYER_ITEMS_CACHE: list[tuple[str, str, str]] = []
 
 
 def _terrain_import_items(
@@ -18,9 +24,18 @@ def _terrain_import_items(
 
 
 def _active_import_changed(properties: object, context: bpy.types.Context) -> None:
-    from .terrain_controls import load_import_settings
+    from .terrain_controls import load_import_settings, sync_selected_settings
 
     load_import_settings(properties)
+    sync_selected_settings(context, properties, force=True)
+
+
+def _import_settings_tab_changed(properties: object, context: bpy.types.Context) -> None:
+    if properties.import_settings_tab != "SELECTED":
+        return
+    from .terrain_controls import sync_selected_settings
+
+    sync_selected_settings(context, properties, force=True)
 
 
 def _invalidate_validation(properties: object, context: bpy.types.Context) -> None:
@@ -41,6 +56,50 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.imagery_available = False
     properties.imagery_size_mib = 0.0
     properties.roi_geometry_json = ""
+
+
+def _roi_file_changed(properties: object, context: bpy.types.Context) -> None:
+    """Refresh lightweight GeoPackage layer metadata after choosing a file."""
+
+    _invalidate_validation(properties, context)
+    properties.gpkg_layers_json = "[]"
+    properties.gpkg_inspection_message = ""
+    if Path(properties.roi_file_path).suffix.lower() != ".gpkg":
+        return
+    from ..io.geopackage import list_geopackage_polygon_layers
+
+    try:
+        path = Path(bpy.path.abspath(properties.roi_file_path))
+        layers = list_geopackage_polygon_layers(path)
+    except (BlenderTerrainError, OSError, ValueError) as error:
+        properties.gpkg_inspection_message = str(error)
+        return
+    properties.gpkg_layers_json = json.dumps(
+        [[layer.name, layer.geometry_type, layer.srs_id] for layer in layers]
+    )
+    properties.gpkg_inspection_message = (
+        f"Found {len(layers)} polygon layer(s)"
+        if layers
+        else "GeoPackage contains no Polygon or MultiPolygon layers"
+    )
+    if layers:
+        properties.gpkg_layer = layers[0].name
+
+
+def _gpkg_layer_items(
+    properties: object, context: bpy.types.Context
+) -> list[tuple[str, str, str]]:
+    try:
+        layers = json.loads(properties.gpkg_layers_json)
+    except (json.JSONDecodeError, TypeError):
+        layers = []
+    _GPKG_LAYER_ITEMS_CACHE[:] = [
+        (str(name), str(name), f"{geometry_type}, SRS {srs_id}")
+        for name, geometry_type, srs_id in layers
+    ]
+    if not _GPKG_LAYER_ITEMS_CACHE:
+        _GPKG_LAYER_ITEMS_CACHE.append(("__NONE__", "No polygon layers", ""))
+    return _GPKG_LAYER_ITEMS_CACHE
 
 
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
@@ -101,8 +160,15 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
     roi_file_path: StringProperty(
         name="ROI File",
-        description="GeoJSON, KML, or Shapefile (.shp with .prj) polygon file",
+        description="GeoJSON, KML, Shapefile (.shp with .prj), or GeoPackage polygon file",
         subtype="FILE_PATH",
+        update=_roi_file_changed,
+    )
+    gpkg_layers_json: StringProperty(default="[]", options={"HIDDEN"})
+    gpkg_inspection_message: StringProperty(default="", options={"HIDDEN"})
+    gpkg_layer: EnumProperty(
+        name="Polygon Layer",
+        items=_gpkg_layer_items,
         update=_invalidate_validation,
     )
     roi_geometry_json: StringProperty(default="", options={"HIDDEN"})
@@ -183,7 +249,6 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     delivery_ready: BoolProperty(default=False, options={"HIDDEN"})
     delivery_summary: StringProperty(default="", options={"HIDDEN"})
     delivery_result_path: StringProperty(default="", options={"HIDDEN"})
-    vertical_scale: FloatProperty(name="Vertical Scale", default=1.0, min=0.001, max=100.0)
     terrain_created: BoolProperty(default=False, options={"HIDDEN"})
     import_id: StringProperty(default="", options={"HIDDEN"})
     pack_imagery: BoolProperty(
@@ -209,8 +274,20 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
     active_import_representation: StringProperty(default="", options={"HIDDEN"})
     active_import_full_resolution_mesh: BoolProperty(default=False, options={"HIDDEN"})
+    import_settings_tab: EnumProperty(
+        name="Terrain Settings",
+        items=(
+            ("WHOLE", "Whole Import", "Edit every object in the terrain import"),
+            ("SELECTED", "Selected Objects", "Edit only selected terrain objects"),
+        ),
+        default="WHOLE",
+        update=_import_settings_tab_changed,
+    )
     terrain_vertical_scale: FloatProperty(
         name="Vertical Scale", default=1.0, min=0.001, max=100.0
+    )
+    terrain_strength_multiplier: FloatProperty(
+        name="Strength Multiplier", default=1.0, min=0.0, max=10.0
     )
     terrain_subdivision_viewport: IntProperty(
         name="Viewport Subdivision",
@@ -230,6 +307,8 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     selected_strength_multiplier: FloatProperty(
         name="Strength Multiplier", default=1.0, min=0.0, max=10.0
     )
+    selected_object_name: StringProperty(default="", options={"HIDDEN"})
+    selected_objects_signature: StringProperty(default="", options={"HIDDEN"})
     selected_subdivision_viewport: IntProperty(
         name="Selected Viewport",
         description="Viewport subdivision for selected terrain objects",
