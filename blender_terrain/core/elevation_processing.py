@@ -14,8 +14,11 @@ from ..errors import RasterFormatError
 from ..io.bigtiff_tiles import BigTiffFloatTileReader
 from ..io.elevation_mosaic import read_elevation_mosaic
 from ..models import ProjectedBounds
-from .grid import GridTile, tile_grid
+from .crs import CRSInfo
+from .grid import GridTile
 from .planning import ImportPlan
+from .projection import project_wgs84_to_utm
+from .roi import PolygonWGS84, RegionOfInterest
 
 DEFAULT_MAX_SOURCE_WINDOW_PIXELS = 4_194_304
 
@@ -38,6 +41,7 @@ def process_elevation_tiles(
     plan: ImportPlan,
     progress_callback: Callable[[int, int], None] | None = None,
     maximum_source_window_pixels: int = DEFAULT_MAX_SOURCE_WINDOW_PIXELS,
+    region: RegionOfInterest | None = None,
 ) -> tuple[ProcessedElevationTile, ...]:
     """Build every planned terrain tile while bounding native source windows."""
 
@@ -45,7 +49,7 @@ def process_elevation_tiles(
         raise ValueError("Maximum source window pixels must be positive")
     readers = tuple(BigTiffFloatTileReader(path) for path in source_paths)
     outputs: list[ProcessedElevationTile] = []
-    total_tiles = sum(len(tile_grid(grid)) for grid in plan.grids)
+    total_tiles = plan.terrain_tile_count
     if progress_callback is not None:
         progress_callback(0, total_tiles)
     for zone_index, grid in enumerate(plan.grids):
@@ -54,12 +58,14 @@ def process_elevation_tiles(
         )
         if not zone_readers:
             raise RasterFormatError(f"No elevation source is available for EPSG:{grid.bounds.epsg}")
-        for tile in tile_grid(grid):
-            outputs.append(
-                _resample_tile(
-                    zone_index, tile, zone_readers, maximum_source_window_pixels
-                )
+        for tile in plan.tiles_for_grid(zone_index):
+            processed = _resample_tile(
+                zone_index, tile, zone_readers, maximum_source_window_pixels
             )
+            if region is not None:
+                crs = plan.work_areas[zone_index].crs
+                _mask_outside_region(processed.data, tile, processed.nodata, region, crs)
+            outputs.append(processed)
             if progress_callback is not None:
                 progress_callback(len(outputs), total_tiles)
     return tuple(outputs)
@@ -125,6 +131,72 @@ def _resample_tile(
         conflicts,
         maximum_difference,
     )
+
+
+def _mask_outside_region(
+    data: NDArray[np.float32],
+    tile: GridTile,
+    nodata: float,
+    region: RegionOfInterest,
+    crs: CRSInfo,
+) -> None:
+    """Set elevation nodes outside a projected polygon ROI to NoData in bounded rows."""
+
+    projected = tuple(_project_polygon(polygon, crs) for polygon in region.polygons)
+    x = np.linspace(tile.bounds.west, tile.bounds.east, tile.columns + 1)
+    y = np.linspace(tile.bounds.north, tile.bounds.south, tile.rows + 1)
+    for row_start in range(0, len(y), 512):
+        row_end = min(len(y), row_start + 512)
+        xx, yy = np.meshgrid(x, y[row_start:row_end])
+        inside = np.zeros(xx.shape, dtype=np.bool_)
+        for exterior, holes in projected:
+            polygon_inside = _points_in_ring(xx, yy, exterior)
+            for hole in holes:
+                polygon_inside &= ~_points_in_ring(xx, yy, hole)
+            inside |= polygon_inside
+        block = data[row_start:row_end]
+        block[~inside] = nodata
+
+
+def _project_polygon(
+    polygon: PolygonWGS84, crs: CRSInfo
+) -> tuple[NDArray[np.float64], tuple[NDArray[np.float64], ...]]:
+    def project_ring(ring: tuple[tuple[float, float], ...]) -> NDArray[np.float64]:
+        coordinates = []
+        for longitude, latitude in ring:
+            point = project_wgs84_to_utm(longitude, latitude, crs)
+            coordinates.append((point.easting, point.northing))
+        return np.asarray(coordinates, dtype=np.float64)
+
+    return project_ring(polygon.exterior), tuple(project_ring(hole) for hole in polygon.holes)
+
+
+def _points_in_ring(
+    x: NDArray[np.float64], y: NDArray[np.float64], ring: NDArray[np.float64]
+) -> NDArray[np.bool_]:
+    inside = np.zeros(x.shape, dtype=np.bool_)
+    boundary = np.zeros(x.shape, dtype=np.bool_)
+    for index in range(len(ring) - 1):
+        left_x, left_y = ring[index]
+        right_x, right_y = ring[index + 1]
+        edge_x = right_x - left_x
+        edge_y = right_y - left_y
+        cross_product = edge_x * (y - left_y) - edge_y * (x - left_x)
+        edge_length = np.hypot(edge_x, edge_y)
+        on_line = np.abs(cross_product) <= 1e-7 * max(1.0, edge_length)
+        within_edge = (
+            (x >= min(left_x, right_x) - 1e-7)
+            & (x <= max(left_x, right_x) + 1e-7)
+            & (y >= min(left_y, right_y) - 1e-7)
+            & (y <= max(left_y, right_y) + 1e-7)
+        )
+        boundary |= on_line & within_edge
+        crosses = (left_y > y) != (right_y > y)
+        crossing_x = (right_x - left_x) * (y - left_y) / (
+            right_y - left_y + np.finfo(np.float64).eps
+        ) + left_x
+        inside ^= crosses & (x < crossing_x)
+    return inside | boundary
 
 
 def _bilinear_resample(

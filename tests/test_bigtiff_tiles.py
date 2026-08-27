@@ -200,13 +200,15 @@ class BigTiffTilesTests(unittest.TestCase):
                     readers, ProjectedBounds(99.0, 197.0, 103.0, 201.0, 25830)
                 )
 
-    def test_rejects_an_unsupported_predictor(self) -> None:
+    def test_decodes_horizontal_differencing_predictor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "elevation.tif"
-            _write_minimal_bigtiff(path, np.zeros((2, 2), dtype="<f4"), predictor=2)
+            expected = np.array([[1.25, 3.5], [-7.0, 2.0]], dtype="<f4")
+            _write_minimal_bigtiff(path, expected, predictor=2)
 
-            with self.assertRaisesRegex(RasterFormatError, "predictor"):
-                BigTiffFloatTileReader(path)
+            actual = BigTiffFloatTileReader(path).read_tile(0, 0)
+
+            np.testing.assert_array_equal(actual, expected)
 
 
 def _write_minimal_bigtiff(
@@ -221,11 +223,17 @@ def _write_minimal_bigtiff(
     tile_height, tile_width = tile_shape or values.shape
     if values.shape[0] % tile_height or values.shape[1] % tile_width:
         raise ValueError("Test fixture dimensions must be divisible by tile dimensions")
-    compressed_tiles = [
-        zlib.compress(values[row : row + tile_height, column : column + tile_width].tobytes())
-        for row in range(0, values.shape[0], tile_height)
-        for column in range(0, values.shape[1], tile_width)
-    ]
+    compressed_tiles = []
+    for row in range(0, values.shape[0], tile_height):
+        for column in range(0, values.shape[1], tile_width):
+            tile = values[row : row + tile_height, column : column + tile_width]
+            encoded = tile
+            if predictor == 2:
+                bits = tile.view("<u4")
+                encoded = np.empty_like(bits)
+                encoded[:, 0] = bits[:, 0]
+                encoded[:, 1:] = bits[:, 1:] - bits[:, :-1]
+            compressed_tiles.append(zlib.compress(encoded.tobytes()))
     entry_count = 15
     external_values_offset = 16 + 8 + entry_count * 20 + 8
     pixel_scale = struct.pack("<3d", 2.0, 2.0, 0.0)

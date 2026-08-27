@@ -1,7 +1,7 @@
 # BlenderTerrain
 
 BlenderTerrain is an independent, from-scratch Blender terrain importer for
-Spain's official IGN/CNIG MDT02, MDS02, and PNOA services.
+Spain's official IGN/CNIG MDT, MDS, and PNOA services.
 
 The repository name is intentionally broader than its initial geographic
 coverage. Version 1 will remain focused on Spain; support for another country
@@ -10,32 +10,61 @@ abstractions.
 
 ## Current status
 
-The Blender 4.5 extension implements the first end-to-end workflow: enter a
-manual WGS84 bounding box, choose MDT02 or MDS02 and an output resolution,
-optionally request PNOA imagery, discover and download the official sources,
-process bounded terrain tiles, and create georeferenced Blender mesh objects and
-materials. Network and raster work runs in a background Blender process with
-observable states and cooperative cancellation.
+The Blender 4.5 extension implements an end-to-end workflow: define a WGS84
+bounding box directly or from a centre and metric dimensions, or load Polygon
+and MultiPolygon geometry from GeoJSON, KML, Shapefile, or a selected GeoPackage
+polygon layer, or draw a rectangle or polygon on a browser map; choose a supported
+MDT or MDS coverage and an output resolution; optionally request PNOA imagery; and create
+georeferenced Blender mesh objects and materials. Network and raster work runs
+in a background Blender process with observable states and cooperative
+cancellation. Shapefiles require their matching `.prj`; supported input CRSs
+are WGS84, ETRS89, REGCAN95 and their common Spanish UTM zones. GeoPackage files
+are opened read-only and require an explicit Polygon or MultiPolygon layer selection.
 
 The current implementation includes:
 
-1. paginated MDT02 and MDS02 discovery without browser automation;
+1. paginated discovery for MDT50 cm, MDT02, MDT05, MDT25, MDT200, MDS50 cm,
+   MDS02 and MDS05 without browser automation;
 2. validated, atomic CNIG TIFF downloads and cache reuse;
 3. bounded BigTIFF reading, mosaicking, NoData handling and bilinear resampling;
 4. deterministic terrain tiling with identical shared-edge elevations;
 5. PNOA WMS textures in the supported Spanish ETRS89 UTM zones;
 6. local Blender coordinates with CRS, ROI, source and attribution metadata;
-7. optional packing of PNOA images into the `.blend` file.
+7. automatic or explicit row-by-column terrain division;
+8. full-resolution persistent heightmaps with a lightweight progressive base mesh
+   or an opt-in full-resolution base mesh;
+9. import-wide and per-object vertical scale, displacement strength, Midlevel and
+   subdivision controls;
+10. optional packing of PNOA images into the `.blend` file;
+11. compatible local elevation TIFF or TIFF-folder processing without copying the
+    source files;
+12. optional automatic 3D viewport `Clip End` adjustment after creation.
+
+Subdivision follows Blender's technical range from 0 to 11. The interface warns
+from level 3 because each additional level can multiply the generated face count
+by four; high values can freeze Blender or exhaust system and GPU memory.
 
 The first MVP workflow was validated end to end from an isolated Blender 4.5.3
 extension installation on 2026-08-26 with both MDT02 and MDS02, including live
 PNOA imagery, terrain processing and Blender object creation.
 
-Current limitations are deliberate: ROI entry uses a manual WGS84 bounding box,
-terrain subdivision is automatic, elevation is baked into mesh geometry, and a
-large number of PNOA tiles has not yet been GPU-benchmarked. Interactive ROI
-selection, user-defined subdivision and non-destructive displacement controls
-remain future work.
+The browser selector communicates with Blender through a temporary token-protected
+server bound only to `127.0.0.1`. PNOA Máxima Actualidad is its default aerial
+imagery background; IGN physical relief, IGN topographic mapping and OpenStreetMap streets
+can be selected without changing the resulting ROI. The ROI is not uploaded by
+BlenderTerrain; internet access is used only to obtain the visible, attributed map
+tiles. The local server closes after confirmation, cancellation, or extension shutdown.
+
+Current limitations are deliberate: terrain creation is synchronous, and a large
+number of PNOA tiles has not yet been GPU-benchmarked. The default progressive mesh approaches
+the processed heightmap density around subdivision level 4; higher levels only
+interpolate the available raster samples. Per-object displacement overrides can
+also create visible seams when adjacent objects use different strengths; the
+extension warns when it detects that situation.
+The local-raster mode accepts the constrained CNIG Float32 tiled BigTIFF layouts
+verified by this project, including TIFF horizontal differencing. Other GeoTIFF
+layouts fail explicitly; broad arbitrary-raster support would require shipping a
+larger GDAL-compatible runtime.
 
 No elevation or imagery data is redistributed in this repository.
 

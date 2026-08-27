@@ -1,7 +1,8 @@
 """Constrained BigTIFF tile reading for the verified CNIG elevation layout.
 
 This module intentionally supports a narrow format: little-endian BigTIFF, one
-Float32 band, tiled storage, Adobe Deflate compression, and no TIFF predictor.
+Float32 band, tiled storage, Adobe Deflate compression, and either no predictor
+or horizontal differencing.
 Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 """
 
@@ -137,6 +138,7 @@ class BigTiffFloatTileReader:
         self._file_size = path.stat().st_size
         self._byte_order, first_ifd_offset = self._read_header()
         tags = self._read_first_directory(first_ifd_offset)
+        self._predictor = _single_value(tags, _PREDICTOR)
         self.layout = self._validate_layout(tags)
         self.georeference = _parse_georeference(tags)
         self._tile_offsets = self._required_values(tags, _TILE_OFFSETS)
@@ -169,9 +171,17 @@ class BigTiffFloatTileReader:
 
         expected_bytes = self.layout.tile_width * self.layout.tile_height * 4
         raw = _inflate_exact(compressed, expected_bytes)
-        tile = np.frombuffer(raw, dtype=np.dtype(f"{self._byte_order}f4")).reshape(
-            self.layout.tile_height, self.layout.tile_width
-        )
+        if self._predictor == 2:
+            differences = np.frombuffer(
+                raw, dtype=np.dtype(f"{self._byte_order}u4")
+            ).reshape(self.layout.tile_height, self.layout.tile_width)
+            tile = np.cumsum(differences, axis=1, dtype=np.uint32).view(
+                np.dtype(f"{self._byte_order}f4")
+            )
+        else:
+            tile = np.frombuffer(raw, dtype=np.dtype(f"{self._byte_order}f4")).reshape(
+                self.layout.tile_height, self.layout.tile_width
+            )
         valid_height = min(
             self.layout.tile_height, self.layout.height - row * self.layout.tile_height
         )
@@ -297,8 +307,8 @@ class BigTiffFloatTileReader:
             raise RasterFormatError("Only Adobe Deflate TIFF compression is supported")
         if _single_value(tags, _SAMPLES_PER_PIXEL) != 1:
             raise RasterFormatError("Only single-band TIFF images are supported")
-        if _single_value(tags, _PREDICTOR) != 1:
-            raise RasterFormatError("Only TIFF files without a predictor are supported")
+        if _single_value(tags, _PREDICTOR) not in {1, 2}:
+            raise RasterFormatError("Only TIFF predictors 1 and 2 are supported")
         if _single_value(tags, _SAMPLE_FORMAT) != 3:
             raise RasterFormatError("Only IEEE floating-point TIFF samples are supported")
         raw_nodata = tags.get(_GDAL_NODATA)

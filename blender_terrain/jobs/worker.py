@@ -6,10 +6,13 @@ from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
+from typing import Protocol
 
 from ..core import (
     ImportPlan,
     ProcessedElevationTile,
+    RegionOfInterest,
     TransferProgress,
     create_import_plan,
     deliver_plan_sources,
@@ -17,7 +20,8 @@ from ..core import (
     plan_imagery_tiles,
     process_elevation_tiles,
 )
-from ..core.discovery import CatalogDiscoveryProvider
+from ..core.delivery import ElevationDownloader
+from ..core.discovery import CatalogDiscoveryProvider, DiscoveryResult
 from ..errors import (
     CatalogContractChanged,
     DownloadAuthorizationRequired,
@@ -26,9 +30,12 @@ from ..errors import (
     JobFormatError,
     NoCoverageError,
     ProviderUnavailableError,
+    RasterFormatError,
     UserInputError,
 )
+from ..io.bigtiff_tiles import BigTiffFloatTileReader
 from ..io.elevation_output import write_elevation_array
+from ..models import CatalogItem, DatasetProduct
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
@@ -40,10 +47,42 @@ from .storage import (
 )
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
-ElevationProcessor = Callable[
-    [tuple[Path, ...], ImportPlan, Callable[[int, int], None] | None],
-    tuple[ProcessedElevationTile, ...],
-]
+ELEVATION_PRODUCTS = tuple(
+    product for product in DatasetProduct if product is not DatasetProduct.PNOA_MA
+)
+
+
+class _LocalElevationClient:
+    """Expose already-local sources through the delivery downloader contract."""
+
+    def __init__(self, paths: tuple[Path, ...]) -> None:
+        self._paths = {path.name: path for path in paths}
+
+    def download_item(
+        self,
+        item: CatalogItem,
+        cache_directory: Path,
+        maximum_bytes: int = 1_073_741_824,
+        progress_callback: Callable[[int, int | None], None] | None = None,
+    ) -> Path:
+        path = self._paths[item.filename]
+        size = path.stat().st_size
+        if progress_callback is not None:
+            progress_callback(size, size)
+        return path
+
+
+class ElevationProcessor(Protocol):
+    """Callable contract for the replaceable elevation processing stage."""
+
+    def __call__(
+        self,
+        source_paths: tuple[Path, ...],
+        plan: ImportPlan,
+        progress_callback: Callable[[int, int], None] | None = None,
+        maximum_source_window_pixels: int = 4_194_304,
+        region: RegionOfInterest | None = None,
+    ) -> tuple[ProcessedElevationTile, ...]: ...
 
 
 def run_discovery_job(
@@ -74,8 +113,12 @@ def run_discovery_job(
         job = read_discovery_job(job_path)
         plan = _create_plan(job)
         check_cancelled()
-        emit(JobState.DISCOVERING, 0.25, "Discovering CNIG elevation sources")
-        discovery = discover_sources(plan, provider_factory())
+        if job.local_elevation_paths:
+            emit(JobState.DISCOVERING, 0.25, "Validating local elevation sources")
+            discovery = _local_discovery(job)
+        else:
+            emit(JobState.DISCOVERING, 0.25, "Discovering CNIG elevation sources")
+            discovery = discover_sources(plan, provider_factory())
         check_cancelled()
         payload = {
             "schema_version": RESULT_SCHEMA_VERSION,
@@ -98,6 +141,86 @@ def run_discovery_job(
         return _finish_error(result_path, emit, JobState.PROVIDER_CHANGED, str(exc))
     except ProviderUnavailableError as exc:
         return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
+    except (JobFormatError, RasterFormatError, UserInputError) as exc:
+        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+
+
+def run_availability_job(
+    job_path: Path,
+    provider_factory: ProviderFactory = CNIGPortalClient,
+) -> JobState:
+    """Check every elevation product for one ROI without downloading data."""
+
+    events_path = job_path.with_name("events.jsonl")
+    result_path = job_path.with_name("result.json")
+    sequence = 0
+
+    def emit(state: JobState, progress: float, message: str) -> None:
+        nonlocal sequence
+        append_progress_event(events_path, ProgressEvent(sequence, state, progress, message))
+        sequence += 1
+
+    def check_cancelled() -> None:
+        if is_cancellation_requested(job_path.parent):
+            raise JobCancelled("Product availability check was cancelled")
+
+    try:
+        emit(JobState.VALIDATING, 0.02, "Validating product availability request")
+        job = read_discovery_job(job_path)
+        provider = provider_factory()
+        availability: list[dict[str, object]] = []
+        warnings: list[str] = []
+        for index, product in enumerate(ELEVATION_PRODUCTS):
+            check_cancelled()
+            emit(
+                JobState.DISCOVERING,
+                0.05 + 0.9 * index / len(ELEVATION_PRODUCTS),
+                f"Checking {product.value} ({index + 1}/{len(ELEVATION_PRODUCTS)})",
+            )
+            product_job = DiscoveryJob(
+                task_id=job.task_id,
+                import_id=job.import_id,
+                bounds=job.bounds,
+                product=product,
+                elevation_resolution_metres=None,
+                use_imagery=False,
+                imagery_gsd_metres=None,
+                region=job.region,
+            )
+            try:
+                discovery = discover_sources(_create_plan(product_job), provider)
+                availability.append(
+                    {
+                        "product": product.value,
+                        "status": "AVAILABLE",
+                        "file_count": len(discovery.items),
+                    }
+                )
+            except NoCoverageError:
+                availability.append(
+                    {"product": product.value, "status": "NO_COVERAGE", "file_count": 0}
+                )
+            except (CatalogContractChanged, ProviderUnavailableError) as exc:
+                availability.append(
+                    {"product": product.value, "status": "UNKNOWN", "file_count": 0}
+                )
+                warnings.append(f"{product.value}: {exc}")
+        terminal = JobState.COMPLETE_WITH_WARNINGS if warnings else JobState.COMPLETE
+        write_result(
+            result_path,
+            {
+                "schema_version": RESULT_SCHEMA_VERSION,
+                "task_id": job.task_id,
+                "import_id": job.import_id,
+                "state": terminal.value,
+                "availability": availability,
+                "warnings": warnings,
+            },
+        )
+        emit(terminal, 1.0, "Product availability check completed")
+        return terminal
+    except JobCancelled as exc:
+        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
     except (JobFormatError, UserInputError) as exc:
         return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
 
@@ -128,16 +251,40 @@ def run_delivery_job(
         plan = _create_plan(job)
         if cancelled():
             raise JobCancelled("Data delivery was cancelled")
-        cnig = cnig_factory()
-        emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
-        discovery = discover_sources(plan, cnig)
+        if job.local_elevation_paths:
+            local_paths = tuple(Path(path) for path in job.local_elevation_paths)
+            elevation_client: ElevationDownloader = _LocalElevationClient(local_paths)
+            emit(JobState.DISCOVERING, 0.05, "Confirming local elevation sources")
+            discovery = _local_discovery(job)
+        else:
+            portal = cnig_factory()
+            elevation_client = portal
+            emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
+            discovery = discover_sources(plan, portal)
         imagery_requests = plan_imagery_tiles(plan)
         imagery_count = len(imagery_requests)
         file_count = len(discovery.items) + imagery_count
+        last_transfer_event_time = 0.0
 
         def report(transfer: TransferProgress) -> None:
+            nonlocal last_transfer_event_time
             if cancelled():
                 raise JobCancelled("Data delivery was cancelled")
+            now = monotonic()
+            complete = (
+                transfer.cached
+                or (
+                    transfer.expected_bytes is not None
+                    and transfer.written_bytes >= transfer.expected_bytes
+                )
+            )
+            if (
+                last_transfer_event_time
+                and not complete
+                and now - last_transfer_event_time < 0.25
+            ):
+                return
+            last_transfer_event_time = now
             offset = transfer.file_index
             state = JobState.DOWNLOADING_ELEVATION
             if transfer.kind == "imagery":
@@ -149,23 +296,20 @@ def run_delivery_job(
                 else 0.0
             )
             progress = 0.1 + 0.85 * min(1.0, (offset + fraction) / max(1, file_count))
-            message = (
-                f"Using cached {transfer.filename}"
-                if transfer.cached
-                else f"Downloading {transfer.filename} "
-                f"({transfer.written_bytes / 1_048_576:.1f} MiB)"
-            )
+            message = _transfer_message(transfer)
             emit(state, progress, message)
 
         delivered = deliver_plan_sources(
             plan,
             discovery,
             job_path.parents[2],
-            cnig,
+            elevation_client,
             imagery_factory(),
             report,
             cancelled,
+            local_paths if job.local_elevation_paths else (),
         )
+
         def report_processing(completed: int, total: int) -> None:
             if cancelled():
                 raise JobCancelled("Data delivery was cancelled")
@@ -180,7 +324,10 @@ def run_delivery_job(
 
         processed_directory = job_path.parents[2] / "processed" / job.task_id
         processed_tiles = elevation_processor(
-            delivered.elevation_paths, plan, report_processing
+            delivered.elevation_paths,
+            plan,
+            report_processing,
+            region=job.region,
         )
         processed_payload: list[dict[str, object]] = []
         for processed in processed_tiles:
@@ -220,23 +367,36 @@ def run_delivery_job(
             "warnings": list(delivered.warnings),
             "request": {
                 "bounds_wgs84": asdict(job.bounds),
+                "roi_geometry_wgs84": (
+                    None if job.region is None else job.region.to_geojson_geometry()
+                ),
                 "product": job.product.value,
                 "elevation_resolution_metres": plan.elevation_resolution_metres,
                 "use_imagery": job.use_imagery,
                 "imagery_gsd_metres": (
                     None if plan.imagery is None else plan.imagery.gsd_metres
                 ),
+                "manual_tile_rows": plan.manual_tile_rows,
+                "manual_tile_columns": plan.manual_tile_columns,
             },
             "crs": [asdict(work_area.crs) for work_area in plan.work_areas],
             "sources": [
                 {
                     **asdict(item),
-                    "detail_url": f"{BASE_URL}detalleArchivo?sec={item.sequential_id}",
+                    "detail_url": (
+                        None
+                        if job.local_elevation_paths
+                        else f"{BASE_URL}detalleArchivo?sec={item.sequential_id}"
+                    ),
                 }
                 for item in discovery.items
             ],
             "provenance": {
-                "source": "Instituto Geográfico Nacional de España (IGN-CNIG)",
+                "source": (
+                    "User-provided local elevation raster"
+                    if job.local_elevation_paths
+                    else "Instituto Geográfico Nacional de España (IGN-CNIG)"
+                ),
                 "portal_url": "https://centrodedescargas.cnig.es/",
                 "data_policy_url": (
                     "https://centrodedescargas.cnig.es/CentroDescargas/politica-datos"
@@ -287,10 +447,26 @@ def run_delivery_job(
         DownloadAuthorizationRequired,
         DownloadIntegrityError,
         JobFormatError,
+        RasterFormatError,
         UserInputError,
         ValueError,
     ) as exc:
         return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+
+
+def _transfer_message(transfer: TransferProgress) -> str:
+    kind = "elevation" if transfer.kind == "elevation" else "PNOA imagery"
+    position = f"{transfer.file_index + 1}/{transfer.file_count}"
+    if transfer.cached:
+        return f"Using cached {kind} {position}: {transfer.filename}"
+    written_mib = transfer.written_bytes / 1_048_576
+    if transfer.expected_bytes:
+        expected_mib = transfer.expected_bytes / 1_048_576
+        percentage = min(100.0, transfer.written_bytes / transfer.expected_bytes * 100.0)
+        size = f"{written_mib:.1f}/{expected_mib:.1f} MiB, {percentage:.0f}%"
+    else:
+        size = f"{written_mib:.1f} MiB"
+    return f"Downloading {kind} {position}: {transfer.filename} ({size})"
 
 
 def _create_plan(job: DiscoveryJob) -> ImportPlan:
@@ -300,7 +476,35 @@ def _create_plan(job: DiscoveryJob) -> ImportPlan:
         job.elevation_resolution_metres,
         job.use_imagery,
         job.imagery_gsd_metres,
+        job.manual_tile_rows,
+        job.manual_tile_columns,
     )
+
+
+def _local_discovery(job: DiscoveryJob) -> DiscoveryResult:
+    """Validate local files and represent them as traceable discovery items."""
+
+    paths = tuple(Path(value) for value in job.local_elevation_paths)
+    if not paths:
+        raise UserInputError("No local elevation rasters were provided")
+    if len({path.name.casefold() for path in paths}) != len(paths):
+        raise UserInputError("Local elevation raster filenames must be unique")
+    items: list[CatalogItem] = []
+    for index, path in enumerate(paths):
+        if not path.is_file():
+            raise UserInputError(f"Local elevation raster does not exist: {path}")
+        BigTiffFloatTileReader(path)
+        size_mb = path.stat().st_size / 1_000_000
+        items.append(
+            CatalogItem(
+                job.product,
+                path.name,
+                "LOCAL_COG",
+                f"local-{index}",
+                size_mb=size_mb,
+            )
+        )
+    return DiscoveryResult(tuple(items), len(items), 0)
 
 
 def _finish_error(

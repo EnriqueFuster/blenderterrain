@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
+
+PREVIEW_MESH_REDUCTION_FACTOR = 16
+DEFAULT_PREVIEW_SUBDIVISION_LEVEL = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,3 +57,41 @@ def build_terrain_mesh_geometry(
         & valid[:-1, 1:]
     )
     return TerrainMeshGeometry(vertices, faces[valid_faces].reshape(-1, 4))
+
+
+def build_displacement_mesh_geometry(
+    elevation: NDArray[np.float32],
+    bounds: ProjectedBounds,
+    nodata: float,
+    baseline: float,
+    reduction_factor: int = 1,
+) -> TerrainMeshGeometry:
+    """Build a flat native or reduced grid for a full-resolution heightmap."""
+
+    if not math.isfinite(baseline):
+        raise RasterFormatError("Terrain displacement baseline must be finite")
+    if isinstance(reduction_factor, bool) or not isinstance(reduction_factor, int):
+        raise RasterFormatError("Terrain mesh reduction factor must be an integer")
+    if reduction_factor < 1:
+        raise RasterFormatError("Terrain mesh reduction factor must be positive")
+    reduced = elevation[
+        np.ix_(
+            _reduced_axis_indices(elevation.shape[0], reduction_factor),
+            _reduced_axis_indices(elevation.shape[1], reduction_factor),
+        )
+    ]
+    baked = build_terrain_mesh_geometry(reduced, bounds, nodata)
+    vertices = baked.vertices.copy()
+    vertices[:, 2] = baseline
+    return TerrainMeshGeometry(vertices, baked.faces)
+
+
+def _reduced_axis_indices(length: int, factor: int) -> NDArray[np.intp]:
+    if length < 2:
+        return np.arange(length, dtype=np.intp)
+    native_cells = length - 1
+    reduced_cells = max(1, math.ceil(native_cells / factor))
+    return cast(
+        NDArray[np.intp],
+        np.rint(np.linspace(0, native_cells, reduced_cells + 1)).astype(np.intp),
+    )

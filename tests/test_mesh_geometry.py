@@ -4,11 +4,52 @@ import unittest
 
 import numpy as np
 
-from blender_terrain.core import build_terrain_mesh_geometry
+from blender_terrain.core import (
+    build_displacement_mesh_geometry,
+    build_terrain_mesh_geometry,
+)
+from blender_terrain.errors import RasterFormatError
 from blender_terrain.models import ProjectedBounds
 
 
 class TerrainMeshGeometryTests(unittest.TestCase):
+    def test_builds_flat_displacement_grid_with_the_baked_topology(self) -> None:
+        elevation = np.array([[100, 110], [120, 130]], dtype=np.float32)
+        bounds = ProjectedBounds(500000, 4300000, 500010, 4300010, 25830)
+
+        baked = build_terrain_mesh_geometry(elevation, bounds, -9999.0)
+        displaced = build_displacement_mesh_geometry(
+            elevation, bounds, -9999.0, baseline=100.0
+        )
+
+        np.testing.assert_array_equal(displaced.vertices[:, :2], baked.vertices[:, :2])
+        np.testing.assert_array_equal(displaced.vertices[:, 2], 100.0)
+        np.testing.assert_array_equal(displaced.faces, baked.faces)
+
+    def test_reduces_only_the_base_mesh_while_preserving_complete_bounds(self) -> None:
+        elevation = np.arange(17 * 33, dtype=np.float32).reshape(17, 33)
+        bounds = ProjectedBounds(100, 200, 132, 216, 25830)
+
+        geometry = build_displacement_mesh_geometry(
+            elevation, bounds, -9999.0, baseline=10.0, reduction_factor=16
+        )
+
+        self.assertEqual(geometry.vertices.shape, (6, 3))
+        self.assertEqual(geometry.faces.shape, (2, 4))
+        np.testing.assert_array_equal(geometry.vertices[:, 2], 10.0)
+        self.assertEqual(float(geometry.vertices[:, 0].max()), 32.0)
+        self.assertEqual(float(geometry.vertices[:, 1].max()), 16.0)
+
+    def test_rejects_invalid_displacement_reduction(self) -> None:
+        elevation = np.ones((2, 2), dtype=np.float32)
+        bounds = ProjectedBounds(0, 0, 1, 1, 25830)
+
+        for factor in (0, -1, True, 1.5):
+            with self.subTest(factor=factor), self.assertRaises(RasterFormatError):
+                build_displacement_mesh_geometry(
+                    elevation, bounds, -9999.0, baseline=0.0, reduction_factor=factor
+                )
+
     def test_builds_local_north_up_vertices_and_counter_clockwise_quads(self) -> None:
         elevation = np.array([[10, 11, 12], [20, 21, 22]], dtype=np.float32)
 

@@ -20,7 +20,7 @@ from ..models import ProjectedBounds
 
 WMS_URL = "https://www.ign.es/wms-inspire/pnoa-ma"
 PNOA_LAYER = "OI.OrthoimageCoverage"
-USER_AGENT = "BlenderTerrain/0.0.0 (+https://github.com/EnriqueFuster/blenderterrain)"
+USER_AGENT = "BlenderTerrain/0.2.0 (+https://github.com/EnriqueFuster/blenderterrain)"
 CAPABILITIES_MAXIMUM_BYTES = 1_048_576
 CONTROL_TESTED_EPSGS = frozenset({25828, 25829, 25830, 25831})
 DownloadProgress = Callable[[int, int | None], None]

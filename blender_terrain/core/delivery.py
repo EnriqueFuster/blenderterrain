@@ -70,16 +70,17 @@ def deliver_plan_sources(
     imagery_client: ImageryDownloader,
     progress_callback: Callable[[TransferProgress], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
+    local_elevation_paths: tuple[Path, ...] = (),
 ) -> DeliveryResult:
     """Download or validate every source required by a prepared import plan."""
 
     elevation_directory = cache_directory / "elevation"
     imagery_requests = plan_imagery_tiles(plan)
     imagery_directory = cache_directory / "imagery" / _imagery_cache_key(imagery_requests)
-    elevation_paths: list[Path] = []
+    elevation_paths: list[Path] = list(local_elevation_paths)
     imagery_paths: list[Path] = []
 
-    for index, item in enumerate(discovery.items):
+    for index, item in enumerate(() if local_elevation_paths else discovery.items):
         _check_cancelled(cancellation_requested)
         destination = elevation_directory / item.filename
         if destination.is_file():

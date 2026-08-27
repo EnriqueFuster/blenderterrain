@@ -24,6 +24,14 @@ class ProjectedPoint:
     epsg: int
 
 
+@dataclass(frozen=True, slots=True)
+class GeographicPoint:
+    """One longitude/latitude coordinate in degrees."""
+
+    longitude: float
+    latitude: float
+
+
 def project_wgs84_to_utm(longitude: float, latitude: float, crs: CRSInfo) -> ProjectedPoint:
     """Project a WGS84-like coordinate to a supported GRS80 northern UTM CRS."""
 
@@ -85,6 +93,93 @@ def project_wgs84_to_utm(longitude: float, latitude: float, crs: CRSInfo) -> Pro
         )
     )
     return ProjectedPoint(easting, northing, crs.epsg)
+
+
+def project_utm_to_wgs84(point: ProjectedPoint, crs: CRSInfo) -> GeographicPoint:
+    """Invert a supported northern GRS80 UTM coordinate into longitude/latitude."""
+
+    if point.epsg != crs.epsg:
+        raise UserInputError("Projected point and CRS EPSG do not match")
+    if not math.isfinite(point.easting) or not math.isfinite(point.northing):
+        raise UserInputError("Projection coordinates must be finite")
+    flattening = 1.0 / _GRS80_INVERSE_FLATTENING
+    eccentricity_squared = flattening * (2.0 - flattening)
+    second_eccentricity_squared = eccentricity_squared / (1.0 - eccentricity_squared)
+    meridional_arc = point.northing / _UTM_SCALE_FACTOR
+    mu = meridional_arc / (
+        _GRS80_SEMI_MAJOR_AXIS
+        * (
+            1.0
+            - eccentricity_squared / 4.0
+            - 3.0 * eccentricity_squared**2 / 64.0
+            - 5.0 * eccentricity_squared**3 / 256.0
+        )
+    )
+    root = math.sqrt(1.0 - eccentricity_squared)
+    e1 = (1.0 - root) / (1.0 + root)
+    footprint = (
+        mu
+        + (3.0 * e1 / 2.0 - 27.0 * e1**3 / 32.0) * math.sin(2.0 * mu)
+        + (21.0 * e1**2 / 16.0 - 55.0 * e1**4 / 32.0) * math.sin(4.0 * mu)
+        + 151.0 * e1**3 / 96.0 * math.sin(6.0 * mu)
+        + 1097.0 * e1**4 / 512.0 * math.sin(8.0 * mu)
+    )
+    sine = math.sin(footprint)
+    cosine = math.cos(footprint)
+    tangent = math.tan(footprint)
+    radius_prime_vertical = _GRS80_SEMI_MAJOR_AXIS / math.sqrt(
+        1.0 - eccentricity_squared * sine**2
+    )
+    radius_meridian = (
+        _GRS80_SEMI_MAJOR_AXIS
+        * (1.0 - eccentricity_squared)
+        / (1.0 - eccentricity_squared * sine**2) ** 1.5
+    )
+    tangent_squared = tangent**2
+    eta_squared = second_eccentricity_squared * cosine**2
+    d = (point.easting - _UTM_FALSE_EASTING) / (
+        radius_prime_vertical * _UTM_SCALE_FACTOR
+    )
+    latitude = footprint - (radius_prime_vertical * tangent / radius_meridian) * (
+        d**2 / 2.0
+        - (
+            5.0
+            + 3.0 * tangent_squared
+            + 10.0 * eta_squared
+            - 4.0 * eta_squared**2
+            - 9.0 * second_eccentricity_squared
+        )
+        * d**4
+        / 24.0
+        + (
+            61.0
+            + 90.0 * tangent_squared
+            + 298.0 * eta_squared
+            + 45.0 * tangent_squared**2
+            - 252.0 * second_eccentricity_squared
+            - 3.0 * eta_squared**2
+        )
+        * d**6
+        / 720.0
+    )
+    longitude = (
+        d
+        - (1.0 + 2.0 * tangent_squared + eta_squared) * d**3 / 6.0
+        + (
+            5.0
+            - 2.0 * eta_squared
+            + 28.0 * tangent_squared
+            - 3.0 * eta_squared**2
+            + 8.0 * second_eccentricity_squared
+            + 24.0 * tangent_squared**2
+        )
+        * d**5
+        / 120.0
+    ) / cosine
+    central_meridian = crs.utm_zone * 6.0 - 183.0
+    return GeographicPoint(
+        central_meridian + math.degrees(longitude), math.degrees(latitude)
+    )
 
 
 def project_work_area_bounds(work_area: UTMWorkArea) -> ProjectedBounds:

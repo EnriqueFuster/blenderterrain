@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,10 +12,10 @@ from uuid import uuid4
 
 import bpy
 
-from ..core import BBoxWGS84
+from ..core import RegionOfInterest
 from ..errors import JobFormatError, UserInputError
 from ..jobs.models import DiscoveryJob, JobState
-from ..jobs.storage import request_cancellation, write_discovery_job
+from ..jobs.storage import read_progress_events, request_cancellation, write_discovery_job
 from ..models import DatasetProduct
 
 _POLL_INTERVAL_SECONDS = 0.25
@@ -38,6 +39,8 @@ class _ActiveJob:
     mode: str
     last_sequence: int = -1
     result_applied: bool = False
+    event_offset: int = 0
+    started_monotonic: float = 0.0
 
 
 _active_job: _ActiveJob | None = None
@@ -69,6 +72,9 @@ def recover_interrupted_jobs() -> int:
         if mode == "discovery":
             properties.discovery_ready = False
             properties.discovery_summary = ""
+        elif mode == "availability":
+            properties.product_availability_json = "[]"
+            properties.product_availability_summary = ""
         else:
             properties.delivery_ready = False
             properties.delivery_summary = ""
@@ -112,11 +118,32 @@ def start_delivery(context: bpy.types.Context) -> None:
     _start_worker(context, properties, "delivery", "Starting background data download")
 
 
+def start_availability(context: bpy.types.Context) -> None:
+    """Check all official elevation products for the current ROI in the background."""
+
+    properties = context.scene.blender_terrain_roi
+    if not properties.roi_geometry_json:
+        raise UserInputError("Validate or select the ROI before checking product availability")
+    properties.product_availability_json = "[]"
+    properties.product_availability_summary = ""
+    _start_worker(
+        context,
+        properties,
+        "availability",
+        "Starting product availability check",
+    )
+
+
 def _start_worker(context: bpy.types.Context, properties: Any, mode: str, message: str) -> None:
     global _active_job
     if _active_job is not None:
         raise UserInputError("Another BlenderTerrain job is already running")
-    if not bpy.app.online_access:
+    requires_network = (
+        mode == "availability"
+        or properties.elevation_source == "CNIG"
+        or properties.use_imagery
+    )
+    if requires_network and not bpy.app.online_access:
         raise UserInputError("Blender online access is disabled in Preferences")
     cache_directory = _cache_directory(context)
     task_id = str(uuid4())
@@ -140,8 +167,8 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
         "--",
         str(job_path),
     ]
-    if mode == "delivery":
-        command.append("delivery")
+    if mode != "discovery":
+        command.append(mode)
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_path = job_directory / "worker.log"
     try:
@@ -157,12 +184,19 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
     except OSError as exc:
         raise UserInputError(f"Cannot start the Blender background worker: {exc}") from exc
 
-    _active_job = _ActiveJob(process, job_directory, context.scene.name, mode)
+    _active_job = _ActiveJob(
+        process,
+        job_directory,
+        context.scene.name,
+        mode,
+        started_monotonic=time.monotonic(),
+    )
     properties.job_active = True
     properties.active_job_mode = mode
     properties.job_state = JobState.VALIDATING.value
     properties.job_progress = 0.0
     properties.job_message = message
+    properties.job_event_history = json.dumps([message])
     if mode == "discovery":
         properties.discovery_summary = ""
     if not bpy.app.timers.is_registered(_poll_active_job):
@@ -225,7 +259,7 @@ def _poll_active_job() -> float | None:
         _active_job = None
         return None
 
-    _apply_new_events(active, properties)
+    changed = _apply_new_events(active, properties)
     result_path = active.directory / "result.json"
     if result_path.is_file() and not active.result_applied:
         try:
@@ -234,6 +268,10 @@ def _poll_active_job() -> float | None:
             return _POLL_INTERVAL_SECONDS
         _apply_result(active, properties, result)
         active.result_applied = True
+        changed = True
+
+    if changed:
+        _redraw_extension_ui()
 
     return_code = active.process.poll()
     if active.result_applied and return_code is not None:
@@ -250,29 +288,45 @@ def _poll_active_job() -> float | None:
     return _POLL_INTERVAL_SECONDS
 
 
-def _apply_new_events(active: _ActiveJob, properties: Any) -> None:
+def _apply_new_events(active: _ActiveJob, properties: Any) -> bool:
     events_path = active.directory / "events.jsonl"
-    if not events_path.is_file():
-        return
     try:
-        lines = events_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return
-    for line in lines:
-        try:
-            event = json.loads(line)
-            sequence = int(event["sequence"])
-            state = str(event["state"])
-            progress = float(event["progress"])
-            message = str(event["message"])
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        events, active.event_offset = read_progress_events(
+            events_path, active.event_offset
+        )
+    except JobFormatError:
+        return False
+    changed = False
+    history = _event_history(properties.job_event_history)
+    for event in events:
+        if event.sequence <= active.last_sequence:
             continue
-        if sequence <= active.last_sequence:
-            continue
-        active.last_sequence = sequence
-        properties.job_state = state
-        properties.job_progress = max(0.0, min(1.0, progress))
-        properties.job_message = message
+        active.last_sequence = event.sequence
+        properties.job_state = event.state.value
+        properties.job_progress = event.progress
+        properties.job_message = event.message
+        history.append(event.message)
+        changed = True
+    if changed:
+        properties.job_event_history = json.dumps(history[-6:])
+    return changed
+
+
+def _event_history(serialized: str) -> list[str]:
+    try:
+        values = json.loads(serialized)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(values, list):
+        return []
+    return [value for value in values if isinstance(value, str)]
+
+
+def _redraw_extension_ui() -> None:
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type in {"VIEW_3D", "PROPERTIES", "STATUSBAR"}:
+                area.tag_redraw()
 
 
 def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -> None:
@@ -284,6 +338,24 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
     properties.job_state = state
     properties.job_progress = 1.0
     if state in {JobState.COMPLETE.value, JobState.COMPLETE_WITH_WARNINGS.value}:
+        if active.mode == "availability":
+            availability = result.get("availability", [])
+            if not isinstance(availability, list):
+                availability = []
+            properties.product_availability_json = json.dumps(availability)
+            available_count = sum(
+                entry.get("status") == "AVAILABLE"
+                for entry in availability
+                if isinstance(entry, dict)
+            )
+            properties.product_availability_summary = (
+                f"{available_count} of {len(availability)} products available for this ROI"
+            )
+            warnings = result.get("warnings", [])
+            properties.job_message = (
+                str(warnings[0]) if warnings else "Product availability check completed"
+            )
+            return
         if active.mode == "delivery":
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
@@ -322,6 +394,9 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         if active.mode == "discovery":
             properties.discovery_summary = ""
             properties.discovery_ready = False
+        elif active.mode == "availability":
+            properties.product_availability_json = "[]"
+            properties.product_availability_summary = ""
         else:
             properties.delivery_ready = False
             properties.delivery_summary = ""
@@ -346,15 +421,18 @@ def _cache_directory(context: bpy.types.Context) -> Path:
 
 def _job_from_properties(task_id: str, import_id: str, properties: Any) -> DiscoveryJob:
     try:
+        region = RegionOfInterest.from_geojson_geometry(
+            json.loads(properties.roi_geometry_json)
+        )
+        local_paths = (
+            _local_elevation_paths(properties.local_elevation_path)
+            if properties.elevation_source == "LOCAL"
+            else ()
+        )
         return DiscoveryJob(
             task_id=task_id,
             import_id=import_id,
-            bounds=BBoxWGS84(
-                properties.west,
-                properties.south,
-                properties.east,
-                properties.north,
-            ),
+            bounds=region.bounds,
             product=DatasetProduct(properties.product),
             elevation_resolution_metres=(
                 None
@@ -365,9 +443,36 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
             imagery_gsd_metres=(
                 None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
             ),
+            manual_tile_rows=(
+                properties.manual_tile_rows
+                if properties.tiling_mode == "MANUAL"
+                else None
+            ),
+            manual_tile_columns=(
+                properties.manual_tile_columns
+                if properties.tiling_mode == "MANUAL"
+                else None
+            ),
+            region=region,
+            local_elevation_paths=local_paths,
         )
-    except (JobFormatError, ValueError) as exc:
+    except (JobFormatError, json.JSONDecodeError, ValueError) as exc:
         raise UserInputError(f"Cannot create the discovery job: {exc}") from exc
+
+
+def _local_elevation_paths(raw_path: str) -> tuple[str, ...]:
+    path = Path(bpy.path.abspath(raw_path)).expanduser().resolve()
+    if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}:
+        return (str(path),)
+    if path.is_dir():
+        paths = tuple(
+            str(candidate.resolve())
+            for candidate in sorted(path.iterdir())
+            if candidate.is_file() and candidate.suffix.lower() in {".tif", ".tiff"}
+        )
+        if paths:
+            return paths
+    raise UserInputError("Choose an elevation TIFF or a folder containing TIFF files")
 
 
 def _scene_properties(scene_name: str) -> Any | None:

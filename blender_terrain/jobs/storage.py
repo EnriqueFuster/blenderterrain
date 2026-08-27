@@ -41,6 +41,36 @@ def append_progress_event(path: Path, event: ProgressEvent) -> None:
         os.fsync(stream.fileno())
 
 
+def read_progress_events(
+    path: Path, offset: int = 0
+) -> tuple[tuple[ProgressEvent, ...], int]:
+    """Read only complete progress records appended after a byte offset."""
+
+    if offset < 0:
+        raise JobFormatError("Progress event offset must not be negative")
+    if not path.is_file():
+        return (), offset
+    events: list[ProgressEvent] = []
+    try:
+        with path.open("rb") as stream:
+            if offset > path.stat().st_size:
+                offset = 0
+            stream.seek(offset)
+            next_offset = offset
+            while line := stream.readline():
+                if not line.endswith(b"\n"):
+                    break
+                next_offset = stream.tell()
+                try:
+                    payload = json.loads(line.decode("utf-8"))
+                    events.append(ProgressEvent.from_dict(payload))
+                except (UnicodeDecodeError, json.JSONDecodeError, JobFormatError):
+                    continue
+    except OSError as exc:
+        raise JobFormatError(f"Cannot read progress events: {path}") from exc
+    return tuple(events), next_offset
+
+
 def write_result(path: Path, payload: dict[str, Any]) -> None:
     """Publish a terminal result atomically without replacing prior evidence."""
 

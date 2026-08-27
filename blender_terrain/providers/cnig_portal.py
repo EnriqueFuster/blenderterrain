@@ -29,7 +29,7 @@ from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, CatalogPage, DatasetProduct, ProductPage
 
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
-USER_AGENT = "BlenderTerrain/0.1.0 (+https://github.com/EnriqueFuster/blenderterrain)"
+USER_AGENT = "BlenderTerrain/0.2.0 (+https://github.com/EnriqueFuster/blenderterrain)"
 
 
 
@@ -40,11 +40,23 @@ class _ProductContract:
 
 
 PRODUCT_CONTRACTS = {
+    DatasetProduct.MDT50CM: _ProductContract("modelo-digital-terreno-mdt50cm", "MDT01"),
     DatasetProduct.MDT02: _ProductContract(
         "modelo-digital-terreno-mdt02-segunda-cobertura", "MDT02"
     ),
+    DatasetProduct.MDT05: _ProductContract(
+        "modelo-digital-terreno-mdt05-primera-cobertura", "MDT05"
+    ),
+    DatasetProduct.MDT25: _ProductContract("mdt25-segunda-cobertura", "T25C2"),
+    DatasetProduct.MDT200: _ProductContract("mdt200-segunda-cobertura", "T2002"),
+    DatasetProduct.MDS50CM: _ProductContract(
+        "modelo-digital-superficies-mds50cm-tercera-cobertura", "MDS50"
+    ),
     DatasetProduct.MDS02: _ProductContract(
         "modelo-digital-superficies-mds02-segunda-cobertura", "MDS02"
+    ),
+    DatasetProduct.MDS05: _ProductContract(
+        "modelo-digital-superficies-mds05-primera-cobertura", "MDS05"
     ),
     DatasetProduct.PNOA_MA: _ProductContract("ortofoto-pnoa-maxima-actualidad", "02211"),
 }

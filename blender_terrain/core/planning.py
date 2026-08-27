@@ -5,15 +5,32 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..errors import PlanningLimitExceeded, UserInputError
+from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
 from ..models import DatasetProduct
 from .crs import UTMWorkArea, split_bbox_by_utm_zone
 from .estimates import ROIEstimate, estimate_bbox
-from .grid import DEFAULT_MAX_TILE_CELLS, GridSpec, align_projected_grid, tile_grid
+from .grid import (
+    DEFAULT_MAX_TILE_CELLS,
+    GridSpec,
+    GridTile,
+    align_projected_grid,
+    tile_grid,
+    tile_grid_manual,
+)
 from .projection import project_work_area_bounds
 from .roi import BBoxWGS84
 
-ELEVATION_RESOLUTIONS = (2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
+ELEVATION_RESOLUTIONS = (0.5, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0, 200.0)
+PRODUCT_NATIVE_RESOLUTION = {
+    DatasetProduct.MDT50CM: 0.5,
+    DatasetProduct.MDT02: 2.0,
+    DatasetProduct.MDT05: 5.0,
+    DatasetProduct.MDT25: 25.0,
+    DatasetProduct.MDT200: 200.0,
+    DatasetProduct.MDS50CM: 0.5,
+    DatasetProduct.MDS02: 2.0,
+    DatasetProduct.MDS05: 5.0,
+}
 IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0)
 MAX_ELEVATION_SAMPLES = 16_777_216
 PLANNING_WMS_TILE_DIMENSION = 4_096
@@ -56,6 +73,8 @@ class ImportPlan:
     elevation: ROIEstimate
     imagery: ImageryEstimate | None
     grids: tuple[GridSpec, ...]
+    manual_tile_rows: int | None = None
+    manual_tile_columns: int | None = None
 
     @property
     def crosses_utm_zones(self) -> bool:
@@ -67,21 +86,31 @@ class ImportPlan:
     def terrain_tile_columns(self) -> int:
         """Return the provisional number of terrain objects from west to east."""
 
-        return sum(
-            math.ceil(grid.columns / DEFAULT_MAX_TILE_CELLS) for grid in self.grids
-        )
+        if self.manual_tile_columns is not None:
+            return self.manual_tile_columns * len(self.grids)
+        return sum(math.ceil(grid.columns / DEFAULT_MAX_TILE_CELLS) for grid in self.grids)
 
     @property
     def terrain_tile_rows(self) -> int:
         """Return the provisional number of terrain objects from north to south."""
 
+        if self.manual_tile_rows is not None:
+            return self.manual_tile_rows
         return max(math.ceil(grid.rows / DEFAULT_MAX_TILE_CELLS) for grid in self.grids)
 
     @property
     def terrain_tile_count(self) -> int:
         """Return the provisional number of terrain objects."""
 
-        return sum(len(tile_grid(grid)) for grid in self.grids)
+        return sum(len(self.tiles_for_grid(index)) for index in range(len(self.grids)))
+
+    def tiles_for_grid(self, grid_index: int) -> tuple[GridTile, ...]:
+        """Return automatic or explicitly configured tiles for one projected grid."""
+
+        grid = self.grids[grid_index]
+        if self.manual_tile_rows is None or self.manual_tile_columns is None:
+            return tile_grid(grid)
+        return tile_grid_manual(grid, self.manual_tile_rows, self.manual_tile_columns)
 
     @property
     def elevation_sample_count(self) -> int:
@@ -118,6 +147,8 @@ class ImportPlan:
         warnings: list[str] = []
         if self.crosses_utm_zones:
             warnings.append("ROI crosses UTM zones and will create sibling terrain groups")
+            if self.manual_tile_rows is not None:
+                warnings.append("Manual terrain rows and columns apply separately to each CRS")
         warnings.append("Exact Spanish data coverage is confirmed during CNIG discovery")
         return tuple(warnings)
 
@@ -128,14 +159,22 @@ def create_import_plan(
     elevation_resolution_metres: float | None,
     use_imagery: bool,
     imagery_gsd_metres: float | None,
+    manual_tile_rows: int | None = None,
+    manual_tile_columns: int | None = None,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
-    if product not in (DatasetProduct.MDT02, DatasetProduct.MDS02):
-        raise UserInputError("Elevation product must be MDT02 or MDS02")
+    if product not in PRODUCT_NATIVE_RESOLUTION:
+        raise UserInputError("The selected product is not an elevation raster")
+    _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
     work_areas = split_bbox_by_utm_zone(bounds)
     elevation_resolution, elevation, grids = _select_elevation_resolution(
-        bounds, work_areas, elevation_resolution_metres
+        bounds,
+        work_areas,
+        elevation_resolution_metres,
+        PRODUCT_NATIVE_RESOLUTION[product],
+        manual_tile_rows,
+        manual_tile_columns,
     )
     imagery = (
         _estimate_imagery(bounds, imagery_gsd_metres)
@@ -150,16 +189,36 @@ def create_import_plan(
         elevation=elevation,
         imagery=imagery,
         grids=grids,
+        manual_tile_rows=manual_tile_rows,
+        manual_tile_columns=manual_tile_columns,
     )
+
+
+def _validate_manual_tiles(rows: int | None, columns: int | None) -> None:
+    if (rows is None) != (columns is None):
+        raise UserInputError("Manual terrain rows and columns must be provided together")
+    if rows is None or columns is None:
+        return
+    if (
+        isinstance(rows, bool)
+        or isinstance(columns, bool)
+        or not 1 <= rows <= 64
+        or not 1 <= columns <= 64
+    ):
+        raise UserInputError("Manual terrain rows and columns must be between 1 and 64")
 
 
 def _select_elevation_resolution(
     bounds: BBoxWGS84,
     work_areas: tuple[UTMWorkArea, ...],
     requested: float | None,
+    native_resolution: float,
+    manual_tile_rows: int | None,
+    manual_tile_columns: int | None,
 ) -> tuple[float, ROIEstimate, tuple[GridSpec, ...]]:
-    candidates = ELEVATION_RESOLUTIONS if requested is None else (requested,)
-    if requested is not None and requested not in ELEVATION_RESOLUTIONS:
+    available = tuple(value for value in ELEVATION_RESOLUTIONS if value >= native_resolution)
+    candidates = available if requested is None else (requested,)
+    if requested is not None and requested not in available:
         raise UserInputError("Unsupported elevation resolution")
     for resolution in candidates:
         estimate = estimate_bbox(bounds, resolution)
@@ -167,13 +226,32 @@ def _select_elevation_resolution(
             align_projected_grid(project_work_area_bounds(work_area), resolution)
             for work_area in work_areas
         )
-        if sum(grid.sample_count for grid in grids) <= MAX_ELEVATION_SAMPLES:
+        if (
+            sum(grid.sample_count for grid in grids) <= MAX_ELEVATION_SAMPLES
+            and _manual_layout_is_safe(grids, manual_tile_rows, manual_tile_columns)
+        ):
             return resolution, estimate, grids
     raise PlanningLimitExceeded(
-        "Elevation output exceeds the safe sample limit even at 100 m"
+        "Elevation output or manual terrain layout exceeds safety limits even at 100 m"
         if requested is None
-        else "Elevation output exceeds the safe sample limit; use Auto or a coarser resolution"
+        else (
+            "Elevation output or manual terrain layout exceeds safety limits; "
+            "use Auto, a coarser resolution, or more terrain tiles"
+        )
     )
+
+
+def _manual_layout_is_safe(
+    grids: tuple[GridSpec, ...], rows: int | None, columns: int | None
+) -> bool:
+    if rows is None or columns is None:
+        return True
+    try:
+        for grid in grids:
+            tile_grid_manual(grid, rows, columns)
+    except RasterAlignmentError:
+        return False
+    return True
 
 
 def _estimate_imagery(

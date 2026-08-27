@@ -10,8 +10,14 @@ from enum import StrEnum
 class DatasetProduct(StrEnum):
     """Geographic products supported by the initial CNIG integration."""
 
+    MDT50CM = "MDT50CM"
     MDT02 = "MDT02"
+    MDT05 = "MDT05"
+    MDT25 = "MDT25"
+    MDT200 = "MDT200"
+    MDS50CM = "MDS50CM"
     MDS02 = "MDS02"
+    MDS05 = "MDS05"
     PNOA_MA = "PNOA_MA"
 
 

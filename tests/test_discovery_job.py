@@ -18,7 +18,11 @@ from blender_terrain.jobs.storage import (
     request_cancellation,
     write_discovery_job,
 )
-from blender_terrain.jobs.worker import run_delivery_job, run_discovery_job
+from blender_terrain.jobs.worker import (
+    run_availability_job,
+    run_delivery_job,
+    run_discovery_job,
+)
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProjectedBounds
 
 
@@ -52,6 +56,13 @@ class ChangedProvider:
 class OfflineProvider:
     def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         raise ProviderUnavailableError("provider unavailable")
+
+
+class PartialCoverageProvider(FakeProvider):
+    def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
+        if product is DatasetProduct.MDS50CM:
+            return CatalogPage(0, ())
+        return super().discover_all(product, bbox)
 
 
 class FakeDeliveryCNIG(FakeProvider):
@@ -108,6 +119,45 @@ class DiscoveryJobStorageTests(unittest.TestCase):
             self.assertEqual(read_discovery_job(path), expected)
             self.assertFalse(path.with_name("job.json.part").exists())
 
+    def test_round_trips_manual_terrain_layout(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "job.json"
+            base = job()
+            expected = DiscoveryJob(
+                task_id=base.task_id,
+                import_id=base.import_id,
+                bounds=base.bounds,
+                product=base.product,
+                elevation_resolution_metres=base.elevation_resolution_metres,
+                use_imagery=base.use_imagery,
+                imagery_gsd_metres=base.imagery_gsd_metres,
+                manual_tile_rows=2,
+                manual_tile_columns=3,
+            )
+
+            write_discovery_job(path, expected)
+
+            self.assertEqual(read_discovery_job(path), expected)
+
+    def test_round_trips_local_elevation_paths(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "job.json"
+            base = job()
+            expected = DiscoveryJob(
+                task_id=base.task_id,
+                import_id=base.import_id,
+                bounds=base.bounds,
+                product=base.product,
+                elevation_resolution_metres=base.elevation_resolution_metres,
+                use_imagery=False,
+                imagery_gsd_metres=None,
+                local_elevation_paths=("C:/data/tile-a.tif", "C:/data/tile-b.tif"),
+            )
+
+            write_discovery_job(path, expected)
+
+            self.assertEqual(read_discovery_job(path), expected)
+
     def test_cancellation_request_is_idempotent(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
@@ -119,6 +169,25 @@ class DiscoveryJobStorageTests(unittest.TestCase):
 
 
 class DiscoveryWorkerTests(unittest.TestCase):
+    def test_checks_availability_for_every_elevation_product(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            job_path = directory / "job.json"
+            write_discovery_job(job_path, job())
+
+            state = run_availability_job(
+                job_path, provider_factory=PartialCoverageProvider
+            )
+
+            result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+            statuses = {
+                entry["product"]: entry["status"] for entry in result["availability"]
+            }
+            self.assertEqual(state, JobState.COMPLETE)
+            self.assertEqual(len(statuses), 8)
+            self.assertEqual(statuses["MDS50CM"], "NO_COVERAGE")
+            self.assertEqual(statuses["MDT02"], "AVAILABLE")
+
     def test_honours_cancellation_before_contacting_provider(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
@@ -215,6 +284,20 @@ class DeliveryWorkerTests(unittest.TestCase):
             self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
             self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
             self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])
+            download_messages = [
+                event["message"]
+                for event in events
+                if event["state"].startswith("DOWNLOADING_")
+            ]
+            self.assertTrue(
+                any(
+                    "elevation 1/1" in message and "100%" in message
+                    for message in download_messages
+                )
+            )
+            self.assertTrue(
+                any("PNOA imagery 1/1" in message for message in download_messages)
+            )
             processing_messages = [
                 event["message"]
                 for event in events
@@ -256,7 +339,11 @@ class DeliveryWorkerTests(unittest.TestCase):
 
 
 def _fake_elevation_processor(
-    paths: tuple[Path, ...], plan, progress_callback=None,
+    paths: tuple[Path, ...],
+    plan,
+    progress_callback=None,
+    maximum_source_window_pixels=4_194_304,
+    region=None,
 ) -> tuple[ProcessedElevationTile, ...]:
     tile = tile_grid(plan.grids[0])[0]
     data = np.zeros((tile.rows + 1, tile.columns + 1), dtype=np.float32)

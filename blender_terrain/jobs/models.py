@@ -8,11 +8,11 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from ..core.roi import BBoxWGS84
-from ..errors import JobFormatError
+from ..core.roi import BBoxWGS84, RegionOfInterest
+from ..errors import JobFormatError, UserInputError
 from ..models import DatasetProduct
 
-JOB_SCHEMA_VERSION = 2
+JOB_SCHEMA_VERSION = 5
 RESULT_SCHEMA_VERSION = 2
 
 
@@ -44,6 +44,10 @@ class DiscoveryJob:
     elevation_resolution_metres: float | None
     use_imagery: bool
     imagery_gsd_metres: float | None
+    manual_tile_rows: int | None = None
+    manual_tile_columns: int | None = None
+    region: RegionOfInterest | None = None
+    local_elevation_paths: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         try:
@@ -51,6 +55,10 @@ class DiscoveryJob:
             UUID(self.import_id)
         except ValueError as exc:
             raise JobFormatError("Task and import identifiers must be UUIDs") from exc
+        if self.region is not None and self.region.bounds != self.bounds:
+            raise JobFormatError("ROI geometry bounds do not match the job bounds")
+        if any(not path for path in self.local_elevation_paths):
+            raise JobFormatError("Local elevation paths must not be empty")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize using only JSON-compatible stable fields."""
@@ -64,6 +72,12 @@ class DiscoveryJob:
             "elevation_resolution_metres": self.elevation_resolution_metres,
             "use_imagery": self.use_imagery,
             "imagery_gsd_metres": self.imagery_gsd_metres,
+            "manual_tile_rows": self.manual_tile_rows,
+            "manual_tile_columns": self.manual_tile_columns,
+            "roi_geometry_wgs84": (
+                None if self.region is None else self.region.to_geojson_geometry()
+            ),
+            "local_elevation_paths": list(self.local_elevation_paths),
         }
 
     @classmethod
@@ -87,6 +101,16 @@ class DiscoveryJob:
                 payload.get("elevation_resolution_metres")
             )
             imagery_gsd = _optional_finite_float(payload.get("imagery_gsd_metres"))
+            manual_tile_rows = _optional_positive_int(payload.get("manual_tile_rows"))
+            manual_tile_columns = _optional_positive_int(
+                payload.get("manual_tile_columns")
+            )
+            raw_region = payload.get("roi_geometry_wgs84")
+            region = (
+                None
+                if raw_region is None
+                else RegionOfInterest.from_geojson_geometry(raw_region)
+            )
             use_imagery = payload["use_imagery"]
             if not isinstance(use_imagery, bool):
                 raise TypeError
@@ -94,7 +118,12 @@ class DiscoveryJob:
             import_id = payload["import_id"]
             if not isinstance(task_id, str) or not isinstance(import_id, str):
                 raise TypeError
-        except (KeyError, TypeError, ValueError) as exc:
+            raw_local_paths = payload.get("local_elevation_paths", [])
+            if not isinstance(raw_local_paths, list) or not all(
+                isinstance(path, str) and path for path in raw_local_paths
+            ):
+                raise TypeError
+        except (KeyError, TypeError, ValueError, UserInputError) as exc:
             raise JobFormatError("Job JSON contains invalid fields") from exc
         return cls(
             task_id=task_id,
@@ -104,6 +133,10 @@ class DiscoveryJob:
             elevation_resolution_metres=elevation_resolution,
             use_imagery=use_imagery,
             imagery_gsd_metres=imagery_gsd,
+            manual_tile_rows=manual_tile_rows,
+            manual_tile_columns=manual_tile_columns,
+            region=region,
+            local_elevation_paths=tuple(raw_local_paths),
         )
 
 
@@ -134,6 +167,27 @@ class ProgressEvent:
             "message": self.message,
         }
 
+    @classmethod
+    def from_dict(cls, payload: object) -> ProgressEvent:
+        """Validate one persisted progress event."""
+
+        if not isinstance(payload, dict):
+            raise JobFormatError("Progress event must be a JSON object")
+        try:
+            sequence = payload["sequence"]
+            state = JobState(payload["state"])
+            progress = payload["progress"]
+            message = payload["message"]
+            if isinstance(sequence, bool) or not isinstance(sequence, int):
+                raise TypeError
+            if isinstance(progress, bool) or not isinstance(progress, (int, float)):
+                raise TypeError
+            if not isinstance(message, str):
+                raise TypeError
+            return cls(sequence, state, float(progress), message)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise JobFormatError("Progress event contains invalid fields") from exc
+
 
 def _optional_finite_float(value: object) -> float | None:
     if value is None:
@@ -144,3 +198,11 @@ def _optional_finite_float(value: object) -> float | None:
     if not math.isfinite(converted):
         raise ValueError
     return converted
+
+
+def _optional_positive_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 64:
+        raise ValueError
+    return value
