@@ -14,11 +14,17 @@ def main() -> int:
         raise RuntimeError("Expected a job.json path and optional worker mode after --")
     if __package__ in (None, ""):
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from blender_terrain.jobs.worker import run_delivery_job, run_discovery_job
+    from blender_terrain.jobs.worker import (
+        run_availability_job,
+        run_delivery_job,
+        run_discovery_job,
+    )
 
     job_path = Path(arguments[0]).resolve()
     if len(arguments) == 2 and arguments[1] == "delivery":
         run_delivery_job(job_path)
+    elif len(arguments) == 2 and arguments[1] == "availability":
+        run_availability_job(job_path)
     elif len(arguments) == 1:
         run_discovery_job(job_path)
     else:

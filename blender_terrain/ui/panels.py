@@ -124,6 +124,28 @@ class BLENDERTERRAIN_PT_data(bpy.types.Panel):
                 layout.prop(properties, "local_elevation_path")
                 layout.label(text="Supports the verified CNIG elevation TIFF layout", icon="INFO")
             layout.prop(properties, "product")
+            if properties.elevation_source == "CNIG":
+                layout.operator(
+                    "blender_terrain.check_product_availability", icon="WORLD_DATA"
+                )
+                if properties.product_availability_summary:
+                    availability_box = layout.box()
+                    availability_box.label(
+                        text=properties.product_availability_summary, icon="INFO"
+                    )
+                    for product, status, file_count in _availability_entries(
+                        properties.product_availability_json
+                    ):
+                        if status == "AVAILABLE":
+                            text = f"{product}: available ({file_count} source file(s))"
+                            icon = "CHECKMARK"
+                        elif status == "NO_COVERAGE":
+                            text = f"{product}: no coverage"
+                            icon = "CANCEL"
+                        else:
+                            text = f"{product}: could not be checked"
+                            icon = "QUESTION"
+                        availability_box.label(text=text, icon=icon)
             if properties.product in {"MDT50CM", "MDS50CM"}:
                 layout.label(text="Third-coverage availability is still incomplete", icon="INFO")
             layout.prop(properties, "elevation_resolution")
@@ -351,6 +373,29 @@ def _job_history(serialized: str) -> tuple[str, ...]:
     if not isinstance(values, list):
         return ()
     return tuple(value for value in values if isinstance(value, str))
+
+
+def _availability_entries(serialized: str) -> tuple[tuple[str, str, int], ...]:
+    try:
+        values = json.loads(serialized)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(values, list):
+        return ()
+    entries: list[tuple[str, str, int]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        product = value.get("product")
+        status = value.get("status")
+        file_count = value.get("file_count", 0)
+        if (
+            isinstance(product, str)
+            and isinstance(status, str)
+            and isinstance(file_count, int)
+        ):
+            entries.append((product, status, file_count))
+    return tuple(entries)
 
 
 def _draw_subdivision_warning(layout: bpy.types.UILayout, viewport: int, render: int) -> None:

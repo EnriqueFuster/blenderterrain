@@ -99,6 +99,8 @@ class BLENDERTERRAIN_OT_open_roi_map(bpy.types.Operator):
         properties = context.scene.blender_terrain_roi
         result = session.result
         shutdown_map_selector()
+        properties.product_availability_json = "[]"
+        properties.product_availability_summary = ""
         _store_bounds(properties, result.bounds)
         properties.roi_geometry_json = json.dumps(
             result.to_geojson_geometry(), separators=(",", ":")
@@ -140,6 +142,10 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
 
         properties = context.scene.blender_terrain_roi
         try:
+            if _product_availability_status(properties, properties.product) == "NO_COVERAGE":
+                raise UserInputError(
+                    "The availability check found no coverage for this product and ROI"
+                )
             bounds = _bounds_from_properties(properties, store_derived=True)
             plan = create_import_plan(
                 bounds=bounds,
@@ -210,6 +216,46 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         )
         self.report({"INFO"}, properties.validation_message)
         return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_check_product_availability(bpy.types.Operator):
+    """Check every official elevation product for the current ROI."""
+
+    bl_idname = "blender_terrain.check_product_availability"
+    bl_label = "Check Product Availability"
+    bl_description = "Check which CNIG elevation products cover the current ROI"
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        if not properties.roi_geometry_json:
+            try:
+                validation = bpy.ops.blender_terrain.validate_roi()
+            except RuntimeError as exc:
+                self.report({"ERROR"}, str(exc).removeprefix("Error: "))
+                return {"CANCELLED"}
+            if validation != {"FINISHED"}:
+                return {"CANCELLED"}
+        try:
+            job_controller.start_availability(context)
+        except BlenderTerrainError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Product availability check started in the background")
+        return {"FINISHED"}
+
+
+def _product_availability_status(properties: object, product: str) -> str | None:
+    try:
+        entries = json.loads(properties.product_availability_json)
+    except (AttributeError, json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("product") == product:
+            status = entry.get("status")
+            return status if isinstance(status, str) else None
+    return None
 
 
 class BLENDERTERRAIN_OT_update_bbox_from_center(bpy.types.Operator):

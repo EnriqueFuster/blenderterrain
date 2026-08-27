@@ -63,6 +63,8 @@ def _roi_definition_changed(properties: object, context: bpy.types.Context) -> N
     _invalidate_validation(properties, context)
     if not properties.internal_update:
         properties.roi_geometry_json = ""
+        properties.product_availability_json = "[]"
+        properties.product_availability_summary = ""
 
 
 def _roi_file_changed(properties: object, context: bpy.types.Context) -> None:
@@ -70,6 +72,8 @@ def _roi_file_changed(properties: object, context: bpy.types.Context) -> None:
 
     _invalidate_validation(properties, context)
     properties.roi_geometry_json = ""
+    properties.product_availability_json = "[]"
+    properties.product_availability_summary = ""
     properties.gpkg_layers_json = "[]"
     properties.gpkg_inspection_message = ""
     if Path(properties.roi_file_path).suffix.lower() != ".gpkg":
@@ -262,6 +266,8 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     sample_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     selected_resolution: FloatProperty(default=0.0, options={"HIDDEN"})
     imagery_summary: StringProperty(default="", options={"HIDDEN"})
+    product_availability_json: StringProperty(default="[]", options={"HIDDEN"})
+    product_availability_summary: StringProperty(default="", options={"HIDDEN"})
     terrain_tile_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     terrain_tile_summary: StringProperty(default="", options={"HIDDEN"})
     estimated_memory_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})

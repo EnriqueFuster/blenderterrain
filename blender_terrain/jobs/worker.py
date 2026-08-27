@@ -35,7 +35,7 @@ from ..errors import (
 )
 from ..io.bigtiff_tiles import BigTiffFloatTileReader
 from ..io.elevation_output import write_elevation_array
-from ..models import CatalogItem
+from ..models import CatalogItem, DatasetProduct
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
@@ -47,6 +47,9 @@ from .storage import (
 )
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
+ELEVATION_PRODUCTS = tuple(
+    product for product in DatasetProduct if product is not DatasetProduct.PNOA_MA
+)
 
 
 class _LocalElevationClient:
@@ -139,6 +142,86 @@ def run_discovery_job(
     except ProviderUnavailableError as exc:
         return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
     except (JobFormatError, RasterFormatError, UserInputError) as exc:
+        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+
+
+def run_availability_job(
+    job_path: Path,
+    provider_factory: ProviderFactory = CNIGPortalClient,
+) -> JobState:
+    """Check every elevation product for one ROI without downloading data."""
+
+    events_path = job_path.with_name("events.jsonl")
+    result_path = job_path.with_name("result.json")
+    sequence = 0
+
+    def emit(state: JobState, progress: float, message: str) -> None:
+        nonlocal sequence
+        append_progress_event(events_path, ProgressEvent(sequence, state, progress, message))
+        sequence += 1
+
+    def check_cancelled() -> None:
+        if is_cancellation_requested(job_path.parent):
+            raise JobCancelled("Product availability check was cancelled")
+
+    try:
+        emit(JobState.VALIDATING, 0.02, "Validating product availability request")
+        job = read_discovery_job(job_path)
+        provider = provider_factory()
+        availability: list[dict[str, object]] = []
+        warnings: list[str] = []
+        for index, product in enumerate(ELEVATION_PRODUCTS):
+            check_cancelled()
+            emit(
+                JobState.DISCOVERING,
+                0.05 + 0.9 * index / len(ELEVATION_PRODUCTS),
+                f"Checking {product.value} ({index + 1}/{len(ELEVATION_PRODUCTS)})",
+            )
+            product_job = DiscoveryJob(
+                task_id=job.task_id,
+                import_id=job.import_id,
+                bounds=job.bounds,
+                product=product,
+                elevation_resolution_metres=None,
+                use_imagery=False,
+                imagery_gsd_metres=None,
+                region=job.region,
+            )
+            try:
+                discovery = discover_sources(_create_plan(product_job), provider)
+                availability.append(
+                    {
+                        "product": product.value,
+                        "status": "AVAILABLE",
+                        "file_count": len(discovery.items),
+                    }
+                )
+            except NoCoverageError:
+                availability.append(
+                    {"product": product.value, "status": "NO_COVERAGE", "file_count": 0}
+                )
+            except (CatalogContractChanged, ProviderUnavailableError) as exc:
+                availability.append(
+                    {"product": product.value, "status": "UNKNOWN", "file_count": 0}
+                )
+                warnings.append(f"{product.value}: {exc}")
+        terminal = JobState.COMPLETE_WITH_WARNINGS if warnings else JobState.COMPLETE
+        write_result(
+            result_path,
+            {
+                "schema_version": RESULT_SCHEMA_VERSION,
+                "task_id": job.task_id,
+                "import_id": job.import_id,
+                "state": terminal.value,
+                "availability": availability,
+                "warnings": warnings,
+            },
+        )
+        emit(terminal, 1.0, "Product availability check completed")
+        return terminal
+    except JobCancelled as exc:
+        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
+    except (JobFormatError, UserInputError) as exc:
         return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
 
 

@@ -18,7 +18,11 @@ from blender_terrain.jobs.storage import (
     request_cancellation,
     write_discovery_job,
 )
-from blender_terrain.jobs.worker import run_delivery_job, run_discovery_job
+from blender_terrain.jobs.worker import (
+    run_availability_job,
+    run_delivery_job,
+    run_discovery_job,
+)
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProjectedBounds
 
 
@@ -52,6 +56,13 @@ class ChangedProvider:
 class OfflineProvider:
     def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         raise ProviderUnavailableError("provider unavailable")
+
+
+class PartialCoverageProvider(FakeProvider):
+    def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
+        if product is DatasetProduct.MDS50CM:
+            return CatalogPage(0, ())
+        return super().discover_all(product, bbox)
 
 
 class FakeDeliveryCNIG(FakeProvider):
@@ -158,6 +169,25 @@ class DiscoveryJobStorageTests(unittest.TestCase):
 
 
 class DiscoveryWorkerTests(unittest.TestCase):
+    def test_checks_availability_for_every_elevation_product(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            job_path = directory / "job.json"
+            write_discovery_job(job_path, job())
+
+            state = run_availability_job(
+                job_path, provider_factory=PartialCoverageProvider
+            )
+
+            result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+            statuses = {
+                entry["product"]: entry["status"] for entry in result["availability"]
+            }
+            self.assertEqual(state, JobState.COMPLETE)
+            self.assertEqual(len(statuses), 8)
+            self.assertEqual(statuses["MDS50CM"], "NO_COVERAGE")
+            self.assertEqual(statuses["MDT02"], "AVAILABLE")
+
     def test_honours_cancellation_before_contacting_provider(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

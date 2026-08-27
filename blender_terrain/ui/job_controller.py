@@ -72,6 +72,9 @@ def recover_interrupted_jobs() -> int:
         if mode == "discovery":
             properties.discovery_ready = False
             properties.discovery_summary = ""
+        elif mode == "availability":
+            properties.product_availability_json = "[]"
+            properties.product_availability_summary = ""
         else:
             properties.delivery_ready = False
             properties.delivery_summary = ""
@@ -115,11 +118,31 @@ def start_delivery(context: bpy.types.Context) -> None:
     _start_worker(context, properties, "delivery", "Starting background data download")
 
 
+def start_availability(context: bpy.types.Context) -> None:
+    """Check all official elevation products for the current ROI in the background."""
+
+    properties = context.scene.blender_terrain_roi
+    if not properties.roi_geometry_json:
+        raise UserInputError("Validate or select the ROI before checking product availability")
+    properties.product_availability_json = "[]"
+    properties.product_availability_summary = ""
+    _start_worker(
+        context,
+        properties,
+        "availability",
+        "Starting product availability check",
+    )
+
+
 def _start_worker(context: bpy.types.Context, properties: Any, mode: str, message: str) -> None:
     global _active_job
     if _active_job is not None:
         raise UserInputError("Another BlenderTerrain job is already running")
-    requires_network = properties.elevation_source == "CNIG" or properties.use_imagery
+    requires_network = (
+        mode == "availability"
+        or properties.elevation_source == "CNIG"
+        or properties.use_imagery
+    )
     if requires_network and not bpy.app.online_access:
         raise UserInputError("Blender online access is disabled in Preferences")
     cache_directory = _cache_directory(context)
@@ -144,8 +167,8 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
         "--",
         str(job_path),
     ]
-    if mode == "delivery":
-        command.append("delivery")
+    if mode != "discovery":
+        command.append(mode)
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_path = job_directory / "worker.log"
     try:
@@ -315,6 +338,24 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
     properties.job_state = state
     properties.job_progress = 1.0
     if state in {JobState.COMPLETE.value, JobState.COMPLETE_WITH_WARNINGS.value}:
+        if active.mode == "availability":
+            availability = result.get("availability", [])
+            if not isinstance(availability, list):
+                availability = []
+            properties.product_availability_json = json.dumps(availability)
+            available_count = sum(
+                entry.get("status") == "AVAILABLE"
+                for entry in availability
+                if isinstance(entry, dict)
+            )
+            properties.product_availability_summary = (
+                f"{available_count} of {len(availability)} products available for this ROI"
+            )
+            warnings = result.get("warnings", [])
+            properties.job_message = (
+                str(warnings[0]) if warnings else "Product availability check completed"
+            )
+            return
         if active.mode == "delivery":
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
@@ -353,6 +394,9 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         if active.mode == "discovery":
             properties.discovery_summary = ""
             properties.discovery_ready = False
+        elif active.mode == "availability":
+            properties.product_availability_json = "[]"
+            properties.product_availability_summary = ""
         else:
             properties.delivery_ready = False
             properties.delivery_summary = ""
