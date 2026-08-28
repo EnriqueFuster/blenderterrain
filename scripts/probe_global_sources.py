@@ -24,6 +24,10 @@ GEDTM_ITEM_URL = (
 )
 GLO30_BASE = "https://copernicus-dem-30m.s3.amazonaws.com"
 WORLDCOVER_BASE = "https://esa-worldcover-s2.s3.eu-central-1.amazonaws.com"
+JRC_GSW_BASE = (
+    "https://s3.waw4-1.cloudferro.com/swift/v1/global-surface-water/"
+    "download2024/Aggregated/VER1-5"
+)
 
 
 class _NoRedirects(HTTPRedirectHandler):
@@ -106,6 +110,7 @@ def source_urls(bbox: tuple[float, float, float, float]) -> dict[str, str]:
         f"{_hemisphere(latitude, 'N', 'S', 2)}{_hemisphere(longitude, 'E', 'W', 3)}"
     )
     worldcover_name = f"ESA_WorldCover_10m_2021_v200_{worldcover_tile}_S2RGBNIR.tif"
+    jrc_tile = _jrc_tile(west, south, east, north)
     return {
         "gedtm_elevation": (
             f"{GEDTM_BASE}/gedtm_rf_m_30m_s_20060101_20151231_go_"
@@ -123,6 +128,13 @@ def source_urls(bbox: tuple[float, float, float, float]) -> dict[str, str]:
         "worldcover_s2_2021": (
             f"{WORLDCOVER_BASE}/rgbnir/2021/"
             f"{_hemisphere(latitude, 'N', 'S', 2)}/{worldcover_name}"
+        ),
+        "jrc_gsw_occurrence": (
+            f"{JRC_GSW_BASE}/occurrence/"
+            f"occurrence_{jrc_tile}_v1_5_2024.tif"
+        ),
+        "jrc_gsw_extent": (
+            f"{JRC_GSW_BASE}/extent/extent_{jrc_tile}_v1_5_2024.tif"
         ),
     }
 
@@ -170,8 +182,8 @@ def _inspect_with_rasterio(
 ) -> dict[str, Any]:
     try:
         import numpy as np
-        import rasterio
-        from rasterio.windows import from_bounds
+        import rasterio  # type: ignore[import-untyped]
+        from rasterio.windows import from_bounds  # type: ignore[import-untyped]
     except ImportError as exc:
         raise RuntimeError("Install the 'oracle' extra to use --inspect-raster") from exc
 
@@ -232,6 +244,18 @@ def _single_degree(minimum: float, maximum: float, axis: str) -> int:
 
 def _hemisphere(value: int, positive: str, negative: str, width: int) -> str:
     return f"{positive if value >= 0 else negative}{abs(value):0{width}d}"
+
+
+def _jrc_tile(west: float, south: float, east: float, north: float) -> str:
+    """Return the JRC 10-degree tile named by its west and north edges."""
+
+    longitude = math.floor(west / 10) * 10
+    latitude = math.ceil(north / 10) * 10
+    if east > longitude + 10 or south < latitude - 10:
+        raise ValueError("Probe bbox must remain inside one JRC 10-degree tile")
+    longitude_suffix = "E" if longitude >= 0 else "W"
+    latitude_suffix = "N" if latitude >= 0 else "S"
+    return f"{abs(longitude)}{longitude_suffix}_{abs(latitude)}{latitude_suffix}"
 
 
 def _content_range_total(value: str) -> int:

@@ -7,6 +7,7 @@ import pytest
 from scripts.probe_global_sources import (
     _bbox,
     _content_range_total,
+    _jrc_tile,
     _tiff_variant,
     source_urls,
 )
@@ -19,6 +20,10 @@ def test_builds_valencia_global_source_urls() -> None:
     assert "rgbnir/2021/N39/" in urls["worldcover_s2_2021"]
     assert "N39W001_S2RGBNIR.tif" in urls["worldcover_s2_2021"]
     assert urls["gedtm_elevation"].endswith("v20250611.tif")
+    assert urls["jrc_gsw_occurrence"].endswith(
+        "occurrence_10W_40N_v1_5_2024.tif"
+    )
+    assert urls["jrc_gsw_extent"].endswith("extent_10W_40N_v1_5_2024.tif")
 
 
 def test_rejects_probe_bbox_crossing_source_tiles() -> None:
@@ -32,6 +37,17 @@ def test_builds_southern_and_eastern_tile_names() -> None:
     assert "S35_00_E002_00" in urls["copernicus_glo30"]
     assert "rgbnir/2021/S35/" in urls["worldcover_s2_2021"]
     assert "S35E002_S2RGBNIR.tif" in urls["worldcover_s2_2021"]
+    assert urls["jrc_gsw_occurrence"].endswith(
+        "occurrence_0E_30S_v1_5_2024.tif"
+    )
+
+
+def test_jrc_tile_uses_west_and_north_edges() -> None:
+    assert _jrc_tile(-0.39, 39.46, -0.37, 39.48) == "10W_40N"
+    assert _jrc_tile(2.1, -34.9, 2.2, -34.8) == "0E_30S"
+    assert _jrc_tile(0.0, 0.0, 10.0, 10.0) == "0E_10N"
+    with pytest.raises(ValueError, match="one JRC"):
+        _jrc_tile(-0.1, 39.0, 0.1, 39.1)
 
 
 def test_accepts_a_bbox_ending_exactly_at_a_tile_boundary() -> None:
