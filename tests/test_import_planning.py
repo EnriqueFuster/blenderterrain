@@ -4,7 +4,7 @@ import unittest
 
 from blender_terrain.core import BBoxWGS84, create_import_plan
 from blender_terrain.errors import PlanningLimitExceeded, UserInputError
-from blender_terrain.models import DatasetProduct
+from blender_terrain.models import DatasetProduct, ProjectedBounds
 
 
 class ImportPlanningTests(unittest.TestCase):
@@ -45,6 +45,28 @@ class ImportPlanningTests(unittest.TestCase):
         self.assertGreater(plan.estimated_elevation_working_bytes, 0)
         self.assertEqual(plan.estimated_imagery_decoded_bytes, 0)
         self.assertIsNone(plan.imagery)
+
+    def test_preserves_valencia_spanish_planning_baseline(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+            DatasetProduct.MDT02,
+            10.0,
+            True,
+            5.0,
+        )
+
+        self.assertEqual(
+            plan.grids[0].bounds,
+            ProjectedBounds(724_480, 4_371_070, 726_270, 4_373_350, 25830),
+        )
+        self.assertEqual((plan.grids[0].columns, plan.grids[0].rows), (179, 228))
+        self.assertEqual(plan.elevation_sample_count, 40_812)
+        self.assertEqual(plan.terrain_tile_count, 1)
+        assert plan.imagery is not None
+        self.assertEqual(
+            (plan.imagery.pixel_width, plan.imagery.pixel_height),
+            (344, 445),
+        )
 
     def test_auto_selects_a_safe_elevation_resolution(self) -> None:
         plan = create_import_plan(
