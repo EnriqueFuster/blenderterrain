@@ -6,10 +6,21 @@ from pathlib import Path
 
 import numpy as np
 
+from blender_terrain.catalog import (
+    DatasetKind,
+    LayerRequest,
+    ProductSelection,
+    SelectionMode,
+)
+from blender_terrain.core.delivery import TransferProgress
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.io.bigtiff_tiles import ClassicTiffFloatTileReader
+from blender_terrain.io.http_download import DownloadedAsset
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.copernicus_dem import glo30_tiles_for_roi
+from blender_terrain.providers.copernicus_dem import (
+    CopernicusGlo30Acquirer,
+    glo30_tiles_for_roi,
+)
 
 
 def test_discovers_valencia_glo30_tile() -> None:
@@ -40,6 +51,44 @@ def test_exact_east_and_north_boundaries_do_not_add_tiles() -> None:
     tiles = glo30_tiles_for_roi(BBoxWGS84(0.0, 39.0, 1.0, 40.0))
 
     assert [(tile.longitude, tile.latitude) for tile in tiles] == [(0, 39)]
+
+
+def test_acquires_confirmed_glo30_selection_into_provider_cache(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    calls: list[tuple[str, Path, str]] = []
+
+    def download(url: str, directory: Path, filename: str, **kwargs) -> DownloadedAsset:
+        calls.append((url, directory, filename))
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / filename
+        path.write_bytes(b"II*\x00\x08\x00\x00\x00\x00")
+        kwargs["progress_callback"](9, 9)
+        return DownloadedAsset(path, 9, False)
+
+    monkeypatch.setattr(
+        "blender_terrain.providers.copernicus_dem.download_public_tiff", download
+    )
+    selection = ProductSelection(
+        "copernicus_dem",
+        "COPERNICUS_GLO30_2021",
+        DatasetKind.DSM,
+        SelectionMode.MANUAL,
+        True,
+    )
+    progress: list[TransferProgress] = []
+
+    result = CopernicusGlo30Acquirer().acquire(
+        selection,
+        LayerRequest(DatasetKind.DSM),
+        BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+        tmp_path,
+        progress.append,
+    )
+
+    assert result.paths == (calls[0][1] / calls[0][2],)
+    assert calls[0][1].parts[-2:] == ("copernicus_dem", "COPERNICUS_GLO30_2021")
+    assert progress[0].kind == "dsm"
 
 
 def test_reads_classic_geographic_float_tiff_window(tmp_path: Path) -> None:
