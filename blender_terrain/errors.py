@@ -17,6 +17,10 @@ class PlanningLimitExceeded(UserInputError):
     """Raised when requested output exceeds a hard MVP safety budget."""
 
 
+class SelectionError(UserInputError):
+    """Raised when catalog selections cannot form a confirmed acquisition plan."""
+
+
 class ProviderUnavailableError(BlenderTerrainError):
     """Raised when a provider cannot complete a request."""
 
