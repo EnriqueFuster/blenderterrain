@@ -39,7 +39,7 @@ oracle = [
 include = ["blender_terrain*"]
 
 [tool.setuptools.package-data]
-blender_terrain = ["assets/*.html", "assets/*.js"]
+blender_terrain = ["assets/*.html", "assets/*.js", "catalog/data/*.toml"]
 
 [tool.ruff]
 line-length = 100
@@ -58,6 +58,7 @@ files = [
   "blender_terrain/errors.py",
   "blender_terrain/models.py",
   "blender_terrain/core",
+  "blender_terrain/catalog",
   "blender_terrain/io",
   "blender_terrain/jobs",
   "blender_terrain/providers",
