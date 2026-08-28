@@ -37,8 +37,17 @@ The current implementation includes:
    subdivision controls;
 10. optional packing of PNOA images into the `.blend` file;
 11. compatible local elevation TIFF or TIFF-folder processing without copying the
-    source files;
-12. optional automatic 3D viewport `Clip End` adjustment after creation.
+    source files, with automatic CRS, grid, coverage and ROI validation;
+12. optional automatic 3D viewport `Clip End` adjustment after creation;
+13. optional local PNG terrain imagery using same-name PGW/WLD and PRJ sidecars,
+    validated against the elevation CRS and full spatial extent;
+14. conservative, balanced and large resource profiles that change elevation and
+    imagery planning limits before any download starts;
+15. cache inspection and selective cleanup for elevation, imagery, processed
+    terrain, job records, or incomplete files;
+16. retry of the last interrupted or failed acquisition job, reusing every
+    validated cached file; and
+17. per-stage delivery timing and an explicit cached-file reuse summary.
 
 Subdivision follows Blender's technical range from 0 to 11. The interface warns
 from level 3 because each additional level can multiply the generated face count
@@ -74,9 +83,6 @@ Portable geospatial logic must not import `bpy`. Blender integration will be a
 consumer of tested artifacts produced by the portable layers. Provider-specific
 HTTP and parsing behavior will remain isolated from core geospatial models.
 
-See the proposed decisions in [`docs/adr`](docs/adr) and the verified-source
-inventory in [`docs/data-sources.md`](docs/data-sources.md).
-
 ## Install in Blender
 
 Build the extension ZIP with Blender 4.5:
@@ -89,8 +95,13 @@ Install the resulting ZIP from Blender through **Edit > Preferences > Get
 Extensions > Install from Disk**. Enable Blender online access, select a cache
 directory in the extension preferences, and open **3D View > Sidebar > Terrain**.
 Run `Validate ROI`, `Discover Sources`, `Download Data`, and `Create Terrain` in
-that order. A compact manual feedback test is available in
-[`docs/manual-testing.md`](docs/manual-testing.md).
+that order. `Balanced` is the recommended resource profile. `Large` permits a
+larger processing budget but does not bypass the per-object mesh safeguards and
+can exhaust RAM or GPU memory. The **Cache** panel reports disk use by category;
+its cleanup actions require confirmation and are disabled while a job is active.
+A useful manual check is to validate a small ROI, discover and download its
+sources, create the terrain, adjust its displacement, save the `.blend`, and
+open it again before testing a larger area.
 
 ## Development
 
@@ -113,8 +124,7 @@ python -m scripts.discover_cnig --product PNOA_MA --online
 
 An explicit `--download-one` mode exists for controlled provider validation.
 Complete MDT02 and MDS02 samples were downloaded and validated on 2026-08-19
-through the first-party CNIG initialization and delivery endpoints. See
-`docs/provider-cnig.md` for the observed contract and current limitations.
+through the first-party CNIG initialization and delivery endpoints.
 
 PNOA results can contain several revisions with the same filename. A research
 download must therefore select the exact identifier printed by discovery:

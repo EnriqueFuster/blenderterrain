@@ -10,9 +10,10 @@ from uuid import UUID
 
 from ..core.roi import BBoxWGS84, RegionOfInterest
 from ..errors import JobFormatError, UserInputError
-from ..models import DatasetProduct
+from ..models import DatasetProduct, ProjectedBounds
 
-JOB_SCHEMA_VERSION = 5
+JOB_SCHEMA_VERSION = 7
+SUPPORTED_JOB_SCHEMA_VERSIONS = frozenset({6, JOB_SCHEMA_VERSION})
 RESULT_SCHEMA_VERSION = 2
 
 
@@ -48,6 +49,12 @@ class DiscoveryJob:
     manual_tile_columns: int | None = None
     region: RegionOfInterest | None = None
     local_elevation_paths: tuple[str, ...] = ()
+    local_imagery_path: str | None = None
+    local_imagery_bounds: ProjectedBounds | None = None
+    local_imagery_width: int | None = None
+    local_imagery_height: int | None = None
+    maximum_elevation_samples: int = 16_777_216
+    maximum_imagery_pixels: int = 67_108_864
 
     def __post_init__(self) -> None:
         try:
@@ -59,6 +66,27 @@ class DiscoveryJob:
             raise JobFormatError("ROI geometry bounds do not match the job bounds")
         if any(not path for path in self.local_elevation_paths):
             raise JobFormatError("Local elevation paths must not be empty")
+        imagery_values = (
+            self.local_imagery_path,
+            self.local_imagery_bounds,
+            self.local_imagery_width,
+            self.local_imagery_height,
+        )
+        if any(value is None for value in imagery_values) != all(
+            value is None for value in imagery_values
+        ):
+            raise JobFormatError("Local imagery metadata must be provided together")
+        if self.local_imagery_path is not None and (
+            not self.local_elevation_paths
+            or not self.use_imagery
+            or self.local_imagery_width is None
+            or self.local_imagery_height is None
+            or self.local_imagery_width <= 0
+            or self.local_imagery_height <= 0
+        ):
+            raise JobFormatError("Local imagery requires local elevation and valid dimensions")
+        if self.maximum_elevation_samples <= 0 or self.maximum_imagery_pixels <= 0:
+            raise JobFormatError("Job resource limits must be positive")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize using only JSON-compatible stable fields."""
@@ -78,13 +106,24 @@ class DiscoveryJob:
                 None if self.region is None else self.region.to_geojson_geometry()
             ),
             "local_elevation_paths": list(self.local_elevation_paths),
+            "local_imagery_path": self.local_imagery_path,
+            "local_imagery_bounds": (
+                None if self.local_imagery_bounds is None else asdict(self.local_imagery_bounds)
+            ),
+            "local_imagery_width": self.local_imagery_width,
+            "local_imagery_height": self.local_imagery_height,
+            "maximum_elevation_samples": self.maximum_elevation_samples,
+            "maximum_imagery_pixels": self.maximum_imagery_pixels,
         }
 
     @classmethod
     def from_dict(cls, payload: object) -> DiscoveryJob:
-        """Validate an untrusted JSON value against schema version one."""
+        """Validate an untrusted JSON value against a supported job schema."""
 
-        if not isinstance(payload, dict) or payload.get("schema_version") != JOB_SCHEMA_VERSION:
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") not in SUPPORTED_JOB_SCHEMA_VERSIONS
+        ):
             raise JobFormatError("Unsupported or missing job schema version")
         try:
             raw_bounds = payload["bounds"]
@@ -123,6 +162,25 @@ class DiscoveryJob:
                 isinstance(path, str) and path for path in raw_local_paths
             ):
                 raise TypeError
+            maximum_elevation_samples = _positive_int(
+                payload.get("maximum_elevation_samples")
+            )
+            maximum_imagery_pixels = _positive_int(payload.get("maximum_imagery_pixels"))
+            local_imagery_path = payload.get("local_imagery_path")
+            raw_imagery_bounds = payload.get("local_imagery_bounds")
+            local_imagery_width = payload.get("local_imagery_width")
+            local_imagery_height = payload.get("local_imagery_height")
+            if local_imagery_path is not None and not isinstance(local_imagery_path, str):
+                raise TypeError
+            local_imagery_bounds = (
+                None
+                if raw_imagery_bounds is None
+                else _projected_bounds(raw_imagery_bounds)
+            )
+            if local_imagery_width is not None:
+                local_imagery_width = _positive_int(local_imagery_width)
+            if local_imagery_height is not None:
+                local_imagery_height = _positive_int(local_imagery_height)
         except (KeyError, TypeError, ValueError, UserInputError) as exc:
             raise JobFormatError("Job JSON contains invalid fields") from exc
         return cls(
@@ -137,6 +195,12 @@ class DiscoveryJob:
             manual_tile_columns=manual_tile_columns,
             region=region,
             local_elevation_paths=tuple(raw_local_paths),
+            local_imagery_path=local_imagery_path,
+            local_imagery_bounds=local_imagery_bounds,
+            local_imagery_width=local_imagery_width,
+            local_imagery_height=local_imagery_height,
+            maximum_elevation_samples=maximum_elevation_samples,
+            maximum_imagery_pixels=maximum_imagery_pixels,
         )
 
 
@@ -206,3 +270,21 @@ def _optional_positive_int(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 64:
         raise ValueError
     return value
+
+
+def _positive_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError
+    return value
+
+
+def _projected_bounds(value: object) -> ProjectedBounds:
+    if not isinstance(value, dict):
+        raise TypeError
+    return ProjectedBounds(
+        float(value["west"]),
+        float(value["south"]),
+        float(value["east"]),
+        float(value["north"]),
+        int(value["epsg"]),
+    )

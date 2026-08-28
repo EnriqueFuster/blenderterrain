@@ -147,6 +147,39 @@ class ImportPlanningTests(unittest.TestCase):
                 manual_tile_columns=1,
             )
 
+    def test_resource_profiles_change_auto_resolution(self) -> None:
+        bounds = BBoxWGS84(-0.6, 39.2, -0.1, 39.7)
+
+        conservative = create_import_plan(
+            bounds, DatasetProduct.MDT02, None, False, None,
+            maximum_elevation_samples=4_194_304,
+        )
+        balanced = create_import_plan(
+            bounds, DatasetProduct.MDT02, None, False, None,
+            maximum_elevation_samples=16_777_216,
+        )
+
+        self.assertGreaterEqual(
+            conservative.elevation_resolution_metres,
+            balanced.elevation_resolution_metres,
+        )
+        self.assertLessEqual(conservative.elevation_sample_count, 4_194_304)
+
+    def test_large_profile_accepts_more_imagery_pixels(self) -> None:
+        bounds = BBoxWGS84(-0.39, 39.46, -0.34, 39.51)
+
+        with self.assertRaises(PlanningLimitExceeded):
+            create_import_plan(
+                bounds, DatasetProduct.MDT02, 20.0, True, 0.5,
+                maximum_imagery_pixels=16_777_216,
+            )
+        plan = create_import_plan(
+            bounds, DatasetProduct.MDT02, 20.0, True, 0.5,
+            maximum_imagery_pixels=268_435_456,
+        )
+
+        self.assertIsNotNone(plan.imagery)
+
 
 if __name__ == "__main__":
     unittest.main()

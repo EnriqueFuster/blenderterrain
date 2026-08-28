@@ -11,6 +11,23 @@ from ..errors import DownloadIntegrityError
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
+def read_png_dimensions(path: Path) -> tuple[int, int]:
+    """Read validated positive PNG dimensions from its fixed IHDR prefix."""
+
+    with path.open("rb") as stream:
+        prefix = stream.read(24)
+    if (
+        len(prefix) != 24
+        or prefix[:8] != _PNG_SIGNATURE
+        or prefix[12:16] != b"IHDR"
+    ):
+        raise DownloadIntegrityError("Image is not a valid PNG file")
+    width, height = struct.unpack(">II", prefix[16:24])
+    if width <= 0 or height <= 0:
+        raise DownloadIntegrityError("PNG dimensions must be positive")
+    return width, height
+
+
 def validate_png(path: Path, expected_width: int, expected_height: int) -> None:
     """Validate PNG chunks, checksums, termination, and requested dimensions."""
 

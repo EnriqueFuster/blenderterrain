@@ -12,7 +12,7 @@ class PortableImportTests(unittest.TestCase):
     def test_package_imports_without_blender(self) -> None:
         import blender_terrain
 
-        self.assertEqual(blender_terrain.__version__, "0.2.0")
+        self.assertEqual(blender_terrain.__version__, "0.3.0")
 
     def test_public_version_matches_package_and_extension_metadata(self) -> None:
         import blender_terrain
@@ -54,4 +54,3 @@ class PortableImportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -55,6 +55,15 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.imagery_packed = False
     properties.imagery_available = False
     properties.imagery_size_mib = 0.0
+    properties.local_elevation_summary = ""
+    properties.local_native_resolution = 0.0
+    properties.local_imagery_summary = ""
+
+
+def _data_source_changed(properties: object, context: bpy.types.Context) -> None:
+    """Reset validation when switching between online and local workflows."""
+
+    _invalidate_validation(properties, context)
 
 
 def _roi_definition_changed(properties: object, context: bpy.types.Context) -> None:
@@ -117,18 +126,55 @@ def _gpkg_layer_items(
 class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     """Store manual WGS84 bounds and their latest validation result."""
 
-    elevation_source: EnumProperty(
-        name="Elevation Source",
+    cache_cleanup_selection: EnumProperty(
+        name="Remove",
         items=(
-            ("CNIG", "Download from CNIG", "Discover and download official elevation data"),
-            ("LOCAL", "Local Raster", "Process a compatible local TIFF or a folder of TIFFs"),
+            ("PARTIALS", "Incomplete Files", "Remove interrupted .part files only"),
+            ("PROCESSED", "Processed Terrain", "Remove generated elevation arrays"),
+            ("JOBS", "Job History", "Remove persisted jobs, events, and worker logs"),
+            ("IMAGERY", "PNOA Imagery", "Remove cached PNOA image tiles"),
+            ("ELEVATION", "Elevation Sources", "Remove downloaded elevation rasters"),
+            ("ALL", "All Cache Data", "Remove every BlenderTerrain cache category"),
+        ),
+        default="PARTIALS",
+    )
+    cache_inventory_json: StringProperty(default="[]", options={"HIDDEN"})
+    cache_inventory_summary: StringProperty(
+        default="Cache has not been inspected", options={"HIDDEN"}
+    )
+
+    elevation_source: EnumProperty(
+        name="Data Source",
+        items=(
+            (
+                "CNIG",
+                "Download Official Data",
+                "Define an area and download official IGN-CNIG and PNOA data",
+            ),
+            (
+                "LOCAL",
+                "Use Local Rasters",
+                "Prepare compatible raster files already stored on this computer",
+            ),
         ),
         default="CNIG",
-        update=_invalidate_validation,
+        update=_data_source_changed,
     )
     local_elevation_path: StringProperty(
         name="Raster or Folder",
         description="Compatible elevation .tif/.tiff file or folder containing source tiles",
+        subtype="FILE_PATH",
+        update=_invalidate_validation,
+    )
+    use_local_imagery: BoolProperty(
+        name="Use Local Imagery",
+        description="Texture the terrain with a georeferenced local PNG",
+        default=False,
+        update=_invalidate_validation,
+    )
+    local_imagery_path: StringProperty(
+        name="Image",
+        description="PNG with same-name .pgw or .wld and .prj sidecars",
         subtype="FILE_PATH",
         update=_invalidate_validation,
     )
@@ -228,6 +274,16 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         default="AUTO",
         update=_invalidate_validation,
     )
+    resource_profile: EnumProperty(
+        name="Resource Profile",
+        items=(
+            ("CONSERVATIVE", "Conservative", "Lower RAM and GPU limits"),
+            ("BALANCED", "Balanced", "Recommended limits for most workstations"),
+            ("LARGE", "Large", "Higher limits; may exhaust RAM or GPU memory"),
+        ),
+        default="BALANCED",
+        update=_invalidate_validation,
+    )
     tiling_mode: EnumProperty(
         name="Terrain Division",
         items=(
@@ -266,11 +322,16 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     sample_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     selected_resolution: FloatProperty(default=0.0, options={"HIDDEN"})
     imagery_summary: StringProperty(default="", options={"HIDDEN"})
+    local_elevation_summary: StringProperty(default="", options={"HIDDEN"})
+    local_native_resolution: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
+    local_imagery_summary: StringProperty(default="", options={"HIDDEN"})
     product_availability_json: StringProperty(default="[]", options={"HIDDEN"})
     product_availability_summary: StringProperty(default="", options={"HIDDEN"})
     terrain_tile_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     terrain_tile_summary: StringProperty(default="", options={"HIDDEN"})
     estimated_memory_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
+    estimated_base_vertices: IntProperty(default=0, min=0, options={"HIDDEN"})
+    estimated_texture_gpu_mib: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     planning_warning: StringProperty(default="", options={"HIDDEN"})
     job_active: BoolProperty(default=False, options={"HIDDEN"})
     active_job_mode: StringProperty(default="", options={"HIDDEN"})
@@ -280,18 +341,21 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
     job_message: StringProperty(default="", options={"HIDDEN"})
     job_event_history: StringProperty(default="[]", options={"HIDDEN"})
+    last_job_path: StringProperty(default="", options={"HIDDEN"})
+    last_job_mode: StringProperty(default="", options={"HIDDEN"})
     discovered_file_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     estimated_download_mb: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
     discovery_summary: StringProperty(default="", options={"HIDDEN"})
     discovery_ready: BoolProperty(default=False, options={"HIDDEN"})
     delivery_ready: BoolProperty(default=False, options={"HIDDEN"})
     delivery_summary: StringProperty(default="", options={"HIDDEN"})
+    delivery_metrics_summary: StringProperty(default="", options={"HIDDEN"})
     delivery_result_path: StringProperty(default="", options={"HIDDEN"})
     terrain_created: BoolProperty(default=False, options={"HIDDEN"})
     import_id: StringProperty(default="", options={"HIDDEN"})
     pack_imagery: BoolProperty(
-        name="Pack PNOA into .blend",
-        description="Embed PNOA images in the blend file when creating the terrain",
+        name="Pack Imagery into .blend",
+        description="Embed terrain images in the blend file when creating the terrain",
         default=False,
     )
     full_resolution_mesh: BoolProperty(

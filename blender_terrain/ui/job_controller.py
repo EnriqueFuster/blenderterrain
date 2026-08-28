@@ -5,17 +5,27 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import bpy
 
-from ..core import RegionOfInterest
+from ..core import (
+    RESOURCE_PROFILES,
+    RegionOfInterest,
+    inspect_local_imagery,
+    resolve_local_elevation_paths,
+)
 from ..errors import JobFormatError, UserInputError
 from ..jobs.models import DiscoveryJob, JobState
-from ..jobs.storage import read_progress_events, request_cancellation, write_discovery_job
+from ..jobs.storage import (
+    read_discovery_job,
+    read_progress_events,
+    request_cancellation,
+    write_discovery_job,
+)
 from ..models import DatasetProduct
 
 _POLL_INTERVAL_SECONDS = 0.25
@@ -138,22 +148,71 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
     global _active_job
     if _active_job is not None:
         raise UserInputError("Another BlenderTerrain job is already running")
-    requires_network = (
-        mode == "availability"
-        or properties.elevation_source == "CNIG"
-        or properties.use_imagery
-    )
-    if requires_network and not bpy.app.online_access:
-        raise UserInputError("Blender online access is disabled in Preferences")
-    cache_directory = _cache_directory(context)
+    cache_directory = configured_cache_directory(context)
     task_id = str(uuid4())
     if not properties.import_id:
         properties.import_id = str(uuid4())
     job_directory = cache_directory / "jobs" / task_id
     job_path = job_directory / "job.json"
+    job = _job_from_properties(task_id, properties.import_id, properties)
+    if _job_requires_network(job, mode) and not bpy.app.online_access:
+        raise UserInputError("Blender online access is disabled in Preferences")
+    write_discovery_job(job_path, job)
+    _launch_worker(context, properties, mode, message, job_directory)
+
+
+def retry_last_job(context: bpy.types.Context) -> None:
+    """Relaunch the last persisted request with a new task identity."""
+
+    properties = context.scene.blender_terrain_roi
+    if _active_job is not None:
+        raise UserInputError("Another BlenderTerrain job is already running")
+    previous_path = Path(properties.last_job_path)
+    cache_directory = configured_cache_directory(context)
+    jobs_directory = (cache_directory / "jobs").resolve()
+    try:
+        resolved_previous = previous_path.expanduser().resolve(strict=True)
+        resolved_previous.relative_to(jobs_directory)
+    except (OSError, ValueError) as exc:
+        raise UserInputError("The previous job is no longer available in the cache") from exc
+    previous = read_discovery_job(resolved_previous)
+    mode = properties.last_job_mode
+    if mode not in {"discovery", "availability", "delivery"}:
+        raise UserInputError("The previous job mode cannot be retried")
+    if _job_requires_network(previous, mode) and not bpy.app.online_access:
+        raise UserInputError("Blender online access is disabled in Preferences")
+    task_id = str(uuid4())
+    job_directory = cache_directory / "jobs" / task_id
     write_discovery_job(
-        job_path, _job_from_properties(task_id, properties.import_id, properties)
+        job_directory / "job.json", replace(previous, task_id=task_id)
     )
+    properties.import_id = previous.import_id
+    _launch_worker(
+        context,
+        properties,
+        mode,
+        f"Retrying previous {mode} job",
+        job_directory,
+    )
+
+
+def _job_requires_network(job: DiscoveryJob, mode: str) -> bool:
+    return (
+        mode == "availability"
+        or not job.local_elevation_paths
+        or (job.use_imagery and job.local_imagery_path is None)
+    )
+
+
+def _launch_worker(
+    context: bpy.types.Context,
+    properties: Any,
+    mode: str,
+    message: str,
+    job_directory: Path,
+) -> None:
+    global _active_job
+    job_path = job_directory / "job.json"
 
     worker_entry = Path(__file__).resolve().parents[1] / "jobs" / "worker_entry.py"
     command = [
@@ -197,6 +256,8 @@ def _start_worker(context: bpy.types.Context, properties: Any, mode: str, messag
     properties.job_progress = 0.0
     properties.job_message = message
     properties.job_event_history = json.dumps([message])
+    properties.last_job_path = str(job_path)
+    properties.last_job_mode = mode
     if mode == "discovery":
         properties.discovery_summary = ""
     if not bpy.app.timers.is_registered(_poll_active_job):
@@ -371,6 +432,19 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
                 f"Prepared {elevation_count} elevation, {imagery_count} imagery and "
                 f"{terrain_count} terrain tile(s)"
             )
+            timings = result.get("timings_seconds", {})
+            reuse = result.get("cache_reuse", {})
+            if not isinstance(timings, dict):
+                timings = {}
+            if not isinstance(reuse, dict):
+                reuse = {}
+            total_seconds = float(timings.get("total", 0.0) or 0.0)
+            reused = int(reuse.get("elevation_files", 0) or 0) + int(
+                reuse.get("imagery_files", 0) or 0
+            )
+            properties.delivery_metrics_summary = (
+                f"Completed in {total_seconds:.1f} s; reused {reused} cached file(s)"
+            )
             warnings = result.get("warnings", [])
             properties.job_message = (
                 str(warnings[0])
@@ -405,7 +479,8 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         properties.job_message = str(result.get("error", f"Discovery ended as {state}"))
 
 
-def _cache_directory(context: bpy.types.Context) -> Path:
+def configured_cache_directory(context: bpy.types.Context) -> Path:
+    """Return the configured cache root after creating and validating it."""
     if not _extension_package:
         raise UserInputError("The extension has not initialized its preferences")
     addon = context.preferences.addons.get(_extension_package)
@@ -429,6 +504,13 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
             if properties.elevation_source == "LOCAL"
             else ()
         )
+        local_imagery = (
+            inspect_local_imagery(Path(bpy.path.abspath(properties.local_imagery_path)))
+            if properties.elevation_source == "LOCAL"
+            and properties.use_local_imagery
+            else None
+        )
+        elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
         return DiscoveryJob(
             task_id=task_id,
             import_id=import_id,
@@ -439,9 +521,16 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
                 if properties.elevation_resolution == "AUTO"
                 else float(properties.elevation_resolution)
             ),
-            use_imagery=properties.use_imagery,
+            use_imagery=(
+                properties.use_imagery
+                if properties.elevation_source == "CNIG"
+                else local_imagery is not None
+            ),
             imagery_gsd_metres=(
-                None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
+                None
+                if properties.elevation_source == "LOCAL"
+                or properties.imagery_gsd == "AUTO"
+                else float(properties.imagery_gsd)
             ),
             manual_tile_rows=(
                 properties.manual_tile_rows
@@ -455,24 +544,30 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
             ),
             region=region,
             local_elevation_paths=local_paths,
+            local_imagery_path=(
+                None if local_imagery is None else str(local_imagery.path)
+            ),
+            local_imagery_bounds=(
+                None if local_imagery is None else local_imagery.bounds
+            ),
+            local_imagery_width=(
+                None if local_imagery is None else local_imagery.width
+            ),
+            local_imagery_height=(
+                None if local_imagery is None else local_imagery.height
+            ),
+            maximum_elevation_samples=elevation_limit,
+            maximum_imagery_pixels=imagery_limit,
         )
     except (JobFormatError, json.JSONDecodeError, ValueError) as exc:
         raise UserInputError(f"Cannot create the discovery job: {exc}") from exc
 
 
 def _local_elevation_paths(raw_path: str) -> tuple[str, ...]:
-    path = Path(bpy.path.abspath(raw_path)).expanduser().resolve()
-    if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}:
-        return (str(path),)
-    if path.is_dir():
-        paths = tuple(
-            str(candidate.resolve())
-            for candidate in sorted(path.iterdir())
-            if candidate.is_file() and candidate.suffix.lower() in {".tif", ".tiff"}
-        )
-        if paths:
-            return paths
-    raise UserInputError("Choose an elevation TIFF or a folder containing TIFF files")
+    return tuple(
+        str(path)
+        for path in resolve_local_elevation_paths(bpy.path.abspath(raw_path))
+    )
 
 
 def _scene_properties(scene_name: str) -> Any | None:

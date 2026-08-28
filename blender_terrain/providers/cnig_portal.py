@@ -29,7 +29,7 @@ from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, CatalogPage, DatasetProduct, ProductPage
 
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
-USER_AGENT = "BlenderTerrain/0.2.0 (+https://github.com/EnriqueFuster/blenderterrain)"
+USER_AGENT = "BlenderTerrain/0.3.0 (+https://github.com/EnriqueFuster/blenderterrain)"
 
 
 

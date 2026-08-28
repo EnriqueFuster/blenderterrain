@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 
 from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
-from ..models import DatasetProduct
+from ..models import DatasetProduct, ProjectedBounds
 from .crs import UTMWorkArea, split_bbox_by_utm_zone
 from .estimates import ROIEstimate, estimate_bbox
 from .grid import (
@@ -37,6 +37,11 @@ PLANNING_WMS_TILE_DIMENSION = 4_096
 MAX_IMAGERY_PIXELS = 67_108_864
 ELEVATION_WORKING_BYTES_PER_SAMPLE = 11
 IMAGERY_DECODED_BYTES_PER_PIXEL = 4
+RESOURCE_PROFILES = {
+    "CONSERVATIVE": (4_194_304, 16_777_216),
+    "BALANCED": (MAX_ELEVATION_SAMPLES, MAX_IMAGERY_PIXELS),
+    "LARGE": (67_108_864, 268_435_456),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,23 +166,42 @@ def create_import_plan(
     imagery_gsd_metres: float | None,
     manual_tile_rows: int | None = None,
     manual_tile_columns: int | None = None,
+    maximum_elevation_samples: int = MAX_ELEVATION_SAMPLES,
+    maximum_imagery_pixels: int = MAX_IMAGERY_PIXELS,
+    native_resolution_override: float | None = None,
+    projected_bounds_override: tuple[ProjectedBounds, ...] | None = None,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
     if product not in PRODUCT_NATIVE_RESOLUTION:
         raise UserInputError("The selected product is not an elevation raster")
+    if maximum_elevation_samples <= 0 or maximum_imagery_pixels <= 0:
+        raise UserInputError("Resource limits must be positive")
+    native_resolution = (
+        PRODUCT_NATIVE_RESOLUTION[product]
+        if native_resolution_override is None
+        else native_resolution_override
+    )
+    if not math.isfinite(native_resolution) or native_resolution <= 0.0:
+        raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
     work_areas = split_bbox_by_utm_zone(bounds)
+    if projected_bounds_override is not None and {
+        projected.epsg for projected in projected_bounds_override
+    } != {area.crs.epsg for area in work_areas}:
+        raise UserInputError("Local raster CRS coverage does not match its WGS84 envelope")
     elevation_resolution, elevation, grids = _select_elevation_resolution(
         bounds,
         work_areas,
         elevation_resolution_metres,
-        PRODUCT_NATIVE_RESOLUTION[product],
+        native_resolution,
         manual_tile_rows,
         manual_tile_columns,
+        maximum_elevation_samples,
+        projected_bounds_override,
     )
     imagery = (
-        _estimate_imagery(bounds, imagery_gsd_metres)
+        _estimate_imagery(bounds, imagery_gsd_metres, maximum_imagery_pixels)
         if use_imagery
         else None
     )
@@ -215,30 +239,59 @@ def _select_elevation_resolution(
     native_resolution: float,
     manual_tile_rows: int | None,
     manual_tile_columns: int | None,
+    maximum_samples: int,
+    projected_bounds_override: tuple[ProjectedBounds, ...] | None,
 ) -> tuple[float, ROIEstimate, tuple[GridSpec, ...]]:
-    available = tuple(value for value in ELEVATION_RESOLUTIONS if value >= native_resolution)
+    available = tuple(
+        sorted(
+            {
+                native_resolution,
+                *(value for value in ELEVATION_RESOLUTIONS if value >= native_resolution),
+            }
+        )
+    )
     candidates = available if requested is None else (requested,)
     if requested is not None and requested not in available:
         raise UserInputError("Unsupported elevation resolution")
     for resolution in candidates:
         estimate = estimate_bbox(bounds, resolution)
-        grids = tuple(
-            align_projected_grid(project_work_area_bounds(work_area), resolution)
-            for work_area in work_areas
-        )
+        if projected_bounds_override is None:
+            grids = tuple(
+                align_projected_grid(project_work_area_bounds(work_area), resolution)
+                for work_area in work_areas
+            )
+        else:
+            try:
+                grids = tuple(
+                    _exact_local_grid(projected, resolution)
+                    for projected in sorted(
+                        projected_bounds_override, key=lambda bounds: bounds.epsg
+                    )
+                )
+            except RasterAlignmentError:
+                continue
         if (
-            sum(grid.sample_count for grid in grids) <= MAX_ELEVATION_SAMPLES
+            sum(grid.sample_count for grid in grids) <= maximum_samples
             and _manual_layout_is_safe(grids, manual_tile_rows, manual_tile_columns)
         ):
             return resolution, estimate, grids
     raise PlanningLimitExceeded(
-        "Elevation output or manual terrain layout exceeds safety limits even at 100 m"
+        "Elevation output or manual terrain layout exceeds safety limits even at the "
+        "coarsest supported resolution"
         if requested is None
         else (
             "Elevation output or manual terrain layout exceeds safety limits; "
             "use Auto, a coarser resolution, or more terrain tiles"
         )
     )
+
+
+def _exact_local_grid(bounds: ProjectedBounds, resolution: float) -> GridSpec:
+    """Build a source-anchored grid without expanding beyond local raster coverage."""
+
+    columns = round((bounds.east - bounds.west) / resolution)
+    rows = round((bounds.north - bounds.south) / resolution)
+    return GridSpec(bounds, resolution, columns, rows)
 
 
 def _manual_layout_is_safe(
@@ -255,7 +308,7 @@ def _manual_layout_is_safe(
 
 
 def _estimate_imagery(
-    bounds: BBoxWGS84, requested_gsd: float | None
+    bounds: BBoxWGS84, requested_gsd: float | None, maximum_pixels: int
 ) -> ImageryEstimate:
     physical = estimate_bbox(bounds)
     candidates = IMAGERY_RESOLUTIONS if requested_gsd is None else (requested_gsd,)
@@ -271,7 +324,7 @@ def _estimate_imagery(
             tile_columns=math.ceil(pixel_width / PLANNING_WMS_TILE_DIMENSION),
             tile_rows=math.ceil(pixel_height / PLANNING_WMS_TILE_DIMENSION),
         )
-        if estimate.pixel_count <= MAX_IMAGERY_PIXELS:
+        if estimate.pixel_count <= maximum_pixels:
             return estimate
     raise PlanningLimitExceeded(
         "PNOA output exceeds the safe texture limit even at 5 m GSD"

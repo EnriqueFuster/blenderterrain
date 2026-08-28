@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "blender_terrain"
-version = "0.2.0"
+version = "0.3.0"
 name = "BlenderTerrain"
 tagline = "Import IGN terrain and PNOA imagery by area"
 maintainer = "Enrique Fuster"
@@ -22,12 +22,12 @@ paths_exclude_pattern = [
   "/.github/",
   "/.mypy_cache/",
   "/.pytest_cache/",
+  "/.pytest-tmp/",
   "/.ruff_cache/",
   "/.venv/",
   "/*.egg-info/",
   "/build/",
   "/dist/",
-  "/docs/",
   "/scripts/",
   "/tests/",
   "/.gitattributes",
