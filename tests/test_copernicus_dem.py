@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+import struct
+import zlib
+from pathlib import Path
+
+import numpy as np
+
+from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.io.bigtiff_tiles import ClassicTiffFloatTileReader
+from blender_terrain.models import ProjectedBounds
+from blender_terrain.providers.copernicus_dem import glo30_tiles_for_roi
+
+
+def test_discovers_valencia_glo30_tile() -> None:
+    tiles = glo30_tiles_for_roi(BBoxWGS84(-0.39, 39.46, -0.37, 39.48))
+
+    assert len(tiles) == 1
+    assert "N39_00_W001_00" in tiles[0].url
+    assert tiles[0].bounds == BBoxWGS84(-1.0, 39.0, 0.0, 40.0)
+
+
+def test_discovers_multiple_tiles_in_stable_geographic_order() -> None:
+    tiles = glo30_tiles_for_roi(BBoxWGS84(-0.1, 39.9, 1.1, 41.1))
+
+    assert [(tile.longitude, tile.latitude) for tile in tiles] == [
+        (-1, 41),
+        (0, 41),
+        (1, 41),
+        (-1, 40),
+        (0, 40),
+        (1, 40),
+        (-1, 39),
+        (0, 39),
+        (1, 39),
+    ]
+
+
+def test_exact_east_and_north_boundaries_do_not_add_tiles() -> None:
+    tiles = glo30_tiles_for_roi(BBoxWGS84(0.0, 39.0, 1.0, 40.0))
+
+    assert [(tile.longitude, tile.latitude) for tile in tiles] == [(0, 39)]
+
+
+def test_reads_classic_geographic_float_tiff_window(tmp_path: Path) -> None:
+    path = tmp_path / "glo30.tif"
+    values = np.arange(16, dtype="<f4").reshape(4, 4)
+    _write_classic_float_tiff(path, values, predictor=3)
+
+    reader = ClassicTiffFloatTileReader(path)
+    data, bounds = reader.read_bounds(ProjectedBounds(-0.75, 39.25, -0.25, 39.75, 4326))
+
+    np.testing.assert_array_equal(data, values[1:3, 1:3])
+    assert bounds == ProjectedBounds(-0.75, 39.25, -0.25, 39.75, 4326)
+    assert reader.georeference.epsg == 4326
+
+
+def _write_classic_float_tiff(
+    path: Path, values: np.ndarray, *, predictor: int
+) -> None:
+    encoded = values.tobytes()
+    if predictor == 3:
+        native_bytes = values.view(np.uint8).reshape(*values.shape, 4)
+        rows = native_bytes[..., ::-1].transpose(0, 2, 1).reshape(values.shape[0], -1)
+        differences = np.empty_like(rows)
+        differences[:, 0] = rows[:, 0]
+        differences[:, 1:] = rows[:, 1:] - rows[:, :-1]
+        encoded = differences.tobytes()
+    compressed = zlib.compress(encoded)
+    entry_count = 15
+    external_offset = 8 + 2 + entry_count * 12 + 4
+    pixel_scale = struct.pack("<3d", 0.25, 0.25, 0.0)
+    tiepoint = struct.pack("<6d", 0.0, 0.0, 0.0, -1.0, 40.0, 0.0)
+    geo_keys = struct.pack(
+        "<16H",
+        1, 1, 0, 3,
+        1024, 0, 1, 2,
+        1025, 0, 1, 1,
+        2048, 0, 1, 4326,
+    )
+    pixel_scale_offset = external_offset
+    tiepoint_offset = pixel_scale_offset + len(pixel_scale)
+    geo_keys_offset = tiepoint_offset + len(tiepoint)
+    nodata_offset = geo_keys_offset + len(geo_keys)
+    data_offset = nodata_offset + 5
+    entries = [
+        (256, 4, 1, values.shape[1]),
+        (257, 4, 1, values.shape[0]),
+        (258, 3, 1, 32),
+        (259, 3, 1, 8),
+        (277, 3, 1, 1),
+        (317, 3, 1, predictor),
+        (322, 4, 1, values.shape[1]),
+        (323, 4, 1, values.shape[0]),
+        (324, 4, 1, data_offset),
+        (325, 4, 1, len(compressed)),
+        (339, 3, 1, 3),
+        (33550, 12, 3, pixel_scale_offset),
+        (33922, 12, 6, tiepoint_offset),
+        (34735, 3, 16, geo_keys_offset),
+        (42113, 2, 5, nodata_offset),
+    ]
+    entries.sort(key=lambda entry: entry[0])
+    directory = struct.pack("<H", entry_count)
+    directory += b"".join(struct.pack("<HHII", *entry) for entry in entries)
+    directory += struct.pack("<I", 0)
+    path.write_bytes(
+        b"II" + struct.pack("<HI", 42, 8)
+        + directory
+        + pixel_scale
+        + tiepoint
+        + geo_keys
+        + b"-9999"
+        + compressed
+    )

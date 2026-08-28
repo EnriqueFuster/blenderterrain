@@ -1,8 +1,8 @@
 """Constrained BigTIFF tile reading for the verified CNIG elevation layout.
 
-This module intentionally supports a narrow format: little-endian BigTIFF, one
-Float32 band, tiled storage, Adobe Deflate compression, and either no predictor
-or horizontal differencing.
+This module intentionally supports a narrow format: little-endian classic TIFF
+or BigTIFF, one Float32 band, tiled storage, Adobe Deflate compression, and the
+predictors observed in CNIG and Copernicus DEM.
 Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 """
 
@@ -42,6 +42,7 @@ _GEO_KEY_DIRECTORY: Final = 34735
 
 _GT_MODEL_TYPE: Final = 1024
 _GT_RASTER_TYPE: Final = 1025
+_GEOGRAPHIC_CRS_TYPE: Final = 2048
 _PROJECTED_CRS_TYPE: Final = 3072
 
 TagValue = tuple[int | float, ...] | str
@@ -178,6 +179,10 @@ class BigTiffFloatTileReader:
             tile = np.cumsum(differences, axis=1, dtype=np.uint32).view(
                 np.dtype(f"{self._byte_order}f4")
             )
+        elif self._predictor == 3:
+            tile = _decode_floating_point_predictor(
+                raw, self.layout.tile_height, self.layout.tile_width
+            )
         else:
             tile = np.frombuffer(raw, dtype=np.dtype(f"{self._byte_order}f4")).reshape(
                 self.layout.tile_height, self.layout.tile_width
@@ -307,8 +312,8 @@ class BigTiffFloatTileReader:
             raise RasterFormatError("Only Adobe Deflate TIFF compression is supported")
         if _single_value(tags, _SAMPLES_PER_PIXEL) != 1:
             raise RasterFormatError("Only single-band TIFF images are supported")
-        if _single_value(tags, _PREDICTOR) not in {1, 2}:
-            raise RasterFormatError("Only TIFF predictors 1 and 2 are supported")
+        if _single_value(tags, _PREDICTOR) not in {1, 2, 3}:
+            raise RasterFormatError("TIFF predictor is unsupported")
         if _single_value(tags, _SAMPLE_FORMAT) != 3:
             raise RasterFormatError("Only IEEE floating-point TIFF samples are supported")
         raw_nodata = tags.get(_GDAL_NODATA)
@@ -321,6 +326,54 @@ class BigTiffFloatTileReader:
         if not isinstance(value, tuple) or not all(isinstance(item, int) for item in value):
             raise RasterFormatError(f"BigTIFF required tag {tag} is missing or invalid")
         return tuple(item for item in value if isinstance(item, int))
+
+
+class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
+    """Read the classic little-endian Float32 tiled layout used by GLO-30."""
+
+    def _read_header(self) -> tuple[str, int]:
+        with self._path.open("rb") as stream:
+            header = stream.read(8)
+        if len(header) != 8 or header[:2] != b"II":
+            raise RasterFormatError("Only little-endian classic TIFF files are supported")
+        version, first_ifd_offset = struct.unpack("<HI", header[2:])
+        if version != 42:
+            raise RasterFormatError("Classic TIFF header version is invalid")
+        if not 8 <= first_ifd_offset < self._file_size:
+            raise RasterFormatError("Classic TIFF first directory offset is invalid")
+        return "<", first_ifd_offset
+
+    def _read_first_directory(self, offset: int) -> dict[int, TagValue]:
+        with self._path.open("rb") as stream:
+            stream.seek(offset)
+            count_bytes = stream.read(2)
+            if len(count_bytes) != 2:
+                raise RasterFormatError("Classic TIFF directory is truncated")
+            entry_count = struct.unpack("<H", count_bytes)[0]
+            directory_size = 2 + entry_count * 12 + 4
+            if offset + directory_size > self._file_size:
+                raise RasterFormatError("Classic TIFF directory points outside the source file")
+            entries = stream.read(entry_count * 12)
+
+        tags: dict[int, TagValue] = {}
+        for index in range(entry_count):
+            entry = entries[index * 12 : (index + 1) * 12]
+            tag, value_type, value_count, value_or_offset = struct.unpack("<HHII", entry)
+            if value_type not in _TYPE_SIZES:
+                continue
+            value_size = _TYPE_SIZES[value_type] * value_count
+            if value_size > self._file_size:
+                raise RasterFormatError("Classic TIFF tag has an unreasonable value size")
+            if value_size <= 4:
+                encoded = entry[8 : 8 + value_size]
+            else:
+                if value_or_offset + value_size > self._file_size:
+                    raise RasterFormatError("Classic TIFF tag points outside the source file")
+                with self._path.open("rb") as stream:
+                    stream.seek(value_or_offset)
+                    encoded = stream.read(value_size)
+            tags[tag] = _decode_value(value_type, value_count, encoded)
+        return tags
 
 
 def _decode_value(value_type: int, count: int, encoded: bytes) -> TagValue:
@@ -349,12 +402,14 @@ def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:
         raise RasterFormatError("GeoTIFF vertical model coordinates are not supported")
 
     keys = _parse_geo_keys(tags)
-    if keys.get(_GT_MODEL_TYPE) != 1:
-        raise RasterFormatError("Only projected GeoTIFF coordinate systems are supported")
+    model_type = keys.get(_GT_MODEL_TYPE)
+    if model_type not in {1, 2}:
+        raise RasterFormatError("GeoTIFF coordinate system type is unsupported")
     raster_type = keys.get(_GT_RASTER_TYPE)
     if raster_type not in {1, 2}:
         raise RasterFormatError("GeoTIFF raster type is missing or unsupported")
-    declared_epsg = keys.get(_PROJECTED_CRS_TYPE)
+    crs_key = _PROJECTED_CRS_TYPE if model_type == 1 else _GEOGRAPHIC_CRS_TYPE
+    declared_epsg = keys.get(crs_key)
     if declared_epsg is None or declared_epsg == 32767:
         raise RasterFormatError("GeoTIFF has no directly encoded projected EPSG code")
     epsg = _canonical_xy_epsg(declared_epsg)
@@ -408,6 +463,18 @@ def _inflate_exact(compressed: bytes, expected_size: int) -> bytes:
     if len(raw) != expected_size or decompressor.unconsumed_tail or decompressor.unused_data:
         raise RasterFormatError("TIFF tile does not decompress to its expected size")
     return raw
+
+
+def _decode_floating_point_predictor(
+    encoded: bytes, height: int, width: int
+) -> NDArray[np.float32]:
+    """Undo TIFF Predictor 3 for one little-endian single-band Float32 tile."""
+
+    rows = np.frombuffer(encoded, dtype=np.uint8).copy().reshape(height, width * 4)
+    np.cumsum(rows, axis=1, dtype=np.uint8, out=rows)
+    bytes_by_significance = rows.reshape(height, 4, width)
+    native_bytes = bytes_by_significance[:, ::-1, :].transpose(0, 2, 1).copy()
+    return native_bytes.view("<f4").reshape(height, width)
 
 
 def _floor_grid_coordinate(value: float) -> int:
