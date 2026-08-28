@@ -196,12 +196,20 @@ def _draw_local_settings(layout: bpy.types.UILayout, properties: object) -> None
     elevation.label(text="Elevation Raster (Required)", icon="IMAGE_DATA")
     elevation.prop(properties, "local_elevation_path", text="File or Folder")
     elevation.label(text="Compatible CNIG Float32 TIFF or TIFF folder", icon="INFO")
+    if properties.local_elevation_summary:
+        elevation.label(text=properties.local_elevation_summary, icon="CHECKMARK")
     elevation.prop(properties, "product", text="Elevation Model")
     _draw_elevation_output_settings(elevation, properties)
     imagery = layout.box()
-    imagery.enabled = False
-    imagery.label(text="Local Imagery (Coming Later)", icon="IMAGE_RGB")
-    imagery.label(text="No image selected; Blender material will be used")
+    imagery.label(text="Local Imagery (Optional)", icon="IMAGE_RGB")
+    imagery.prop(properties, "use_local_imagery")
+    if properties.use_local_imagery:
+        imagery.prop(properties, "local_imagery_path")
+        imagery.label(text="PNG + PGW/WLD + PRJ", icon="INFO")
+        if properties.local_imagery_summary:
+            imagery.label(text=properties.local_imagery_summary, icon="CHECKMARK")
+    else:
+        imagery.label(text="Blender's default material will be used", icon="INFO")
 
 
 def _draw_elevation_output_settings(layout: bpy.types.UILayout, properties: object) -> None:
@@ -316,14 +324,14 @@ class BLENDERTERRAIN_PT_creation(bpy.types.Panel):
         if properties.imagery_available:
             controls.prop(properties, "pack_imagery")
             controls.label(
-                text=f"PNOA cache size: {properties.imagery_size_mib:.1f} MiB",
+                text=f"External imagery size: {properties.imagery_size_mib:.1f} MiB",
                 icon="INFO",
             )
         controls.prop(properties, "adjust_viewport_clip_end")
         controls.operator("blender_terrain.create_terrain", icon="MESH_GRID")
         if properties.terrain_created and properties.imagery_available:
             if properties.imagery_packed:
-                self.layout.label(text="PNOA images packed in .blend", icon="PACKAGE")
+                self.layout.label(text="Terrain images packed in .blend", icon="PACKAGE")
             else:
                 self.layout.operator("blender_terrain.pack_imagery", icon="PACKAGE")
 
@@ -362,16 +370,15 @@ class BLENDERTERRAIN_PT_imported(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
 
-    @classmethod
-    def poll(cls, context: bpy.types.Context) -> bool:
-        return any(
-            isinstance(collection.get("blender_terrain_import_id"), str)
-            for collection in bpy.data.collections
-        )
-
     def draw(self, context: bpy.types.Context) -> None:
         properties = context.scene.blender_terrain_roi
         controls = self.layout
+        if not any(
+            isinstance(collection.get("blender_terrain_import_id"), str)
+            for collection in bpy.data.collections
+        ):
+            controls.label(text="No terrain has been created yet", icon="INFO")
+            return
         controls.prop(properties, "active_import_id")
         controls.operator("blender_terrain.select_import_objects", icon="RESTRICT_SELECT_OFF")
         if properties.active_import_representation == "DISPLACEMENT":

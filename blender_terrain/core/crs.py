@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..errors import NoCoverageError
+from ..errors import NoCoverageError, UserInputError
 from .roi import BBoxWGS84
 from .territory import TerritoryGroup, classify_territory_envelope
 
@@ -42,6 +42,15 @@ _ZONE_LONGITUDE_RANGES = {
     30: (-6.0, 0.0),
     31: (0.0, 6.0),
 }
+
+
+def crs_from_epsg(epsg: int) -> CRSInfo:
+    """Return a supported Spanish projected CRS by canonical EPSG code."""
+
+    for crs in _SUPPORTED_CRS.values():
+        if crs.epsg == epsg:
+            return crs
+    raise UserInputError(f"Local raster CRS EPSG:{epsg} is not supported")
 
 
 def split_bbox_by_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:

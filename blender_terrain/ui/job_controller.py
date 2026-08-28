@@ -12,7 +12,12 @@ from uuid import uuid4
 
 import bpy
 
-from ..core import RESOURCE_PROFILES, RegionOfInterest
+from ..core import (
+    RESOURCE_PROFILES,
+    RegionOfInterest,
+    inspect_local_imagery,
+    resolve_local_elevation_paths,
+)
 from ..errors import JobFormatError, UserInputError
 from ..jobs.models import DiscoveryJob, JobState
 from ..jobs.storage import (
@@ -192,7 +197,11 @@ def retry_last_job(context: bpy.types.Context) -> None:
 
 
 def _job_requires_network(job: DiscoveryJob, mode: str) -> bool:
-    return mode == "availability" or not job.local_elevation_paths or job.use_imagery
+    return (
+        mode == "availability"
+        or not job.local_elevation_paths
+        or (job.use_imagery and job.local_imagery_path is None)
+    )
 
 
 def _launch_worker(
@@ -495,6 +504,12 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
             if properties.elevation_source == "LOCAL"
             else ()
         )
+        local_imagery = (
+            inspect_local_imagery(Path(bpy.path.abspath(properties.local_imagery_path)))
+            if properties.elevation_source == "LOCAL"
+            and properties.use_local_imagery
+            else None
+        )
         elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
         return DiscoveryJob(
             task_id=task_id,
@@ -507,7 +522,9 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
                 else float(properties.elevation_resolution)
             ),
             use_imagery=(
-                properties.use_imagery and properties.elevation_source == "CNIG"
+                properties.use_imagery
+                if properties.elevation_source == "CNIG"
+                else local_imagery is not None
             ),
             imagery_gsd_metres=(
                 None
@@ -527,6 +544,18 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
             ),
             region=region,
             local_elevation_paths=local_paths,
+            local_imagery_path=(
+                None if local_imagery is None else str(local_imagery.path)
+            ),
+            local_imagery_bounds=(
+                None if local_imagery is None else local_imagery.bounds
+            ),
+            local_imagery_width=(
+                None if local_imagery is None else local_imagery.width
+            ),
+            local_imagery_height=(
+                None if local_imagery is None else local_imagery.height
+            ),
             maximum_elevation_samples=elevation_limit,
             maximum_imagery_pixels=imagery_limit,
         )
@@ -535,18 +564,10 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
 
 
 def _local_elevation_paths(raw_path: str) -> tuple[str, ...]:
-    path = Path(bpy.path.abspath(raw_path)).expanduser().resolve()
-    if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}:
-        return (str(path),)
-    if path.is_dir():
-        paths = tuple(
-            str(candidate.resolve())
-            for candidate in sorted(path.iterdir())
-            if candidate.is_file() and candidate.suffix.lower() in {".tif", ".tiff"}
-        )
-        if paths:
-            return paths
-    raise UserInputError("Choose an elevation TIFF or a folder containing TIFF files")
+    return tuple(
+        str(path)
+        for path in resolve_local_elevation_paths(bpy.path.abspath(raw_path))
+    )
 
 
 def _scene_properties(scene_name: str) -> Any | None:

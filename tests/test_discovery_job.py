@@ -119,6 +119,17 @@ class DiscoveryJobStorageTests(unittest.TestCase):
             self.assertEqual(read_discovery_job(path), expected)
             self.assertFalse(path.with_name("job.json.part").exists())
 
+    def test_reads_previous_job_schema_without_local_imagery(self) -> None:
+        expected = job()
+        payload = expected.to_dict()
+        payload["schema_version"] = 6
+        payload.pop("local_imagery_path")
+        payload.pop("local_imagery_bounds")
+        payload.pop("local_imagery_width")
+        payload.pop("local_imagery_height")
+
+        self.assertEqual(DiscoveryJob.from_dict(payload), expected)
+
     def test_round_trips_manual_terrain_layout(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "job.json"
@@ -172,6 +183,31 @@ class DiscoveryJobStorageTests(unittest.TestCase):
                 use_imagery=False,
                 imagery_gsd_metres=None,
                 local_elevation_paths=("C:/data/tile-a.tif", "C:/data/tile-b.tif"),
+            )
+
+            write_discovery_job(path, expected)
+
+            self.assertEqual(read_discovery_job(path), expected)
+
+    def test_round_trips_local_imagery_metadata(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "job.json"
+            base = job()
+            expected = DiscoveryJob(
+                task_id=base.task_id,
+                import_id=base.import_id,
+                bounds=base.bounds,
+                product=base.product,
+                elevation_resolution_metres=base.elevation_resolution_metres,
+                use_imagery=True,
+                imagery_gsd_metres=None,
+                local_elevation_paths=("C:/data/elevation.tif",),
+                local_imagery_path="C:/data/ortho.png",
+                local_imagery_bounds=ProjectedBounds(
+                    700_000, 4_370_000, 701_000, 4_371_000, 25830
+                ),
+                local_imagery_width=1_000,
+                local_imagery_height=1_000,
             )
 
             write_discovery_job(path, expected)

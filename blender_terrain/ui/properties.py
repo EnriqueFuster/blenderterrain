@@ -55,6 +55,9 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.imagery_packed = False
     properties.imagery_available = False
     properties.imagery_size_mib = 0.0
+    properties.local_elevation_summary = ""
+    properties.local_native_resolution = 0.0
+    properties.local_imagery_summary = ""
 
 
 def _data_source_changed(properties: object, context: bpy.types.Context) -> None:
@@ -160,6 +163,18 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     local_elevation_path: StringProperty(
         name="Raster or Folder",
         description="Compatible elevation .tif/.tiff file or folder containing source tiles",
+        subtype="FILE_PATH",
+        update=_invalidate_validation,
+    )
+    use_local_imagery: BoolProperty(
+        name="Use Local Imagery",
+        description="Texture the terrain with a georeferenced local PNG",
+        default=False,
+        update=_invalidate_validation,
+    )
+    local_imagery_path: StringProperty(
+        name="Image",
+        description="PNG with same-name .pgw or .wld and .prj sidecars",
         subtype="FILE_PATH",
         update=_invalidate_validation,
     )
@@ -307,6 +322,9 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     sample_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     selected_resolution: FloatProperty(default=0.0, options={"HIDDEN"})
     imagery_summary: StringProperty(default="", options={"HIDDEN"})
+    local_elevation_summary: StringProperty(default="", options={"HIDDEN"})
+    local_native_resolution: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})
+    local_imagery_summary: StringProperty(default="", options={"HIDDEN"})
     product_availability_json: StringProperty(default="[]", options={"HIDDEN"})
     product_availability_summary: StringProperty(default="", options={"HIDDEN"})
     terrain_tile_count: IntProperty(default=0, min=0, options={"HIDDEN"})
@@ -336,8 +354,8 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     terrain_created: BoolProperty(default=False, options={"HIDDEN"})
     import_id: StringProperty(default="", options={"HIDDEN"})
     pack_imagery: BoolProperty(
-        name="Pack PNOA into .blend",
-        description="Embed PNOA images in the blend file when creating the terrain",
+        name="Pack Imagery into .blend",
+        description="Embed terrain images in the blend file when creating the terrain",
         default=False,
     )
     full_resolution_mesh: BoolProperty(

@@ -13,9 +13,13 @@ from ..core import (
     BBoxWGS84,
     RegionOfInterest,
     bbox_from_center_size,
+    bounds_fully_covered,
     create_import_plan,
     format_bbox,
+    inspect_local_elevation,
+    inspect_local_imagery,
     parse_bbox,
+    resolve_local_elevation_paths,
     subdivision_risk_message,
 )
 from ..core.cache_inventory import clear_cache, inspect_cache
@@ -238,11 +242,47 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
 
         properties = context.scene.blender_terrain_roi
         try:
-            if _product_availability_status(properties, properties.product) == "NO_COVERAGE":
+            local_inspection = None
+            if properties.elevation_source == "LOCAL":
+                raw_path = bpy.path.abspath(properties.local_elevation_path)
+                local_inspection = inspect_local_elevation(
+                    resolve_local_elevation_paths(raw_path)
+                )
+                bounds = local_inspection.bounds_wgs84
+                _store_bounds(properties, bounds)
+                properties.roi_geometry_json = json.dumps(
+                    RegionOfInterest.from_bbox(bounds).to_geojson_geometry(),
+                    separators=(",", ":"),
+                )
+                if properties.use_local_imagery:
+                    local_imagery = inspect_local_imagery(
+                        Path(bpy.path.abspath(properties.local_imagery_path))
+                    )
+                    if any(
+                        projected.epsg != local_imagery.bounds.epsg
+                        or not bounds_fully_covered(
+                            projected, (local_imagery.bounds,)
+                        )
+                        for projected in local_inspection.projected_bounds
+                    ):
+                        raise UserInputError(
+                            "Local imagery must use the elevation CRS and cover its full extent"
+                        )
+                    properties.local_imagery_summary = (
+                        f"{local_imagery.width:,} x {local_imagery.height:,} px, "
+                        f"{local_imagery.gsd_metres:g} m, "
+                        f"EPSG:{local_imagery.bounds.epsg}"
+                    )
+            else:
+                bounds = _bounds_from_properties(properties, store_derived=True)
+            if (
+                properties.elevation_source == "CNIG"
+                and _product_availability_status(properties, properties.product)
+                == "NO_COVERAGE"
+            ):
                 raise UserInputError(
                     "The availability check found no coverage for this product and ROI"
                 )
-            bounds = _bounds_from_properties(properties, store_derived=True)
             elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
             plan = create_import_plan(
                 bounds=bounds,
@@ -252,7 +292,9 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     if properties.elevation_resolution == "AUTO"
                     else float(properties.elevation_resolution)
                 ),
-                use_imagery=properties.use_imagery,
+                use_imagery=(
+                    properties.use_imagery and properties.elevation_source == "CNIG"
+                ),
                 imagery_gsd_metres=(
                     None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
                 ),
@@ -268,6 +310,16 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 ),
                 maximum_elevation_samples=elevation_limit,
                 maximum_imagery_pixels=imagery_limit,
+                native_resolution_override=(
+                    None
+                    if local_inspection is None
+                    else local_inspection.native_resolution_metres
+                ),
+                projected_bounds_override=(
+                    None
+                    if local_inspection is None
+                    else local_inspection.projected_bounds
+                ),
             )
         except BlenderTerrainError as exc:
             properties.is_valid = False
@@ -283,11 +335,27 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             properties.estimated_base_vertices = 0
             properties.estimated_texture_gpu_mib = 0.0
             properties.planning_warning = ""
+            properties.local_elevation_summary = ""
+            properties.local_native_resolution = 0.0
+            properties.local_imagery_summary = ""
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 
         properties.is_valid = True
-        properties.validation_message = "ROI is valid for offline planning"
+        properties.validation_message = (
+            "Local elevation rasters are valid"
+            if local_inspection is not None
+            else "ROI is valid for offline planning"
+        )
+        if local_inspection is not None:
+            properties.local_native_resolution = (
+                local_inspection.native_resolution_metres
+            )
+            properties.local_elevation_summary = (
+                f"{len(local_inspection.paths)} TIFF file(s), "
+                f"{local_inspection.native_resolution_metres:g} m, "
+                + ", ".join(f"EPSG:{epsg}" for epsg in local_inspection.epsg_codes)
+            )
         properties.crs_summary = ", ".join(
             f"EPSG:{area.crs.epsg}" for area in plan.work_areas
         )
@@ -739,18 +807,18 @@ class BLENDERTERRAIN_OT_restore_selected_settings(bpy.types.Operator):
 
 
 class BLENDERTERRAIN_OT_pack_imagery(bpy.types.Operator):
-    """Pack cached PNOA images used by the current terrain into the blend file."""
+    """Pack external images used by the current terrain into the blend file."""
 
     bl_idname = "blender_terrain.pack_imagery"
-    bl_label = "Pack PNOA Images"
-    bl_description = "Store copies of this terrain's external PNOA images inside the blend file"
+    bl_label = "Pack Terrain Images"
+    bl_description = "Store copies of this terrain's external images inside the blend file"
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
         size = context.scene.blender_terrain_roi.imagery_size_mib
         return context.window_manager.invoke_confirm(
             self,
             event,
-            title="Pack PNOA Images",
+            title="Pack Terrain Images",
             message=(
                 f"Embed approximately {size:.1f} MiB in the blend file? "
                 "The external cache files will be kept."
@@ -768,11 +836,11 @@ class BLENDERTERRAIN_OT_pack_imagery(bpy.types.Operator):
         try:
             images = pack_collection_images(collection)
         except RuntimeError as exc:
-            self.report({"ERROR"}, f"Cannot pack PNOA images: {exc}")
+            self.report({"ERROR"}, f"Cannot pack terrain images: {exc}")
             return {"CANCELLED"}
         if not images:
-            self.report({"WARNING"}, "This terrain has no PNOA images to pack")
+            self.report({"WARNING"}, "This terrain has no external images to pack")
             return {"CANCELLED"}
         properties.imagery_packed = True
-        self.report({"INFO"}, f"Packed {len(images)} PNOA image(s) into the blend file")
+        self.report({"INFO"}, f"Packed {len(images)} terrain image(s) into the blend file")
         return {"FINISHED"}

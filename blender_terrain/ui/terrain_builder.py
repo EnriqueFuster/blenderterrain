@@ -230,7 +230,7 @@ def create_terrain_objects(
         raise
     _select_created_objects(context, objects)
     if pack_images:
-        _report_build_progress(progress_callback, 0.92, "Packing PNOA imagery")
+        _report_build_progress(progress_callback, 0.92, "Packing terrain imagery")
         pack_collection_images(collection)
     _report_build_progress(
         progress_callback, 1.0, f"Created {len(objects)} terrain object(s)"
@@ -372,7 +372,7 @@ def _create_imagery_material(
     if not bounds_fully_covered(
         terrain_bounds, tuple(entry.bounds for entry, _ in coverage)
     ):
-        raise RasterFormatError("PNOA imagery does not cover the complete terrain tile")
+        raise RasterFormatError("Imagery does not cover the complete terrain tile")
 
     material = bpy.data.materials.new(name)
     material["blender_terrain_import_id"] = import_id
@@ -498,7 +498,7 @@ def _parse_entry(entry: object) -> tuple[Path, ProjectedBounds, int, int, float]
 
 def _parse_imagery(entries: object) -> tuple[_ImageryEntry, ...]:
     if not isinstance(entries, list):
-        raise RasterFormatError("Delivery result contains invalid PNOA imagery")
+        raise RasterFormatError("Delivery result contains invalid terrain imagery")
     parsed: list[_ImageryEntry] = []
     for entry in entries:
         try:
@@ -514,6 +514,6 @@ def _parse_imagery(entries: object) -> tuple[_ImageryEntry, ...]:
             if not path.is_file():
                 raise ValueError
         except (KeyError, TypeError, ValueError) as exc:
-            raise RasterFormatError("Delivery result contains invalid PNOA imagery") from exc
+            raise RasterFormatError("Delivery result contains invalid terrain imagery") from exc
         parsed.append(_ImageryEntry(path, bounds))
     return tuple(parsed)

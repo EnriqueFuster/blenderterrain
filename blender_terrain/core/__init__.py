@@ -15,6 +15,12 @@ from .grid import (
 )
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
 from .imagery import ImageryTileRequest, plan_imagery_tiles
+from .local_elevation import (
+    LocalElevationInspection,
+    inspect_local_elevation,
+    resolve_local_elevation_paths,
+)
+from .local_imagery import LocalImageryInspection, inspect_local_imagery
 from .mesh_geometry import (
     DEFAULT_PREVIEW_SUBDIVISION_LEVEL,
     PREVIEW_MESH_REDUCTION_FACTOR,
@@ -68,6 +74,8 @@ __all__ = [
     "ImageryEstimate",
     "ImageryTileRequest",
     "ImportPlan",
+    "LocalElevationInspection",
+    "LocalImageryInspection",
     "PolygonWGS84",
     "ProcessedElevationTile",
     "ProjectedPoint",
@@ -94,6 +102,8 @@ __all__ = [
     "discover_sources",
     "estimate_bbox",
     "format_bbox",
+    "inspect_local_elevation",
+    "inspect_local_imagery",
     "normalize_heightmap",
     "parse_bbox",
     "plan_imagery_tiles",
@@ -103,6 +113,7 @@ __all__ = [
     "project_work_area_bounds",
     "projected_texture_transform",
     "read_terrain_metadata",
+    "resolve_local_elevation_paths",
     "select_catalog_items",
     "split_bbox_by_utm_zone",
     "subdivision_risk_message",

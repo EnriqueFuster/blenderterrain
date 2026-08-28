@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from blender_terrain.core import inspect_local_elevation, resolve_local_elevation_paths
 from blender_terrain.errors import RasterFormatError
 from blender_terrain.io.bigtiff_tiles import BigTiffFloatTileReader, PixelWindow
 from blender_terrain.io.elevation_mosaic import read_elevation_mosaic
@@ -15,6 +16,42 @@ from blender_terrain.models import ProjectedBounds
 
 
 class BigTiffTilesTests(unittest.TestCase):
+    def test_inspects_local_elevation_and_derives_wgs84_bounds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "elevation.tif"
+            _write_minimal_bigtiff(path, np.zeros((2, 2), dtype="<f4"))
+
+            inspection = inspect_local_elevation(resolve_local_elevation_paths(path))
+
+            self.assertEqual(inspection.paths, (path.resolve(),))
+            self.assertEqual(inspection.epsg_codes, (25830,))
+            self.assertEqual(inspection.projected_bounds[0].epsg, 25830)
+            self.assertEqual(inspection.native_resolution_metres, 2.0)
+            self.assertEqual(inspection.total_source_pixels, 4)
+            self.assertLess(inspection.bounds_wgs84.west, inspection.bounds_wgs84.east)
+
+    def test_resolves_a_local_folder_deterministically(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            _write_minimal_bigtiff(folder / "b.tif", np.zeros((2, 2), dtype="<f4"))
+            _write_minimal_bigtiff(folder / "a.tiff", np.zeros((2, 2), dtype="<f4"))
+            (folder / "ignore.txt").write_text("not a raster", encoding="utf-8")
+
+            paths = resolve_local_elevation_paths(folder)
+
+            self.assertEqual([path.name for path in paths], ["a.tiff", "b.tif"])
+
+    def test_rejects_a_gap_between_local_tiles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            _write_minimal_bigtiff(folder / "west.tif", np.zeros((2, 2), dtype="<f4"))
+            _write_minimal_bigtiff(
+                folder / "east.tif", np.zeros((2, 2), dtype="<f4"), model_x=108.0
+            )
+
+            with self.assertRaisesRegex(RasterFormatError, "contain gaps"):
+                inspect_local_elevation(resolve_local_elevation_paths(folder))
+
     def test_reads_a_single_compressed_tile_and_nodata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "elevation.tif"

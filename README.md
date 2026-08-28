@@ -37,15 +37,17 @@ The current implementation includes:
    subdivision controls;
 10. optional packing of PNOA images into the `.blend` file;
 11. compatible local elevation TIFF or TIFF-folder processing without copying the
-    source files;
-12. optional automatic 3D viewport `Clip End` adjustment after creation.
-13. conservative, balanced and large resource profiles that change elevation and
+    source files, with automatic CRS, grid, coverage and ROI validation;
+12. optional automatic 3D viewport `Clip End` adjustment after creation;
+13. optional local PNG terrain imagery using same-name PGW/WLD and PRJ sidecars,
+    validated against the elevation CRS and full spatial extent;
+14. conservative, balanced and large resource profiles that change elevation and
     imagery planning limits before any download starts;
-14. cache inspection and selective cleanup for elevation, imagery, processed
+15. cache inspection and selective cleanup for elevation, imagery, processed
     terrain, job records, or incomplete files;
-15. retry of the last interrupted or failed acquisition job, reusing every
+16. retry of the last interrupted or failed acquisition job, reusing every
     validated cached file; and
-16. per-stage delivery timing and an explicit cached-file reuse summary.
+17. per-stage delivery timing and an explicit cached-file reuse summary.
 
 Subdivision follows Blender's technical range from 0 to 11. The interface warns
 from level 3 because each additional level can multiply the generated face count

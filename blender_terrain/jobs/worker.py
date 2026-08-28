@@ -17,6 +17,7 @@ from ..core import (
     create_import_plan,
     deliver_plan_sources,
     discover_sources,
+    inspect_local_imagery,
     plan_imagery_tiles,
     process_elevation_tiles,
 )
@@ -112,6 +113,17 @@ def run_discovery_job(
         check_cancelled()
         job = read_discovery_job(job_path)
         plan = _create_plan(job)
+        local_imagery = (
+            inspect_local_imagery(Path(job.local_imagery_path))
+            if job.local_imagery_path is not None
+            else None
+        )
+        if local_imagery is not None and (
+            local_imagery.bounds != job.local_imagery_bounds
+            or local_imagery.width != job.local_imagery_width
+            or local_imagery.height != job.local_imagery_height
+        ):
+            raise JobFormatError("Local imagery changed after the job was created")
         check_cancelled()
         if job.local_elevation_paths:
             emit(JobState.DISCOVERING, 0.25, "Validating local elevation sources")
@@ -252,6 +264,17 @@ def run_delivery_job(
         emit(JobState.VALIDATING, 0.02, "Validating data delivery job")
         job = read_discovery_job(job_path)
         plan = _create_plan(job)
+        local_imagery = (
+            inspect_local_imagery(Path(job.local_imagery_path))
+            if job.local_imagery_path is not None
+            else None
+        )
+        if local_imagery is not None and (
+            local_imagery.bounds != job.local_imagery_bounds
+            or local_imagery.width != job.local_imagery_width
+            or local_imagery.height != job.local_imagery_height
+        ):
+            raise JobFormatError("Local imagery changed after the job was created")
         if cancelled():
             raise JobCancelled("Data delivery was cancelled")
         if job.local_elevation_paths:
@@ -364,6 +387,35 @@ def run_delivery_job(
         terminal_state = (
             JobState.COMPLETE_WITH_WARNINGS if delivered.warnings else JobState.COMPLETE
         )
+        result_imagery_paths = (
+            [str(local_imagery.path)]
+            if local_imagery is not None
+            else [str(path) for path in delivered.imagery_paths]
+        )
+        result_imagery = (
+            [
+                {
+                    "path": str(local_imagery.path),
+                    "bounds": asdict(local_imagery.bounds),
+                    "width": local_imagery.width,
+                    "height": local_imagery.height,
+                    "gsd_metres": local_imagery.gsd_metres,
+                }
+            ]
+            if local_imagery is not None
+            else [
+                {
+                    "path": str(path),
+                    "bounds": asdict(request.bounds),
+                    "width": request.width,
+                    "height": request.height,
+                    "gsd_metres": request.gsd_metres,
+                }
+                for path, request in zip(
+                    delivered.imagery_paths, imagery_requests, strict=False
+                )
+            ]
+        )
         payload = {
             "schema_version": RESULT_SCHEMA_VERSION,
             "task_id": job.task_id,
@@ -379,7 +431,9 @@ def run_delivery_job(
                 "elevation_resolution_metres": plan.elevation_resolution_metres,
                 "use_imagery": job.use_imagery,
                 "imagery_gsd_metres": (
-                    None if plan.imagery is None else plan.imagery.gsd_metres
+                    local_imagery.gsd_metres
+                    if local_imagery is not None
+                    else None if plan.imagery is None else plan.imagery.gsd_metres
                 ),
                 "manual_tile_rows": plan.manual_tile_rows,
                 "manual_tile_columns": plan.manual_tile_columns,
@@ -408,23 +462,16 @@ def run_delivery_job(
                 ),
                 "license": "CC BY 4.0-compatible IGN-CNIG data terms",
                 "retrieved_at_utc": datetime.now(UTC).isoformat(),
-                "pnoa_wms_url": WMS_URL if job.use_imagery else None,
-                "pnoa_layer": PNOA_LAYER if job.use_imagery else None,
+                "pnoa_wms_url": (
+                    WMS_URL if job.use_imagery and local_imagery is None else None
+                ),
+                "pnoa_layer": (
+                    PNOA_LAYER if job.use_imagery and local_imagery is None else None
+                ),
             },
             "elevation_paths": [str(path) for path in delivered.elevation_paths],
-            "imagery_paths": [str(path) for path in delivered.imagery_paths],
-            "imagery": [
-                {
-                    "path": str(path),
-                    "bounds": asdict(request.bounds),
-                    "width": request.width,
-                    "height": request.height,
-                    "gsd_metres": request.gsd_metres,
-                }
-                for path, request in zip(
-                    delivered.imagery_paths, imagery_requests, strict=False
-                )
-            ],
+            "imagery_paths": result_imagery_paths,
+            "imagery": result_imagery,
             "processed_elevation": processed_payload,
             "cache_reuse": {
                 "elevation_files": delivered.cached_elevation_count,
@@ -445,7 +492,7 @@ def run_delivery_job(
                 delivered.warnings[0]
                 if delivered.warnings
                 else f"Prepared {len(delivered.elevation_paths)} elevation and "
-                f"{len(delivered.imagery_paths)} imagery and "
+                f"{len(result_imagery_paths)} imagery and "
                 f"{len(processed_tiles)} processed terrain tile(s)"
             ),
         )
@@ -485,16 +532,28 @@ def _transfer_message(transfer: TransferProgress) -> str:
 
 
 def _create_plan(job: DiscoveryJob) -> ImportPlan:
+    local_native_resolution = None
+    local_projected_bounds = None
+    if job.local_elevation_paths:
+        from ..core.local_elevation import inspect_local_elevation
+
+        inspection = inspect_local_elevation(
+            tuple(Path(path) for path in job.local_elevation_paths)
+        )
+        local_native_resolution = inspection.native_resolution_metres
+        local_projected_bounds = inspection.projected_bounds
     return create_import_plan(
         job.bounds,
         job.product,
         job.elevation_resolution_metres,
-        job.use_imagery,
+        job.use_imagery and job.local_imagery_path is None,
         job.imagery_gsd_metres,
         job.manual_tile_rows,
         job.manual_tile_columns,
         job.maximum_elevation_samples,
         job.maximum_imagery_pixels,
+        native_resolution_override=local_native_resolution,
+        projected_bounds_override=local_projected_bounds,
     )
 
 
