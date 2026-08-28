@@ -31,6 +31,10 @@ def main() -> None:
         classes = addon.registered_class_types()
         assert all(class_type.is_registered for class_type in classes)
         assert classes[0].bl_idname == repository.name
+        panel_ids = {getattr(class_type, "bl_idname", "") for class_type in classes}
+        assert "BLENDERTERRAIN_PT_source" in panel_ids
+        assert "BLENDERTERRAIN_PT_area" not in panel_ids
+        assert "BLENDERTERRAIN_PT_acquisition" not in panel_ids
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
         properties = bpy.context.scene.blender_terrain_roi
         property_rna = type(properties).bl_rna.properties
@@ -100,6 +104,11 @@ def main() -> None:
         assert properties.job_state == "INVALID_DATA"
         assert "interrupted" in properties.job_message
         _smoke_terrain_operator(properties, use_imagery=_cycle == 0)
+        properties = bpy.context.scene.blender_terrain_roi
+        properties.use_imagery = True
+        properties.elevation_source = "LOCAL"
+        assert properties.elevation_source == "LOCAL"
+        properties.elevation_source = "CNIG"
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)
         assert not hasattr(bpy.types.Scene, "blender_terrain_roi")

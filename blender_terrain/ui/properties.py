@@ -57,6 +57,12 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.imagery_size_mib = 0.0
 
 
+def _data_source_changed(properties: object, context: bpy.types.Context) -> None:
+    """Reset validation when switching between online and local workflows."""
+
+    _invalidate_validation(properties, context)
+
+
 def _roi_definition_changed(properties: object, context: bpy.types.Context) -> None:
     """Invalidate planning and discard geometry superseded by an ROI input change."""
 
@@ -135,13 +141,21 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
 
     elevation_source: EnumProperty(
-        name="Elevation Source",
+        name="Data Source",
         items=(
-            ("CNIG", "Download from CNIG", "Discover and download official elevation data"),
-            ("LOCAL", "Local Raster", "Process a compatible local TIFF or a folder of TIFFs"),
+            (
+                "CNIG",
+                "Download Official Data",
+                "Define an area and download official IGN-CNIG and PNOA data",
+            ),
+            (
+                "LOCAL",
+                "Use Local Rasters",
+                "Prepare compatible raster files already stored on this computer",
+            ),
         ),
         default="CNIG",
-        update=_invalidate_validation,
+        update=_data_source_changed,
     )
     local_elevation_path: StringProperty(
         name="Raster or Folder",

@@ -30,13 +30,12 @@ from .ui.operators import (
     shutdown_map_selector,
 )
 from .ui.panels import (
-    BLENDERTERRAIN_PT_acquisition,
-    BLENDERTERRAIN_PT_area,
     BLENDERTERRAIN_PT_cache,
     BLENDERTERRAIN_PT_creation,
     BLENDERTERRAIN_PT_data,
     BLENDERTERRAIN_PT_imported,
     BLENDERTERRAIN_PT_main,
+    BLENDERTERRAIN_PT_source,
 )
 from .ui.preferences import BLENDERTERRAIN_AddonPreferences
 from .ui.properties import BLENDERTERRAIN_ROIProperties
@@ -63,9 +62,8 @@ _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_OT_restore_selected_settings,
     BLENDERTERRAIN_OT_cancel_discovery,
     BLENDERTERRAIN_PT_main,
-    BLENDERTERRAIN_PT_area,
+    BLENDERTERRAIN_PT_source,
     BLENDERTERRAIN_PT_data,
-    BLENDERTERRAIN_PT_acquisition,
     BLENDERTERRAIN_PT_creation,
     BLENDERTERRAIN_PT_imported,
     BLENDERTERRAIN_PT_cache,

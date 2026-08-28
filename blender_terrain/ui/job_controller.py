@@ -506,9 +506,14 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
                 if properties.elevation_resolution == "AUTO"
                 else float(properties.elevation_resolution)
             ),
-            use_imagery=properties.use_imagery,
+            use_imagery=(
+                properties.use_imagery and properties.elevation_source == "CNIG"
+            ),
             imagery_gsd_metres=(
-                None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
+                None
+                if properties.elevation_source == "LOCAL"
+                or properties.imagery_gsd == "AUTO"
+                else float(properties.imagery_gsd)
             ),
             manual_tile_rows=(
                 properties.manual_tile_rows
