@@ -9,6 +9,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Protocol
 
+from ..catalog.selection import AcquisitionPlan
 from ..core import (
     ImportPlan,
     ProcessedElevationTile,
@@ -21,6 +22,7 @@ from ..core import (
     plan_imagery_tiles,
     process_elevation_tiles,
 )
+from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
 from ..core.delivery import ElevationDownloader
 from ..core.discovery import CatalogDiscoveryProvider, DiscoveryResult
 from ..errors import (
@@ -39,6 +41,7 @@ from ..io.elevation_output import write_elevation_array
 from ..models import CatalogItem, DatasetProduct
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
+from ..providers.registry import build_raster_acquirers
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
 from .storage import (
     append_progress_event,
@@ -51,6 +54,29 @@ ProviderFactory = Callable[[], CatalogDiscoveryProvider]
 ELEVATION_PRODUCTS = tuple(
     product for product in DatasetProduct if product is not DatasetProduct.PNOA_MA
 )
+
+
+def acquire_confirmed_sources(
+    plan: AcquisitionPlan,
+    cache_directory: Path,
+    progress_callback: Callable[[TransferProgress], None] | None = None,
+    cancellation_requested: Callable[[], bool] = lambda: False,
+    acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
+        build_raster_acquirers
+    ),
+) -> tuple[AcquiredRasterLayer, ...]:
+    """Execute the exact per-layer providers confirmed before worker startup."""
+
+    provider_ids = tuple(
+        selection.provider_id for selection in plan.selections.selections
+    )
+    return acquire_plan_layers(
+        plan,
+        acquirer_factory(provider_ids),
+        cache_directory,
+        progress_callback,
+        cancellation_requested,
+    )
 
 
 class _LocalElevationClient:
