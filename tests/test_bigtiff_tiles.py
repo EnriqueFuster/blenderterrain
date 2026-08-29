@@ -269,6 +269,39 @@ class BigTiffTilesTests(unittest.TestCase):
 
             np.testing.assert_array_equal(actual, expected)
 
+    def test_converts_signed_int32_samples_to_float32(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "integer-elevation.tif"
+            expected = np.array([[238, 599], [-9999, -12]], dtype="<i4")
+            _write_minimal_bigtiff(path, expected)
+
+            actual = BigTiffFloatTileReader(path).read_tile(0, 0)
+
+            self.assertEqual(actual.dtype, np.float32)
+            np.testing.assert_array_equal(actual, expected.astype(np.float32))
+
+    def test_decodes_signed_int32_horizontal_differencing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "integer-predictor.tif"
+            expected = np.array([[238, 599], [-20, 12]], dtype="<i4")
+            _write_minimal_bigtiff(path, expected, predictor=2)
+
+            actual = BigTiffFloatTileReader(path).read_tile(0, 0)
+
+            np.testing.assert_array_equal(actual, expected.astype(np.float32))
+
+    def test_converts_scaled_uint16_uncertainty_to_float32(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "uncertainty.tif"
+            encoded = np.array([[0, 125], [350, 999]], dtype="<u2")
+            _write_minimal_bigtiff(path, encoded, predictor=2, scale=0.01, nodata="0")
+
+            reader = BigTiffFloatTileReader(path)
+            actual = reader.read_tile(0, 0)
+
+            self.assertEqual(reader.nodata, 0.0)
+            np.testing.assert_allclose(actual, encoded.astype(np.float32) * 0.01)
+
 
 def _write_minimal_bigtiff(
     path: Path,
@@ -278,7 +311,11 @@ def _write_minimal_bigtiff(
     projected_epsg: int = 25830,
     model_x: float = 100.0,
     model_y: float = 200.0,
+    scale: float = 1.0,
+    nodata: str = "-9999",
 ) -> None:
+    if values.dtype not in {np.dtype("<f4"), np.dtype("<i4"), np.dtype("<u2")}:
+        raise ValueError("Test fixture has an unsupported dtype")
     tile_height, tile_width = tile_shape or values.shape
     if values.shape[0] % tile_height or values.shape[1] % tile_width:
         raise ValueError("Test fixture dimensions must be divisible by tile dimensions")
@@ -288,12 +325,19 @@ def _write_minimal_bigtiff(
             tile = values[row : row + tile_height, column : column + tile_width]
             encoded = tile
             if predictor == 2:
-                bits = tile.view("<u4")
+                bits = tile.view("<u2" if tile.dtype.itemsize == 2 else "<u4")
                 encoded = np.empty_like(bits)
                 encoded[:, 0] = bits[:, 0]
                 encoded[:, 1:] = bits[:, 1:] - bits[:, :-1]
             compressed_tiles.append(zlib.compress(encoded.tobytes()))
-    entry_count = 15
+    metadata = (
+        b'<GDALMetadata><Item name="SCALE" sample="0">'
+        + str(scale).encode("ascii")
+        + b"</Item></GDALMetadata>\0"
+        if scale != 1.0
+        else b""
+    )
+    entry_count = 15 + bool(metadata)
     external_values_offset = 16 + 8 + entry_count * 20 + 8
     pixel_scale = struct.pack("<3d", 2.0, 2.0, 0.0)
     tiepoint = struct.pack("<6d", 0.0, 0.0, 0.0, model_x, model_y, 0.0)
@@ -316,10 +360,11 @@ def _write_minimal_bigtiff(
         1,
         projected_epsg,
     )
-    external_values = pixel_scale + tiepoint + geo_keys
+    external_values = pixel_scale + tiepoint + geo_keys + metadata
     pixel_scale_offset = external_values_offset
     tiepoint_offset = pixel_scale_offset + len(pixel_scale)
     geo_keys_offset = tiepoint_offset + len(tiepoint)
+    metadata_offset = geo_keys_offset + len(geo_keys)
     index_offset = external_values_offset + len(external_values)
     tile_offsets_offset = index_offset
     tile_byte_counts_offset = tile_offsets_offset + len(compressed_tiles) * 8
@@ -336,7 +381,7 @@ def _write_minimal_bigtiff(
     entries = [
         (256, 16, 1, values.shape[1]),
         (257, 16, 1, values.shape[0]),
-        (258, 3, 1, 32),
+        (258, 3, 1, values.dtype.itemsize * 8),
         (259, 3, 1, 8),
         (277, 3, 1, 1),
         (317, 3, 1, predictor),
@@ -344,12 +389,19 @@ def _write_minimal_bigtiff(
         (323, 16, 1, tile_height),
         (324, 16, len(compressed_tiles), tile_offsets_value),
         (325, 16, len(compressed_tiles), tile_byte_counts_value),
-        (339, 3, 1, 3),
+        (339, 3, 1, {"f": 3, "i": 2, "u": 1}[values.dtype.kind]),
         (33550, 12, 3, pixel_scale_offset),
         (33922, 12, 6, tiepoint_offset),
         (34735, 3, 16, geo_keys_offset),
-        (42113, 2, 6, int.from_bytes(b"-9999\0\0\0", "little")),
+        (
+            42113,
+            2,
+            len(nodata) + 1,
+            int.from_bytes((nodata + "\0").encode("ascii").ljust(8, b"\0"), "little"),
+        ),
     ]
+    if metadata:
+        entries.append((42112, 2, len(metadata), metadata_offset))
     entries.sort(key=lambda entry: entry[0])
     header = b"II" + struct.pack("<HHHQ", 43, 8, 0, 16)
     directory = struct.pack("<Q", entry_count)

@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from ..core.acquisition import RasterAcquirer
 from .cnig_acquisition import CnigElevationAcquirer
 from .copernicus_dem import CopernicusGlo30Acquirer
+from .gedtm30 import Gedtm30Acquirer
 
 
 def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcquirer]:
@@ -16,6 +17,7 @@ def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcqui
     factories = {
         "ign_cnig": CnigElevationAcquirer,
         "copernicus_dem": CopernicusGlo30Acquirer,
+        "openlandmap": Gedtm30Acquirer,
     }
     return {
         provider_id: factories[provider_id]()

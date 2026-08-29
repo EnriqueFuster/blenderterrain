@@ -98,7 +98,7 @@ def test_rejected_product_cannot_be_locked_into_a_plan() -> None:
     with pytest.raises(SelectionError, match="not a valid candidate"):
         create_acquisition_plan(
             request,
-            SelectionBundle((_selection(catalog, "GEDTM30_V11", DatasetKind.DTM),)),
+            SelectionBundle((_selection(catalog, "FR_RGE_ALTI_1M", DatasetKind.DTM),)),
             _candidate_sets(catalog, request),
         )
 

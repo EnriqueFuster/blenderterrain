@@ -101,8 +101,8 @@ def create_terrain_objects(
         sources, ensure_ascii=False, sort_keys=True
     )
     collection["blender_terrain_source"] = provenance["source"]
-    collection["blender_terrain_attribution"] = (
-        "Source: Instituto Geográfico Nacional de España (IGN-CNIG)"
+    collection["blender_terrain_attribution"] = str(
+        provenance.get("attribution", provenance["source"])
     )
     collection["blender_terrain_data_policy_url"] = provenance["data_policy_url"]
     collection["blender_terrain_data_license"] = provenance["license"]

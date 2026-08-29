@@ -29,6 +29,13 @@ _PRODUCT_ITEMS = (
         0,
         9,
     ),
+    (
+        "GEDTM30_V11",
+        "DTM (GEDTM30 v1.1, Global)",
+        "30 m modelled bare-earth terrain with uncertainty",
+        0,
+        10,
+    ),
 )
 
 
@@ -102,7 +109,7 @@ def _product_changed(properties: object, context: bpy.types.Context) -> None:
     """Reset incompatible output options when the native product changes."""
 
     if (
-        properties.product == "COPERNICUS_GLO30_2021"
+        properties.product in {"COPERNICUS_GLO30_2021", "GEDTM30_V11"}
         and properties.elevation_resolution not in {"AUTO", "50.0", "100.0"}
     ):
         properties.elevation_resolution = "AUTO"

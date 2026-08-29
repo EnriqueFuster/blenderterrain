@@ -23,12 +23,15 @@ class AcquiredRasterLayer:
     kind: DatasetKind
     paths: tuple[Path, ...]
     cached_count: int = 0
+    auxiliary_paths: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.paths:
             raise ValueError("An acquired raster layer must contain at least one file")
         if not 0 <= self.cached_count <= len(self.paths):
             raise ValueError("Cached file count is outside the acquired path count")
+        if set(self.paths) & set(self.auxiliary_paths):
+            raise ValueError("Primary and auxiliary raster paths must be distinct")
 
 
 class RasterAcquirer(Protocol):

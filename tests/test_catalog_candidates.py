@@ -27,14 +27,15 @@ def test_spanish_dtm_candidates_are_ranked_without_hiding_global_product() -> No
         "MDT05",
         "MDT25",
         "MDT200",
+        "GEDTM30_V11",
     }
     gedtm = next(
         candidate
-        for candidate in candidates.rejected
+        for candidate in candidates.valid
         if candidate.product.id == "GEDTM30_V11"
     )
     assert gedtm.coverage.value == "potential"
-    assert gedtm.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
+    assert gedtm.rejection_reasons == ()
 
 
 def test_implemented_global_dtm_coexists_with_ign_but_is_not_forced() -> None:

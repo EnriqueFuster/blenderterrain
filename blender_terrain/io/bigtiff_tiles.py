@@ -9,6 +9,7 @@ Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 from __future__ import annotations
 
 import math
+import re
 import struct
 import zlib
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ _TILE_OFFSETS: Final = 324
 _TILE_BYTE_COUNTS: Final = 325
 _SAMPLE_FORMAT: Final = 339
 _GDAL_NODATA: Final = 42113
+_GDAL_METADATA: Final = 42112
 _MODEL_PIXEL_SCALE: Final = 33550
 _MODEL_TIEPOINT: Final = 33922
 _GEO_KEY_DIRECTORY: Final = 34735
@@ -134,7 +136,7 @@ class PixelWindow:
 
 
 class BigTiffFloatTileReader:
-    """Read one compressed Float32 tile at a time from a verified CNIG TIFF."""
+    """Read supported compressed 32-bit samples as Float32 terrain values."""
 
     def __init__(self, path: Path | RandomAccessReader) -> None:
         self._source = (
@@ -144,6 +146,9 @@ class BigTiffFloatTileReader:
         self._byte_order, first_ifd_offset = self._read_header()
         tags = self._read_first_directory(first_ifd_offset)
         self._predictor = _single_value(tags, _PREDICTOR)
+        self._bits_per_sample = _single_value(tags, _BITS_PER_SAMPLE)
+        self._sample_format = _single_value(tags, _SAMPLE_FORMAT)
+        self._scale, self._offset = _parse_gdal_scale_offset(tags)
         self.layout = self._validate_layout(tags)
         self.georeference = _parse_georeference(tags)
         self._tile_offsets = self._required_values(tags, _TILE_OFFSETS)
@@ -159,7 +164,11 @@ class BigTiffFloatTileReader:
     def nodata(self) -> float:
         """Return declared NoData or an internal sentinel for all-valid rasters."""
 
-        return self.layout.nodata if self.layout.nodata is not None else DEFAULT_FLOAT_NODATA
+        return (
+            self.layout.nodata * self._scale + self._offset
+            if self.layout.nodata is not None
+            else DEFAULT_FLOAT_NODATA
+        )
 
     def read_tile(self, row: int, column: int) -> NDArray[np.float32]:
         """Return one image tile cropped to valid pixels at its outer edges."""
@@ -178,30 +187,50 @@ class BigTiffFloatTileReader:
         if len(compressed) != byte_count:
             raise RasterFormatError("TIFF tile is truncated")
 
-        expected_bytes = self.layout.tile_width * self.layout.tile_height * 4
+        expected_bytes = (
+            self.layout.tile_width
+            * self.layout.tile_height
+            * self._bits_per_sample
+            // 8
+        )
         raw = _inflate_exact(compressed, expected_bytes)
         if self._predictor == 2:
+            unsigned_type = "u2" if self._bits_per_sample == 16 else "u4"
             differences = np.frombuffer(
-                raw, dtype=np.dtype(f"{self._byte_order}u4")
+                raw, dtype=np.dtype(f"{self._byte_order}{unsigned_type}")
             ).reshape(self.layout.tile_height, self.layout.tile_width)
-            tile = np.cumsum(differences, axis=1, dtype=np.uint32).view(
-                np.dtype(f"{self._byte_order}f4")
-            )
+            cumulative_type = np.uint16 if self._bits_per_sample == 16 else np.uint32
+            reconstructed = np.cumsum(differences, axis=1, dtype=cumulative_type)
+            if self._sample_format == 3:
+                tile = reconstructed.view(np.dtype(f"{self._byte_order}f4"))
+            elif self._sample_format == 2:
+                tile = reconstructed.view(np.dtype(f"{self._byte_order}i4"))
+            else:
+                tile = reconstructed
         elif self._predictor == 3:
             tile = _decode_floating_point_predictor(
                 raw, self.layout.tile_height, self.layout.tile_width
             )
         else:
-            tile = np.frombuffer(raw, dtype=np.dtype(f"{self._byte_order}f4")).reshape(
-                self.layout.tile_height, self.layout.tile_width
-            )
+            sample_type = {
+                (1, 16): "u2",
+                (2, 32): "i4",
+                (3, 32): "f4",
+            }[(self._sample_format, self._bits_per_sample)]
+            tile = np.frombuffer(
+                raw, dtype=np.dtype(f"{self._byte_order}{sample_type}")
+            ).reshape(self.layout.tile_height, self.layout.tile_width)
         valid_height = min(
             self.layout.tile_height, self.layout.height - row * self.layout.tile_height
         )
         valid_width = min(
             self.layout.tile_width, self.layout.width - column * self.layout.tile_width
         )
-        return tile[:valid_height, :valid_width].copy()
+        result = tile[:valid_height, :valid_width].astype(np.float32, copy=True)
+        if self._scale != 1.0 or self._offset != 0.0:
+            result *= self._scale
+            result += self._offset
+        return result
 
     def read_window(
         self, row: int, column: int, height: int, width: int
@@ -307,16 +336,22 @@ class BigTiffFloatTileReader:
         tile_height = _single_value(tags, _TILE_LENGTH)
         if any(value <= 0 for value in (width, height, tile_width, tile_height)):
             raise RasterFormatError("TIFF image and tile dimensions must be positive")
-        if _single_value(tags, _BITS_PER_SAMPLE) != 32:
-            raise RasterFormatError("Only Float32 TIFF samples are supported")
+        if (self._sample_format, self._bits_per_sample) not in {
+            (1, 16),
+            (2, 32),
+            (3, 32),
+        }:
+            raise RasterFormatError("TIFF sample type is unsupported")
         if _single_value(tags, _COMPRESSION) != 8:
             raise RasterFormatError("Only Adobe Deflate TIFF compression is supported")
         if _single_value(tags, _SAMPLES_PER_PIXEL) != 1:
             raise RasterFormatError("Only single-band TIFF images are supported")
         if _single_value(tags, _PREDICTOR) not in {1, 2, 3}:
             raise RasterFormatError("TIFF predictor is unsupported")
-        if _single_value(tags, _SAMPLE_FORMAT) != 3:
-            raise RasterFormatError("Only IEEE floating-point TIFF samples are supported")
+        if self._sample_format == 2 and self._predictor == 3:
+            raise RasterFormatError("Floating-point prediction cannot encode signed integers")
+        if self._sample_format == 1 and self._predictor == 3:
+            raise RasterFormatError("Floating-point prediction cannot encode unsigned integers")
         raw_nodata = tags.get(_GDAL_NODATA)
         nodata = float(raw_nodata.rstrip("\x00")) if isinstance(raw_nodata, str) else None
         return TileLayout(width, height, tile_width, tile_height, nodata)
@@ -402,6 +437,29 @@ def _single_value(tags: dict[int, TagValue], tag: int) -> int:
     ):
         raise RasterFormatError(f"BigTIFF required tag {tag} is missing or invalid")
     return values[0]
+
+
+def _parse_gdal_scale_offset(tags: dict[int, TagValue]) -> tuple[float, float]:
+    metadata = tags.get(_GDAL_METADATA)
+    if not isinstance(metadata, str):
+        return 1.0, 0.0
+
+    def value(name: str, default: float) -> float:
+        match = re.search(
+            rf'<Item\s+name="{name}"[^>]*>([^<]+)</Item>', metadata, re.IGNORECASE
+        )
+        if match is None:
+            return default
+        parsed = float(match.group(1))
+        if not math.isfinite(parsed):
+            raise RasterFormatError("GDAL raster scale or offset is not finite")
+        return parsed
+
+    scale = value("SCALE", 1.0)
+    offset = value("OFFSET", 0.0)
+    if scale <= 0.0:
+        raise RasterFormatError("GDAL raster scale must be positive")
+    return scale, offset
 
 
 def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:

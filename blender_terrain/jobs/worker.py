@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -168,6 +169,9 @@ def run_confirmed_acquisition_job(
                         "provider_id": product.provider_id,
                         "product_id": product.id,
                         "paths": [str(path) for path in prepared.acquired.paths],
+                        "auxiliary_paths": [
+                            str(path) for path in prepared.acquired.auxiliary_paths
+                        ],
                     }
                 ],
                 "provenance": {
@@ -176,6 +180,7 @@ def run_confirmed_acquisition_job(
                     "license": product.license.identifier,
                     "attribution": product.license.attribution_text,
                     "retrieved_at_utc": datetime.now(UTC).isoformat(),
+                    "uncertainty_summary": _uncertainty_summary(prepared.acquired),
                 },
                 "elevation_paths": [str(path) for path in prepared.acquired.paths],
                 "imagery_paths": [],
@@ -202,6 +207,20 @@ def run_confirmed_acquisition_job(
         ValueError,
     ) as exc:
         return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+
+
+def _uncertainty_summary(acquired: AcquiredRasterLayer) -> dict[str, object] | None:
+    path = next(
+        (path for path in acquired.auxiliary_paths if path.name == "uncertainty.json"),
+        None,
+    )
+    if path is None:
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def acquire_confirmed_sources(
@@ -285,7 +304,7 @@ def prepare_confirmed_elevation(
         manual_tile_columns,
         maximum_elevation_samples=maximum_elevation_samples,
         native_resolution_override=product.capabilities.native_resolution_m,
-        use_global_utm=product.provider_id == "copernicus_dem",
+        use_global_utm=product.jurisdiction == "global",
     )
     def report_processing(completed: int, total: int) -> None:
         if cancellation_requested():

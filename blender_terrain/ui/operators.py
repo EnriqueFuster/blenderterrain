@@ -278,9 +278,13 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 bounds = _bounds_from_properties(properties, store_derived=True)
             if properties.elevation_source == "CNIG":
                 _refresh_available_products(properties, bounds)
+            global_product = properties.product in {
+                "COPERNICUS_GLO30_2021",
+                "GEDTM30_V11",
+            }
             if (
                 properties.elevation_source == "CNIG"
-                and properties.product != "COPERNICUS_GLO30_2021"
+                and not global_product
                 and _product_availability_status(properties, properties.product)
                 == "NO_COVERAGE"
             ):
@@ -288,12 +292,11 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     "The availability check found no coverage for this product and ROI"
                 )
             elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
-            is_glo30 = properties.product == "COPERNICUS_GLO30_2021"
             plan = create_import_plan(
                 bounds=bounds,
                 product=(
                     properties.product
-                    if is_glo30
+                    if global_product
                     else DatasetProduct(properties.product)
                 ),
                 elevation_resolution_metres=(
@@ -304,7 +307,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 use_imagery=(
                     properties.use_imagery
                     and properties.elevation_source == "CNIG"
-                    and not is_glo30
+                    and not global_product
                 ),
                 imagery_gsd_metres=(
                     None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
@@ -323,7 +326,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 maximum_imagery_pixels=imagery_limit,
                 native_resolution_override=(
                     30.0
-                    if is_glo30
+                    if global_product
                     else (
                         None
                         if local_inspection is None
@@ -335,7 +338,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     if local_inspection is None
                     else local_inspection.projected_bounds
                 ),
-                use_global_utm=is_glo30,
+                use_global_utm=global_product,
             )
         except BlenderTerrainError as exc:
             properties.is_valid = False
@@ -436,6 +439,7 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
             "MDS02",
             "MDS05",
             "COPERNICUS_GLO30_2021",
+            "GEDTM30_V11",
         )
         if product_id in valid_ids
     ]
@@ -635,8 +639,8 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
         self.report(
             {"INFO"},
             (
-                "Copernicus GLO-30 sources resolved"
-                if properties.product == "COPERNICUS_GLO30_2021"
+                "Global elevation sources resolved"
+                if properties.product in {"COPERNICUS_GLO30_2021", "GEDTM30_V11"}
                 else "Source discovery started in the background"
             ),
         )

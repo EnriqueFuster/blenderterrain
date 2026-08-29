@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -93,9 +94,10 @@ class HttpRangeReader:
         _validate_range(offset, length, self.size)
         first_block = offset // self._block_bytes
         last_block = (offset + length - 1) // self._block_bytes
-        payload = bytearray()
-        for block_index in range(first_block, last_block + 1):
-            payload.extend(self._read_block(block_index))
+        indices = tuple(range(first_block, last_block + 1))
+        with ThreadPoolExecutor(max_workers=min(4, len(indices))) as executor:
+            blocks = tuple(executor.map(self._read_block, indices))
+        payload = bytearray().join(blocks)
         relative = offset - first_block * self._block_bytes
         return bytes(payload[relative : relative + length])
 

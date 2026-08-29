@@ -14,7 +14,6 @@ import bpy
 
 from ..catalog import (
     AcquisitionRequest,
-    DatasetKind,
     LayerRequest,
     ProductSelection,
     SelectionBundle,
@@ -42,6 +41,9 @@ from ..jobs.storage import (
 )
 from ..models import DatasetProduct
 from ..providers.copernicus_dem import GLO30_PRODUCT_ID, glo30_tiles_for_roi
+from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
+
+_GLOBAL_PRODUCT_IDS = {GLO30_PRODUCT_ID, GEDTM30_PRODUCT_ID}
 
 _POLL_INTERVAL_SECONDS = 0.25
 _TERMINAL_STATES = {
@@ -130,13 +132,21 @@ def start_discovery(context: bpy.types.Context) -> None:
     if not properties.is_valid:
         raise UserInputError("Validate the ROI before discovering sources")
     properties.discovery_ready = False
-    if properties.product == GLO30_PRODUCT_ID:
+    if properties.product in _GLOBAL_PRODUCT_IDS:
         region = RegionOfInterest.from_geojson_geometry(
             json.loads(properties.roi_geometry_json)
         )
-        count = len(glo30_tiles_for_roi(region.bounds))
+        count = (
+            len(glo30_tiles_for_roi(region.bounds))
+            if properties.product == GLO30_PRODUCT_ID
+            else 2
+        )
         properties.discovered_file_count = count
-        properties.discovery_summary = f"{count} Copernicus GLO-30 tile(s) required"
+        properties.discovery_summary = (
+            f"{count} Copernicus GLO-30 tile(s) required"
+            if properties.product == GLO30_PRODUCT_ID
+            else "GEDTM30 elevation and uncertainty windows required"
+        )
         properties.discovery_ready = True
         properties.job_state = JobState.COMPLETE.value
         properties.job_progress = 1.0
@@ -152,14 +162,14 @@ def start_delivery(context: bpy.types.Context) -> None:
     if not properties.is_valid or not properties.discovery_ready:
         raise UserInputError("Discover the current sources before downloading data")
     properties.delivery_summary = ""
-    if properties.product == GLO30_PRODUCT_ID:
+    if properties.product in _GLOBAL_PRODUCT_IDS:
         _start_acquisition_worker(context, properties)
         return
     _start_worker(context, properties, "delivery", "Starting background data download")
 
 
 def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> None:
-    """Persist the confirmed GLO-30 choice and launch its portable worker."""
+    """Persist the confirmed global product choice and launch its portable worker."""
 
     global _active_job
     if _active_job is not None:
@@ -168,9 +178,9 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
         raise UserInputError("Blender online access is disabled in Preferences")
     region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
     catalog = load_bundled_catalog()
-    product = catalog.product(GLO30_PRODUCT_ID)
+    product = catalog.product(properties.product)
     layer = LayerRequest(
-        DatasetKind.DSM,
+        product.capabilities.kind,
         None
         if properties.elevation_resolution == "AUTO"
         else float(properties.elevation_resolution),
@@ -179,14 +189,14 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
     selection = ProductSelection(
         product.provider_id,
         product.id,
-        DatasetKind.DSM,
+        product.capabilities.kind,
         SelectionMode.MANUAL,
         True,
     )
     plan = create_acquisition_plan(
         request,
         SelectionBundle((selection,)),
-        (discover_candidates(catalog, region.bounds, DatasetKind.DSM),),
+        (discover_candidates(catalog, region.bounds, product.capabilities.kind),),
     )
     cache_directory = configured_cache_directory(context)
     task_id = str(uuid4())
@@ -214,7 +224,7 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
         context,
         properties,
         "acquisition",
-        "Starting Copernicus GLO-30 acquisition",
+        f"Starting {product.name} acquisition",
         job_directory,
     )
 

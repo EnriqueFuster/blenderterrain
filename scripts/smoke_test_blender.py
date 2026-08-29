@@ -119,9 +119,15 @@ def main() -> None:
         properties.north = 48.87
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         assert json.loads(properties.available_product_ids_json) == [
-            "COPERNICUS_GLO30_2021"
+            "COPERNICUS_GLO30_2021",
+            "GEDTM30_V11",
         ]
         assert properties.product == "COPERNICUS_GLO30_2021"
+        properties.product = "GEDTM30_V11"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert properties.selected_resolution == 30.0
+        assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
+        assert "GEDTM30" in properties.discovery_summary
         properties.available_product_ids_json = "[]"
         properties.product = "MDT02"
         properties.use_imagery = True

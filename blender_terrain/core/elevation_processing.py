@@ -11,8 +11,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
-from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
-from ..io.elevation_mosaic import read_elevation_mosaic
+from ..io.bigtiff_tiles import open_float_tile_reader
+from ..io.elevation_mosaic import ElevationReader, read_elevation_mosaic
+from ..io.elevation_window import ElevationWindowReader
 from ..models import ProjectedBounds
 from .crs import CRSInfo
 from .grid import GridTile
@@ -47,7 +48,12 @@ def process_elevation_tiles(
 
     if maximum_source_window_pixels <= 0:
         raise ValueError("Maximum source window pixels must be positive")
-    readers = tuple(open_float_tile_reader(path) for path in source_paths)
+    readers = tuple(
+        ElevationWindowReader(path)
+        if path.suffix.lower() == ".npy"
+        else open_float_tile_reader(path)
+        for path in source_paths
+    )
     outputs: list[ProcessedElevationTile] = []
     total_tiles = plan.terrain_tile_count
     if progress_callback is not None:
@@ -87,7 +93,7 @@ def process_elevation_tiles(
 def _resample_tile(
     zone_index: int,
     tile: GridTile,
-    readers: tuple[BigTiffFloatTileReader, ...],
+    readers: tuple[ElevationReader, ...],
     maximum_source_window_pixels: int,
 ) -> ProcessedElevationTile:
     source_resolution = readers[0].georeference.pixel_width
@@ -147,7 +153,7 @@ def _resample_tile(
 def _resample_geographic_tile(
     zone_index: int,
     tile: GridTile,
-    readers: tuple[BigTiffFloatTileReader, ...],
+    readers: tuple[ElevationReader, ...],
     crs: CRSInfo,
     maximum_source_window_pixels: int,
 ) -> ProcessedElevationTile:

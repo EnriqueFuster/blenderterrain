@@ -159,10 +159,16 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             layout.prop(properties, "product")
         else:
             layout.label(text="Validate the ROI to load available products", icon="INFO")
-        if products_loaded and properties.product != "COPERNICUS_GLO30_2021":
+        global_product = properties.product in {
+            "COPERNICUS_GLO30_2021",
+            "GEDTM30_V11",
+        }
+        if products_loaded and not global_product:
             layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
-        elif products_loaded:
+        elif products_loaded and properties.product == "COPERNICUS_GLO30_2021":
             layout.label(text="Global 30 m surface model; not a bare-earth DTM", icon="INFO")
+        elif products_loaded:
+            layout.label(text="Modelled 30 m DTM; uncertainty is preserved", icon="INFO")
         if properties.product_availability_summary:
             availability_box = layout.box()
             availability_box.label(text=properties.product_availability_summary, icon="INFO")
@@ -183,7 +189,7 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             layout.label(text="Third-coverage availability is still incomplete", icon="INFO")
         _draw_elevation_output_settings(layout, properties)
     else:
-        if properties.product == "COPERNICUS_GLO30_2021":
+        if properties.product in {"COPERNICUS_GLO30_2021", "GEDTM30_V11"}:
             layout.label(text="Global imagery is not implemented yet", icon="INFO")
             return
         layout.prop(properties, "use_imagery")

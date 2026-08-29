@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
-from .bigtiff_tiles import BigTiffFloatTileReader, GeoReference
+from .bigtiff_tiles import GeoReference, TileLayout
+
+
+class ElevationReader(Protocol):
+    layout: TileLayout
+    georeference: GeoReference
+
+    @property
+    def nodata(self) -> float: ...
+
+    def read_bounds(
+        self, bounds: ProjectedBounds
+    ) -> tuple[NDArray[np.float32], ProjectedBounds]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +39,7 @@ class ElevationMosaic:
 
 
 def read_elevation_mosaic(
-    readers: tuple[BigTiffFloatTileReader, ...],
+    readers: tuple[ElevationReader, ...],
     requested_bounds: ProjectedBounds,
     maximum_pixels: int = 16_777_216,
 ) -> ElevationMosaic:
@@ -96,7 +109,7 @@ def read_elevation_mosaic(
 
 
 def _common_grid(
-    readers: tuple[BigTiffFloatTileReader, ...], expected_epsg: int
+    readers: tuple[ElevationReader, ...], expected_epsg: int
 ) -> GeoReference:
     first = readers[0]
     pixel_width = first.georeference.pixel_width
@@ -126,7 +139,7 @@ def _common_grid(
     )
 
 
-def _reader_bounds(reader: BigTiffFloatTileReader) -> ProjectedBounds:
+def _reader_bounds(reader: ElevationReader) -> ProjectedBounds:
     west, south, east, north = reader.georeference.bounds(
         reader.layout.width, reader.layout.height
     )
