@@ -1,8 +1,7 @@
 """Constrained BigTIFF tile reading for the verified CNIG elevation layout.
 
-This module intentionally supports a narrow format: little-endian classic TIFF
-or BigTIFF, one Float32 band, tiled storage, Adobe Deflate compression, and the
-predictors observed in CNIG and Copernicus DEM.
+This module intentionally supports the little-endian tiled layouts verified in
+the current elevation, quality-mask, and RGBNIR providers.
 Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 """
 
@@ -32,6 +31,7 @@ _IMAGE_LENGTH: Final = 257
 _BITS_PER_SAMPLE: Final = 258
 _COMPRESSION: Final = 259
 _SAMPLES_PER_PIXEL: Final = 277
+_PLANAR_CONFIGURATION: Final = 284
 _PREDICTOR: Final = 317
 _TILE_WIDTH: Final = 322
 _TILE_LENGTH: Final = 323
@@ -148,8 +148,13 @@ class BigTiffFloatTileReader:
         tags = self._read_first_directory(first_ifd_offset)
         self._predictor = _single_value(tags, _PREDICTOR)
         self._compression = _single_value(tags, _COMPRESSION)
-        self._bits_per_sample = _single_value(tags, _BITS_PER_SAMPLE)
-        self._sample_format = _single_value(tags, _SAMPLE_FORMAT)
+        self._samples_per_pixel = _single_value(tags, _SAMPLES_PER_PIXEL)
+        self._bits_per_sample = _uniform_value(
+            tags, _BITS_PER_SAMPLE, self._samples_per_pixel
+        )
+        self._sample_format = _uniform_value(
+            tags, _SAMPLE_FORMAT, self._samples_per_pixel
+        )
         self._scale, self._offset = _parse_gdal_scale_offset(tags)
         self.layout = self._validate_layout(tags)
         self.georeference = _parse_georeference(tags)
@@ -192,6 +197,7 @@ class BigTiffFloatTileReader:
         expected_bytes = (
             self.layout.tile_width
             * self.layout.tile_height
+            * self._samples_per_pixel
             * self._bits_per_sample
             // 8
         )
@@ -204,7 +210,11 @@ class BigTiffFloatTileReader:
             unsigned_type = {8: "u1", 16: "u2", 32: "u4"}[self._bits_per_sample]
             differences = np.frombuffer(
                 raw, dtype=np.dtype(f"{self._byte_order}{unsigned_type}")
-            ).reshape(self.layout.tile_height, self.layout.tile_width)
+            ).reshape(
+                self.layout.tile_height,
+                self.layout.tile_width,
+                self._samples_per_pixel,
+            )
             cumulative_type = {8: np.uint8, 16: np.uint16, 32: np.uint32}[
                 self._bits_per_sample
             ]
@@ -216,6 +226,8 @@ class BigTiffFloatTileReader:
             else:
                 tile = reconstructed
         elif self._predictor == 3:
+            if self._samples_per_pixel != 1:
+                raise RasterFormatError("Multiband floating-point prediction is unsupported")
             tile = _decode_floating_point_predictor(
                 raw, self.layout.tile_height, self.layout.tile_width
             )
@@ -228,7 +240,13 @@ class BigTiffFloatTileReader:
             }[(self._sample_format, self._bits_per_sample)]
             tile = np.frombuffer(
                 raw, dtype=np.dtype(f"{self._byte_order}{sample_type}")
-            ).reshape(self.layout.tile_height, self.layout.tile_width)
+            ).reshape(
+                self.layout.tile_height,
+                self.layout.tile_width,
+                self._samples_per_pixel,
+            )
+        if self._samples_per_pixel == 1 and tile.ndim == 3:
+            tile = tile[:, :, 0]
         valid_height = min(
             self.layout.tile_height, self.layout.height - row * self.layout.tile_height
         )
@@ -251,7 +269,12 @@ class BigTiffFloatTileReader:
         if row + height > self.layout.height or column + width > self.layout.width:
             raise ValueError("Window extends outside the image")
 
-        result = np.empty((height, width), dtype=np.float32)
+        result = np.empty(
+            (height, width)
+            if self._samples_per_pixel == 1
+            else (height, width, self._samples_per_pixel),
+            dtype=np.float32,
+        )
         first_tile_row = row // self.layout.tile_height
         last_tile_row = (row + height - 1) // self.layout.tile_height
         first_tile_column = column // self.layout.tile_width
@@ -354,8 +377,10 @@ class BigTiffFloatTileReader:
             raise RasterFormatError("TIFF sample type is unsupported")
         if self._compression not in {8, 50000}:
             raise RasterFormatError("Only Deflate and Zstandard TIFF compression are supported")
-        if _single_value(tags, _SAMPLES_PER_PIXEL) != 1:
-            raise RasterFormatError("Only single-band TIFF images are supported")
+        if self._samples_per_pixel not in {1, 4}:
+            raise RasterFormatError("Only one-band and four-band TIFF images are supported")
+        if _single_value_or_default(tags, _PLANAR_CONFIGURATION, 1) != 1:
+            raise RasterFormatError("Only interleaved TIFF samples are supported")
         if _single_value(tags, _PREDICTOR) not in {1, 2, 3}:
             raise RasterFormatError("TIFF predictor is unsupported")
         if self._sample_format == 2 and self._predictor == 3:
@@ -447,6 +472,22 @@ def _single_value(tags: dict[int, TagValue], tag: int) -> int:
     ):
         raise RasterFormatError(f"BigTIFF required tag {tag} is missing or invalid")
     return values[0]
+
+
+def _uniform_value(tags: dict[int, TagValue], tag: int, count: int) -> int:
+    values = tags.get(tag)
+    if (
+        not isinstance(values, tuple)
+        or len(values) != count
+        or not all(isinstance(value, int) for value in values)
+        or len(set(values)) != 1
+    ):
+        raise RasterFormatError(f"TIFF required tag {tag} is missing or inconsistent")
+    return int(values[0])
+
+
+def _single_value_or_default(tags: dict[int, TagValue], tag: int, default: int) -> int:
+    return default if tag not in tags else _single_value(tags, tag)
 
 
 def _parse_gdal_scale_offset(tags: dict[int, TagValue]) -> tuple[float, float]:
