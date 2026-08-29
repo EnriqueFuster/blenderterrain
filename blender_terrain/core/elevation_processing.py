@@ -100,9 +100,7 @@ def _resample_tile(
             math.sqrt(maximum_source_window_pixels) * source_resolution / target_resolution
         ),
     )
-    nodata = readers[0].layout.nodata
-    if nodata is None:
-        raise RasterFormatError("Elevation sources must declare NoData")
+    nodata = readers[0].nodata
     output = np.full((tile.rows + 1, tile.columns + 1), nodata, dtype=np.float32)
     overlap = 0
     conflicts = 0
@@ -172,9 +170,7 @@ def _resample_geographic_tile(
             ),
         ),
     )
-    nodata = readers[0].layout.nodata
-    if nodata is None:
-        raise RasterFormatError("Elevation sources must declare NoData")
+    nodata = readers[0].nodata
     output = np.full((tile.rows + 1, tile.columns + 1), nodata, dtype=np.float32)
     overlap = 0
     conflicts = 0

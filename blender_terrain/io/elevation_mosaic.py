@@ -41,9 +41,7 @@ def read_elevation_mosaic(
     if target_window.width * target_window.height > maximum_pixels:
         raise ValueError("Requested elevation mosaic exceeds the configured pixel limit")
     target_bounds = grid.window_bounds(target_window)
-    nodata = readers[0].layout.nodata
-    if nodata is None:
-        raise RasterFormatError("Elevation mosaic sources must declare NoData")
+    nodata = readers[0].nodata
 
     data = np.full((target_window.height, target_window.width), nodata, dtype=np.float32)
     source_index = np.full(data.shape, -1, dtype=np.int16)
@@ -65,7 +63,11 @@ def read_elevation_mosaic(
         current = data[rows, columns]
         current_sources = source_index[rows, columns]
         current_covered = covered[rows, columns]
-        valid_new = source_data != nodata
+        valid_new = (
+            np.ones(source_data.shape, dtype=bool)
+            if reader.layout.nodata is None
+            else source_data != reader.layout.nodata
+        )
         valid_current = current_sources >= 0
         overlap = valid_current & valid_new
         if overlap.any():

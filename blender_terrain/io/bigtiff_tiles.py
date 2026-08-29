@@ -44,6 +44,7 @@ _GT_MODEL_TYPE: Final = 1024
 _GT_RASTER_TYPE: Final = 1025
 _GEOGRAPHIC_CRS_TYPE: Final = 2048
 _PROJECTED_CRS_TYPE: Final = 3072
+DEFAULT_FLOAT_NODATA: Final = -3.4028234663852886e38
 
 TagValue = tuple[int | float, ...] | str
 
@@ -150,6 +151,12 @@ class BigTiffFloatTileReader:
             or len(self._tile_byte_counts) != expected_tiles
         ):
             raise RasterFormatError("TIFF tile index does not match its image dimensions")
+
+    @property
+    def nodata(self) -> float:
+        """Return declared NoData or an internal sentinel for all-valid rasters."""
+
+        return self.layout.nodata if self.layout.nodata is not None else DEFAULT_FLOAT_NODATA
 
     def read_tile(self, row: int, column: int) -> NDArray[np.float32]:
         """Return one image tile cropped to valid pixels at its outer edges."""

@@ -96,7 +96,7 @@ def test_acquires_confirmed_glo30_selection_into_provider_cache(
 def test_reads_classic_geographic_float_tiff_window(tmp_path: Path) -> None:
     path = tmp_path / "glo30.tif"
     values = np.arange(16, dtype="<f4").reshape(4, 4)
-    _write_classic_float_tiff(path, values, predictor=3)
+    _write_classic_float_tiff(path, values, predictor=3, declare_nodata=False)
 
     reader = ClassicTiffFloatTileReader(path)
     data, bounds = reader.read_bounds(ProjectedBounds(-0.75, 39.25, -0.25, 39.75, 4326))
@@ -111,7 +111,7 @@ def test_processes_geographic_glo30_source_on_projected_terrain_grid(
 ) -> None:
     path = tmp_path / "glo30.tif"
     values = np.arange(16, dtype="<f4").reshape(4, 4)
-    _write_classic_float_tiff(path, values, predictor=3)
+    _write_classic_float_tiff(path, values, predictor=3, declare_nodata=False)
     roi = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
     plan = create_import_plan(
         roi,
@@ -132,7 +132,11 @@ def test_processes_geographic_glo30_source_on_projected_terrain_grid(
 
 
 def _write_classic_float_tiff(
-    path: Path, values: np.ndarray, *, predictor: int
+    path: Path,
+    values: np.ndarray,
+    *,
+    predictor: int,
+    declare_nodata: bool = True,
 ) -> None:
     encoded = values.tobytes()
     if predictor == 3:
@@ -143,7 +147,7 @@ def _write_classic_float_tiff(
         differences[:, 1:] = rows[:, 1:] - rows[:, :-1]
         encoded = differences.tobytes()
     compressed = zlib.compress(encoded)
-    entry_count = 15
+    entry_count = 15 if declare_nodata else 14
     external_offset = 8 + 2 + entry_count * 12 + 4
     pixel_scale = struct.pack("<3d", 0.25, 0.25, 0.0)
     tiepoint = struct.pack("<6d", 0.0, 0.0, 0.0, -1.0, 40.0, 0.0)
@@ -157,8 +161,8 @@ def _write_classic_float_tiff(
     pixel_scale_offset = external_offset
     tiepoint_offset = pixel_scale_offset + len(pixel_scale)
     geo_keys_offset = tiepoint_offset + len(tiepoint)
-    nodata_offset = geo_keys_offset + len(geo_keys)
-    data_offset = nodata_offset + 5
+    metadata_end = geo_keys_offset + len(geo_keys)
+    data_offset = metadata_end + (5 if declare_nodata else 0)
     entries = [
         (256, 4, 1, values.shape[1]),
         (257, 4, 1, values.shape[0]),
@@ -174,8 +178,9 @@ def _write_classic_float_tiff(
         (33550, 12, 3, pixel_scale_offset),
         (33922, 12, 6, tiepoint_offset),
         (34735, 3, 16, geo_keys_offset),
-        (42113, 2, 5, nodata_offset),
     ]
+    if declare_nodata:
+        entries.append((42113, 2, 5, metadata_end))
     entries.sort(key=lambda entry: entry[0])
     directory = struct.pack("<H", entry_count)
     directory += b"".join(struct.pack("<HHII", *entry) for entry in entries)
@@ -186,6 +191,6 @@ def _write_classic_float_tiff(
         + pixel_scale
         + tiepoint
         + geo_keys
-        + b"-9999"
+        + (b"-9999" if declare_nodata else b"")
         + compressed
     )
