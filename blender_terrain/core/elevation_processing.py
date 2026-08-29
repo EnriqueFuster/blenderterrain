@@ -19,9 +19,49 @@ from .crs import CRSInfo
 from .grid import GridTile
 from .planning import ImportPlan
 from .projection import project_utm_arrays_to_wgs84, project_wgs84_to_utm
-from .roi import PolygonWGS84, RegionOfInterest
+from .roi import BBoxWGS84, PolygonWGS84, RegionOfInterest
 
 DEFAULT_MAX_SOURCE_WINDOW_PIXELS = 4_194_304
+
+
+def geographic_source_bounds(plan: ImportPlan) -> BBoxWGS84:
+    """Return the WGS84 envelope needed by every projected output grid."""
+
+    longitude_parts: list[NDArray[np.float64]] = []
+    latitude_parts: list[NDArray[np.float64]] = []
+    for grid, work_area in zip(plan.grids, plan.work_areas, strict=True):
+        bounds = grid.bounds
+        horizontal = np.linspace(bounds.west, bounds.east, 65)
+        vertical = np.linspace(bounds.south, bounds.north, 65)
+        eastings = np.concatenate(
+            (
+                horizontal,
+                horizontal,
+                np.full(65, bounds.west),
+                np.full(65, bounds.east),
+            )
+        )
+        northings = np.concatenate(
+            (
+                np.full(65, bounds.south),
+                np.full(65, bounds.north),
+                vertical,
+                vertical,
+            )
+        )
+        longitude, latitude = project_utm_arrays_to_wgs84(
+            eastings, northings, work_area.crs
+        )
+        longitude_parts.append(longitude)
+        latitude_parts.append(latitude)
+    longitudes = np.concatenate(longitude_parts)
+    latitudes = np.concatenate(latitude_parts)
+    return BBoxWGS84(
+        float(longitudes.min()),
+        float(latitudes.min()),
+        float(longitudes.max()),
+        float(latitudes.max()),
+    )
 
 
 @dataclass(frozen=True, slots=True)

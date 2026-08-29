@@ -8,6 +8,7 @@ Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 
 from __future__ import annotations
 
+import importlib
 import math
 import re
 import struct
@@ -136,7 +137,7 @@ class PixelWindow:
 
 
 class BigTiffFloatTileReader:
-    """Read supported compressed 32-bit samples as Float32 terrain values."""
+    """Read supported compressed numeric samples as Float32 values."""
 
     def __init__(self, path: Path | RandomAccessReader) -> None:
         self._source = (
@@ -146,6 +147,7 @@ class BigTiffFloatTileReader:
         self._byte_order, first_ifd_offset = self._read_header()
         tags = self._read_first_directory(first_ifd_offset)
         self._predictor = _single_value(tags, _PREDICTOR)
+        self._compression = _single_value(tags, _COMPRESSION)
         self._bits_per_sample = _single_value(tags, _BITS_PER_SAMPLE)
         self._sample_format = _single_value(tags, _SAMPLE_FORMAT)
         self._scale, self._offset = _parse_gdal_scale_offset(tags)
@@ -193,13 +195,19 @@ class BigTiffFloatTileReader:
             * self._bits_per_sample
             // 8
         )
-        raw = _inflate_exact(compressed, expected_bytes)
+        raw = (
+            _inflate_exact(compressed, expected_bytes)
+            if self._compression == 8
+            else _decompress_zstd(compressed, expected_bytes)
+        )
         if self._predictor == 2:
-            unsigned_type = "u2" if self._bits_per_sample == 16 else "u4"
+            unsigned_type = {8: "u1", 16: "u2", 32: "u4"}[self._bits_per_sample]
             differences = np.frombuffer(
                 raw, dtype=np.dtype(f"{self._byte_order}{unsigned_type}")
             ).reshape(self.layout.tile_height, self.layout.tile_width)
-            cumulative_type = np.uint16 if self._bits_per_sample == 16 else np.uint32
+            cumulative_type = {8: np.uint8, 16: np.uint16, 32: np.uint32}[
+                self._bits_per_sample
+            ]
             reconstructed = np.cumsum(differences, axis=1, dtype=cumulative_type)
             if self._sample_format == 3:
                 tile = reconstructed.view(np.dtype(f"{self._byte_order}f4"))
@@ -213,6 +221,7 @@ class BigTiffFloatTileReader:
             )
         else:
             sample_type = {
+                (1, 8): "u1",
                 (1, 16): "u2",
                 (2, 32): "i4",
                 (3, 32): "f4",
@@ -337,13 +346,14 @@ class BigTiffFloatTileReader:
         if any(value <= 0 for value in (width, height, tile_width, tile_height)):
             raise RasterFormatError("TIFF image and tile dimensions must be positive")
         if (self._sample_format, self._bits_per_sample) not in {
+            (1, 8),
             (1, 16),
             (2, 32),
             (3, 32),
         }:
             raise RasterFormatError("TIFF sample type is unsupported")
-        if _single_value(tags, _COMPRESSION) != 8:
-            raise RasterFormatError("Only Adobe Deflate TIFF compression is supported")
+        if self._compression not in {8, 50000}:
+            raise RasterFormatError("Only Deflate and Zstandard TIFF compression are supported")
         if _single_value(tags, _SAMPLES_PER_PIXEL) != 1:
             raise RasterFormatError("Only single-band TIFF images are supported")
         if _single_value(tags, _PREDICTOR) not in {1, 2, 3}:
@@ -531,6 +541,19 @@ def _inflate_exact(compressed: bytes, expected_size: int) -> bytes:
     raw += decompressor.flush(expected_size + 1 - len(raw))
     if len(raw) != expected_size or decompressor.unconsumed_tail or decompressor.unused_data:
         raise RasterFormatError("TIFF tile does not decompress to its expected size")
+    return raw
+
+
+def _decompress_zstd(compressed: bytes, expected_size: int) -> bytes:
+    try:
+        module = importlib.import_module("zstandard")
+        raw = module.ZstdDecompressor().decompress(
+            compressed, max_output_size=expected_size
+        )
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise RasterFormatError("Zstandard support is unavailable in this Python runtime") from exc
+    if not isinstance(raw, bytes) or len(raw) != expected_size:
+        raise RasterFormatError("TIFF Zstandard tile does not decompress to its expected size")
     return raw
 
 

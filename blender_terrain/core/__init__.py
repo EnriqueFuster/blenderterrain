@@ -3,7 +3,11 @@
 from .crs import CRSInfo, UTMWorkArea, split_bbox_by_utm_zone
 from .delivery import DeliveryResult, TransferProgress, deliver_plan_sources
 from .discovery import DiscoveryResult, discover_sources, select_catalog_items
-from .elevation_processing import ProcessedElevationTile, process_elevation_tiles
+from .elevation_processing import (
+    ProcessedElevationTile,
+    geographic_source_bounds,
+    process_elevation_tiles,
+)
 from .estimates import ROIEstimate, estimate_bbox
 from .grid import (
     DEFAULT_MAX_TILE_CELLS,
@@ -102,6 +106,7 @@ __all__ = [
     "discover_sources",
     "estimate_bbox",
     "format_bbox",
+    "geographic_source_bounds",
     "inspect_local_elevation",
     "inspect_local_imagery",
     "normalize_heightmap",

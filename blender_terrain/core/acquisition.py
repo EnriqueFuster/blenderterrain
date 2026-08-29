@@ -54,6 +54,7 @@ def acquire_plan_layers(
     cache_directory: Path,
     progress_callback: Callable[[TransferProgress], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
+    source_roi: BBoxWGS84 | None = None,
 ) -> tuple[AcquiredRasterLayer, ...]:
     """Execute only the providers locked into an immutable acquisition plan."""
 
@@ -69,7 +70,7 @@ def acquire_plan_layers(
         result = acquirer.acquire(
             selection,
             plan.request.layer(selection.kind),
-            plan.request.roi,
+            source_roi or plan.request.roi,
             cache_directory,
             progress_callback,
             cancellation_requested,

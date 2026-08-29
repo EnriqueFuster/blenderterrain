@@ -46,10 +46,16 @@ def test_acquires_and_reuses_elevation_with_uncertainty(tmp_path: Path) -> None:
         [[0.0, 1.0, 2.0, 3.0], [1.0, 2.0, 3.0, 4.0]] * 2,
         dtype=np.float32,
     )
+    water_occurrence = np.array(
+        [[0.0, 90.0, 100.0, 255.0]] * 4,
+        dtype=np.float32,
+    )
     calls: list[str] = []
 
     def factory(url: str, cache: Path):
         calls.append(url)
+        if "/occurrence/" in url:
+            return Reader(water_occurrence, bounds, 255.0)
         return Reader(
             uncertainty if "_std_" in url else elevation,
             bounds,
@@ -65,7 +71,7 @@ def test_acquires_and_reuses_elevation_with_uncertainty(tmp_path: Path) -> None:
     first = acquirer.acquire(selection, request, roi, tmp_path)
     second = acquirer.acquire(selection, request, roi, tmp_path)
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert first.cached_count == 0
     assert second.cached_count == 1
     np.testing.assert_array_equal(
@@ -74,3 +80,20 @@ def test_acquires_and_reuses_elevation_with_uncertainty(tmp_path: Path) -> None:
     statistics = json.loads(first.auxiliary_paths[1].read_text(encoding="utf-8"))
     assert statistics["valid_samples"] == 14
     assert statistics["p95_m"] > statistics["mean_m"]
+    water_path = next(
+        path
+        for path in first.auxiliary_paths
+        if path.name.startswith("water_occurrence")
+    )
+    np.testing.assert_array_equal(
+        ElevationWindowReader(water_path).read_bounds(bounds)[0], water_occurrence
+    )
+    water_metadata = json.loads(
+        next(path for path in first.auxiliary_paths if path.name == "water_mask.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert water_metadata["permanent_water_threshold_percent"] == 90
+    assert water_metadata["permanent_water_expression"] == "90 <= occurrence <= 100"
+    assert water_metadata["nodata_value"] == 255.0
+    assert water_metadata["policy"] == "QA_ONLY_DO_NOT_FLATTEN_ELEVATION"

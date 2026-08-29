@@ -18,6 +18,7 @@ from ..catalog.selection import (
     SelectionBundle,
 )
 from ..core import (
+    BBoxWGS84,
     ImportPlan,
     ProcessedElevationTile,
     RegionOfInterest,
@@ -25,6 +26,7 @@ from ..core import (
     create_import_plan,
     deliver_plan_sources,
     discover_sources,
+    geographic_source_bounds,
     inspect_local_imagery,
     plan_imagery_tiles,
     process_elevation_tiles,
@@ -231,6 +233,7 @@ def acquire_confirmed_sources(
     acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
         build_raster_acquirers
     ),
+    source_roi: BBoxWGS84 | None = None,
 ) -> tuple[AcquiredRasterLayer, ...]:
     """Execute the exact per-layer providers confirmed before worker startup."""
 
@@ -243,6 +246,7 @@ def acquire_confirmed_sources(
         cache_directory,
         progress_callback,
         cancellation_requested,
+        source_roi,
     )
 
 
@@ -287,13 +291,6 @@ def prepare_confirmed_elevation(
         ),
         SelectionBundle((selection,)),
     )
-    acquired = acquire_confirmed_sources(
-        elevation_plan,
-        cache_directory,
-        transfer_callback,
-        cancellation_requested,
-        acquirer_factory,
-    )[0]
     import_plan = create_import_plan(
         plan.request.roi,
         product.id,
@@ -306,6 +303,19 @@ def prepare_confirmed_elevation(
         native_resolution_override=product.capabilities.native_resolution_m,
         use_global_utm=product.jurisdiction == "global",
     )
+    source_roi = (
+        geographic_source_bounds(import_plan)
+        if product.jurisdiction == "global"
+        else None
+    )
+    acquired = acquire_confirmed_sources(
+        elevation_plan,
+        cache_directory,
+        transfer_callback,
+        cancellation_requested,
+        acquirer_factory,
+        source_roi,
+    )[0]
     def report_processing(completed: int, total: int) -> None:
         if cancellation_requested():
             raise JobCancelled("Elevation processing was cancelled")

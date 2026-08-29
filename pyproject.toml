@@ -13,6 +13,7 @@ authors = [{ name = "Enrique Fuster" }]
 dependencies = [
   "numpy>=1.26,<2; python_version < '3.13'",
   "numpy>=2.1,<2.3; python_version >= '3.13'",
+  "zstandard>=0.23,<1",
 ]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",

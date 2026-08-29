@@ -33,6 +33,9 @@ from blender_terrain.jobs.worker import (
 
 
 class Acquirer:
+    def __init__(self) -> None:
+        self.rois: list[BBoxWGS84] = []
+
     def acquire(
         self,
         selection: ProductSelection,
@@ -42,6 +45,7 @@ class Acquirer:
         progress_callback=None,
         cancellation_requested=lambda: False,
     ) -> AcquiredRasterLayer:
+        self.rois.append(roi)
         return AcquiredRasterLayer(
             selection.provider_id,
             selection.product_id,
@@ -76,10 +80,11 @@ def test_worker_constructs_only_adapters_locked_in_the_plan(tmp_path: Path) -> N
         (discover_candidates(catalog, roi, DatasetKind.DSM),),
     )
     requested: list[tuple[str, ...]] = []
+    acquirer = Acquirer()
 
     def factory(provider_ids: tuple[str, ...]) -> dict[str, RasterAcquirer]:
         requested.append(provider_ids)
-        return {"copernicus_dem": Acquirer()}
+        return {"copernicus_dem": acquirer}
 
     result = acquire_confirmed_sources(plan, tmp_path, acquirer_factory=factory)
 
@@ -104,6 +109,13 @@ def test_worker_constructs_only_adapters_locked_in_the_plan(tmp_path: Path) -> N
     assert prepared.import_plan.product == "COPERNICUS_GLO30_2021"
     assert prepared.import_plan.elevation_resolution_metres == 30.0
     assert processed_inputs[0][0] == prepared.acquired.paths
+    assert acquirer.rois[0] == roi
+    source_roi = acquirer.rois[1]
+    assert source_roi.west <= roi.west
+    assert source_roi.south <= roi.south
+    assert source_roi.east >= roi.east
+    assert source_roi.north >= roi.north
+    assert source_roi != roi
 
     job_path = tmp_path / "jobs" / "task" / "job.json"
     write_acquisition_job(

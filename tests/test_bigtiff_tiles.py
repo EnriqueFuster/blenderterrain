@@ -302,6 +302,19 @@ class BigTiffTilesTests(unittest.TestCase):
             self.assertEqual(reader.nodata, 0.0)
             np.testing.assert_allclose(actual, encoded.astype(np.float32) * 0.01)
 
+    def test_reads_uint8_quality_mask_as_float32(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "quality-mask.tif"
+            expected = np.array([[0, 90], [100, 255]], dtype="u1")
+            _write_minimal_bigtiff(path, expected, nodata="255")
+
+            reader = BigTiffFloatTileReader(path)
+
+            self.assertEqual(reader.nodata, 255.0)
+            np.testing.assert_array_equal(
+                reader.read_tile(0, 0), expected.astype(np.float32)
+            )
+
 
 def _write_minimal_bigtiff(
     path: Path,
@@ -314,7 +327,12 @@ def _write_minimal_bigtiff(
     scale: float = 1.0,
     nodata: str = "-9999",
 ) -> None:
-    if values.dtype not in {np.dtype("<f4"), np.dtype("<i4"), np.dtype("<u2")}:
+    if values.dtype not in {
+        np.dtype("<f4"),
+        np.dtype("<i4"),
+        np.dtype("<u2"),
+        np.dtype("u1"),
+    }:
         raise ValueError("Test fixture has an unsupported dtype")
     tile_height, tile_width = tile_shape or values.shape
     if values.shape[0] % tile_height or values.shape[1] % tile_width:
@@ -325,7 +343,7 @@ def _write_minimal_bigtiff(
             tile = values[row : row + tile_height, column : column + tile_width]
             encoded = tile
             if predictor == 2:
-                bits = tile.view("<u2" if tile.dtype.itemsize == 2 else "<u4")
+                bits = tile.view({1: "u1", 2: "<u2", 4: "<u4"}[tile.dtype.itemsize])
                 encoded = np.empty_like(bits)
                 encoded[:, 0] = bits[:, 0]
                 encoded[:, 1:] = bits[:, 1:] - bits[:, :-1]
