@@ -169,6 +169,13 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             layout.label(text="Global 30 m surface model; not a bare-earth DTM", icon="INFO")
         elif products_loaded:
             layout.label(text="Modelled 30 m DTM; uncertainty is preserved", icon="INFO")
+        if global_product:
+            layout.prop(properties, "use_bathymetry")
+            if properties.use_bathymetry:
+                layout.label(
+                    text="GEBCO seabed replaces elevation only in marine cells",
+                    icon="MOD_OCEAN",
+                )
         if properties.product_availability_summary:
             availability_box = layout.box()
             availability_box.label(text=properties.product_availability_summary, icon="INFO")

@@ -345,6 +345,12 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     use_imagery: BoolProperty(
         name="Use Imagery", default=True, update=_invalidate_validation
     )
+    use_bathymetry: BoolProperty(
+        name="Include Bathymetry",
+        description="Use GEBCO seabed elevations in marine areas",
+        default=True,
+        update=_invalidate_validation,
+    )
     imagery_gsd: EnumProperty(
         name="Imagery GSD",
         items=(

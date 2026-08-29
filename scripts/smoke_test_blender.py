@@ -38,6 +38,7 @@ def main() -> None:
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
         properties = bpy.context.scene.blender_terrain_roi
         property_rna = type(properties).bl_rna.properties
+        assert properties.use_bathymetry
         assert property_rna["terrain_subdivision_viewport"].hard_max == 11
         assert property_rna["terrain_subdivision_render"].hard_max == 11
         if _cycle == 1:
@@ -111,6 +112,14 @@ def main() -> None:
         assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
         assert properties.discovery_ready
         assert "Copernicus GLO-30" in properties.discovery_summary
+        assert "GEBCO" in properties.discovery_summary
+        region = extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+            json.loads(properties.roi_geometry_json)
+        )
+        global_plan = job_controller._acquisition_plan_from_properties(properties, region)
+        assert global_plan.selections.for_kind(
+            extension.blender_terrain.catalog.DatasetKind.BATHYMETRY
+        ).product_id == "GEBCO_2026"
         assert not properties.job_active
         properties.roi_input_mode = "BOUNDING_BOX"
         properties.west = 2.34

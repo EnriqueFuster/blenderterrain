@@ -13,6 +13,7 @@ from uuid import uuid4
 import bpy
 
 from ..catalog import (
+    AcquisitionPlan,
     AcquisitionRequest,
     DatasetKind,
     LayerRequest,
@@ -42,6 +43,7 @@ from ..jobs.storage import (
 )
 from ..models import DatasetProduct
 from ..providers.copernicus_dem import GLO30_PRODUCT_ID, glo30_tiles_for_roi
+from ..providers.gebco import PRODUCT_ID as GEBCO_PRODUCT_ID
 from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
 from ..providers.worldcover import PRODUCT_ID as WORLDCOVER_PRODUCT_ID
 
@@ -149,6 +151,8 @@ def start_discovery(context: bpy.types.Context) -> None:
             if properties.product == GLO30_PRODUCT_ID
             else "GEDTM30 elevation and uncertainty windows required"
         )
+        if properties.use_bathymetry:
+            properties.discovery_summary += "; GEBCO elevation and quality windows required"
         properties.discovery_ready = True
         properties.job_state = JobState.COMPLETE.value
         properties.job_progress = 1.0
@@ -179,50 +183,8 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
     if not bpy.app.online_access:
         raise UserInputError("Blender online access is disabled in Preferences")
     region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
-    catalog = load_bundled_catalog()
-    product = catalog.product(properties.product)
-    layer = LayerRequest(
-        product.capabilities.kind,
-        None
-        if properties.elevation_resolution == "AUTO"
-        else float(properties.elevation_resolution),
-    )
-    layers = [layer]
-    selections = [
-        ProductSelection(
-            product.provider_id,
-            product.id,
-            product.capabilities.kind,
-            SelectionMode.MANUAL,
-            True,
-        )
-    ]
-    candidate_sets = [
-        discover_candidates(catalog, region.bounds, product.capabilities.kind)
-    ]
-    if properties.use_imagery:
-        imagery_product = catalog.product(WORLDCOVER_PRODUCT_ID)
-        imagery_layer = LayerRequest(DatasetKind.IMAGERY, 10.0, "2021")
-        layers.append(imagery_layer)
-        selections.append(
-            ProductSelection(
-                imagery_product.provider_id,
-                imagery_product.id,
-                DatasetKind.IMAGERY,
-                SelectionMode.MANUAL,
-                True,
-                "2021",
-            )
-        )
-        candidate_sets.append(
-            discover_candidates(catalog, region.bounds, DatasetKind.IMAGERY)
-        )
-    request = AcquisitionRequest(region.bounds, tuple(layers))
-    plan = create_acquisition_plan(
-        request,
-        SelectionBundle(tuple(selections)),
-        tuple(candidate_sets),
-    )
+    plan = _acquisition_plan_from_properties(properties, region)
+    product = load_bundled_catalog().product(properties.product)
     cache_directory = configured_cache_directory(context)
     task_id = str(uuid4())
     if not properties.import_id:
@@ -252,6 +214,73 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
         "acquisition",
         f"Starting {product.name} acquisition",
         job_directory,
+    )
+
+
+def _acquisition_plan_from_properties(
+    properties: Any, region: RegionOfInterest
+) -> AcquisitionPlan:
+    """Build the confirmed global plan represented by the current UI controls."""
+
+    catalog = load_bundled_catalog()
+    product = catalog.product(properties.product)
+    layer = LayerRequest(
+        product.capabilities.kind,
+        None
+        if properties.elevation_resolution == "AUTO"
+        else float(properties.elevation_resolution),
+    )
+    layers = [layer]
+    selections = [
+        ProductSelection(
+            product.provider_id,
+            product.id,
+            product.capabilities.kind,
+            SelectionMode.MANUAL,
+            True,
+        )
+    ]
+    candidate_sets = [
+        discover_candidates(catalog, region.bounds, product.capabilities.kind)
+    ]
+    if properties.use_bathymetry:
+        bathymetry_product = catalog.product(GEBCO_PRODUCT_ID)
+        bathymetry_layer = LayerRequest(DatasetKind.BATHYMETRY, 463.0)
+        layers.append(bathymetry_layer)
+        selections.append(
+            ProductSelection(
+                bathymetry_product.provider_id,
+                bathymetry_product.id,
+                DatasetKind.BATHYMETRY,
+                SelectionMode.MANUAL,
+                True,
+            )
+        )
+        candidate_sets.append(
+            discover_candidates(catalog, region.bounds, DatasetKind.BATHYMETRY)
+        )
+    if properties.use_imagery:
+        imagery_product = catalog.product(WORLDCOVER_PRODUCT_ID)
+        imagery_layer = LayerRequest(DatasetKind.IMAGERY, 10.0, "2021")
+        layers.append(imagery_layer)
+        selections.append(
+            ProductSelection(
+                imagery_product.provider_id,
+                imagery_product.id,
+                DatasetKind.IMAGERY,
+                SelectionMode.MANUAL,
+                True,
+                "2021",
+            )
+        )
+        candidate_sets.append(
+            discover_candidates(catalog, region.bounds, DatasetKind.IMAGERY)
+        )
+    request = AcquisitionRequest(region.bounds, tuple(layers))
+    return create_acquisition_plan(
+        request,
+        SelectionBundle(tuple(selections)),
+        tuple(candidate_sets),
     )
 
 
