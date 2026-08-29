@@ -18,7 +18,10 @@ from blender_terrain.catalog import (
 )
 from blender_terrain.core.acquisition import AcquiredRasterLayer, RasterAcquirer
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.jobs.worker import acquire_confirmed_sources
+from blender_terrain.jobs.worker import (
+    acquire_confirmed_sources,
+    prepare_confirmed_elevation,
+)
 
 
 class Acquirer:
@@ -72,5 +75,24 @@ def test_worker_constructs_only_adapters_locked_in_the_plan(tmp_path: Path) -> N
 
     result = acquire_confirmed_sources(plan, tmp_path, acquirer_factory=factory)
 
-    assert requested == [("copernicus_dem",)]
+    processed_inputs = []
+
+    def process(paths, import_plan, progress_callback=None, **kwargs):
+        processed_inputs.append((paths, import_plan))
+        if progress_callback is not None:
+            progress_callback(0, 0)
+        return ()
+
+    prepared = prepare_confirmed_elevation(
+        plan,
+        catalog,
+        tmp_path,
+        acquirer_factory=factory,
+        elevation_processor=process,
+    )
+
+    assert requested == [("copernicus_dem",), ("copernicus_dem",)]
     assert result[0].product_id == "COPERNICUS_GLO30_2021"
+    assert prepared.import_plan.product == "COPERNICUS_GLO30_2021"
+    assert prepared.import_plan.elevation_resolution_metres == 30.0
+    assert processed_inputs[0][0] == prepared.acquired.paths

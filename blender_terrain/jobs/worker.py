@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
 from typing import Protocol
 
-from ..catalog.selection import AcquisitionPlan
+from ..catalog.models import Catalog, DatasetKind
+from ..catalog.selection import (
+    AcquisitionPlan,
+    AcquisitionRequest,
+    SelectionBundle,
+)
 from ..core import (
     ImportPlan,
     ProcessedElevationTile,
@@ -56,6 +61,15 @@ ELEVATION_PRODUCTS = tuple(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedElevation:
+    """Acquired sources and processed terrain from one confirmed elevation selection."""
+
+    acquired: AcquiredRasterLayer
+    import_plan: ImportPlan
+    tiles: tuple[ProcessedElevationTile, ...]
+
+
 def acquire_confirmed_sources(
     plan: AcquisitionPlan,
     cache_directory: Path,
@@ -77,6 +91,70 @@ def acquire_confirmed_sources(
         progress_callback,
         cancellation_requested,
     )
+
+
+def prepare_confirmed_elevation(
+    plan: AcquisitionPlan,
+    catalog: Catalog,
+    cache_directory: Path,
+    transfer_callback: Callable[[TransferProgress], None] | None = None,
+    processing_callback: Callable[[int, int], None] | None = None,
+    cancellation_requested: Callable[[], bool] = lambda: False,
+    acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
+        build_raster_acquirers
+    ),
+    elevation_processor: ElevationProcessor = process_elevation_tiles,
+) -> PreparedElevation:
+    """Acquire and process the single elevation layer confirmed for a terrain."""
+
+    elevation_selections = tuple(
+        selection
+        for selection in plan.selections.selections
+        if selection.kind in {DatasetKind.DTM, DatasetKind.DSM}
+    )
+    if len(elevation_selections) != 1:
+        raise UserInputError("Terrain creation requires exactly one DTM or DSM selection")
+    selection = elevation_selections[0]
+    product = catalog.product(selection.product_id)
+    if (
+        product.provider_id != selection.provider_id
+        or product.capabilities.kind is not selection.kind
+    ):
+        raise UserInputError("Selected elevation product does not match the catalog")
+    layer_request = plan.request.layer(selection.kind)
+    elevation_plan = AcquisitionPlan(
+        AcquisitionRequest(
+            plan.request.roi,
+            (layer_request,),
+            plan.request.license_profile,
+        ),
+        SelectionBundle((selection,)),
+    )
+    acquired = acquire_confirmed_sources(
+        elevation_plan,
+        cache_directory,
+        transfer_callback,
+        cancellation_requested,
+        acquirer_factory,
+    )[0]
+    import_plan = create_import_plan(
+        plan.request.roi,
+        product.id,
+        layer_request.target_resolution_m,
+        False,
+        None,
+        native_resolution_override=product.capabilities.native_resolution_m,
+    )
+    def report_processing(completed: int, total: int) -> None:
+        if cancellation_requested():
+            raise JobCancelled("Elevation processing was cancelled")
+        if processing_callback is not None:
+            processing_callback(completed, total)
+
+    if cancellation_requested():
+        raise JobCancelled("Elevation processing was cancelled")
+    tiles = elevation_processor(acquired.paths, import_plan, report_processing)
+    return PreparedElevation(acquired, import_plan, tiles)
 
 
 class _LocalElevationClient:
