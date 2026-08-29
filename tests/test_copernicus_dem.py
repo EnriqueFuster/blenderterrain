@@ -13,6 +13,8 @@ from blender_terrain.catalog import (
     SelectionMode,
 )
 from blender_terrain.core.delivery import TransferProgress
+from blender_terrain.core.elevation_processing import process_elevation_tiles
+from blender_terrain.core.planning import create_import_plan
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.io.bigtiff_tiles import ClassicTiffFloatTileReader
 from blender_terrain.io.http_download import DownloadedAsset
@@ -102,6 +104,31 @@ def test_reads_classic_geographic_float_tiff_window(tmp_path: Path) -> None:
     np.testing.assert_array_equal(data, values[1:3, 1:3])
     assert bounds == ProjectedBounds(-0.75, 39.25, -0.25, 39.75, 4326)
     assert reader.georeference.epsg == 4326
+
+
+def test_processes_geographic_glo30_source_on_projected_terrain_grid(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "glo30.tif"
+    values = np.arange(16, dtype="<f4").reshape(4, 4)
+    _write_classic_float_tiff(path, values, predictor=3)
+    roi = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
+    plan = create_import_plan(
+        roi,
+        "COPERNICUS_GLO30_2021",
+        100.0,
+        False,
+        None,
+        native_resolution_override=30.0,
+    )
+
+    processed = process_elevation_tiles((path,), plan)
+
+    assert len(processed) == 1
+    assert processed[0].tile.bounds.epsg == 25830
+    assert np.all(processed[0].data != processed[0].nodata)
+    assert float(processed[0].data.min()) >= 0.0
+    assert float(processed[0].data.max()) <= 15.0
 
 
 def _write_classic_float_tiff(

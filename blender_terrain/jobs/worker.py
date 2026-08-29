@@ -36,7 +36,7 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
-from ..io.bigtiff_tiles import BigTiffFloatTileReader
+from ..io.bigtiff_tiles import open_float_tile_reader
 from ..io.elevation_output import write_elevation_array
 from ..models import CatalogItem, DatasetProduct
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
@@ -595,7 +595,7 @@ def _local_discovery(job: DiscoveryJob) -> DiscoveryResult:
     for index, path in enumerate(paths):
         if not path.is_file():
             raise UserInputError(f"Local elevation raster does not exist: {path}")
-        BigTiffFloatTileReader(path)
+        open_float_tile_reader(path)
         size_mb = path.stat().st_size / 1_000_000
         items.append(
             CatalogItem(

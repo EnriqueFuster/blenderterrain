@@ -70,5 +70,7 @@ def discover_sources(
 ) -> DiscoveryResult:
     """Discover provider rows and reduce them to sources required by the plan."""
 
+    if not isinstance(plan.product, DatasetProduct):
+        raise ValueError("Legacy catalog discovery requires a CNIG product")
     catalog = provider.discover_all(plan.product, plan.bounds)
     return select_catalog_items(plan, catalog)

@@ -11,13 +11,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
-from ..io.bigtiff_tiles import BigTiffFloatTileReader
+from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
 from ..io.elevation_mosaic import read_elevation_mosaic
 from ..models import ProjectedBounds
 from .crs import CRSInfo
 from .grid import GridTile
 from .planning import ImportPlan
-from .projection import project_wgs84_to_utm
+from .projection import project_utm_arrays_to_wgs84, project_wgs84_to_utm
 from .roi import PolygonWGS84, RegionOfInterest
 
 DEFAULT_MAX_SOURCE_WINDOW_PIXELS = 4_194_304
@@ -47,7 +47,7 @@ def process_elevation_tiles(
 
     if maximum_source_window_pixels <= 0:
         raise ValueError("Maximum source window pixels must be positive")
-    readers = tuple(BigTiffFloatTileReader(path) for path in source_paths)
+    readers = tuple(open_float_tile_reader(path) for path in source_paths)
     outputs: list[ProcessedElevationTile] = []
     total_tiles = plan.terrain_tile_count
     if progress_callback is not None:
@@ -56,11 +56,24 @@ def process_elevation_tiles(
         zone_readers = tuple(
             reader for reader in readers if reader.georeference.epsg == grid.bounds.epsg
         )
-        if not zone_readers:
+        geographic_readers = tuple(
+            reader for reader in readers if reader.georeference.epsg == 4326
+        )
+        if not zone_readers and not geographic_readers:
             raise RasterFormatError(f"No elevation source is available for EPSG:{grid.bounds.epsg}")
         for tile in plan.tiles_for_grid(zone_index):
-            processed = _resample_tile(
-                zone_index, tile, zone_readers, maximum_source_window_pixels
+            processed = (
+                _resample_tile(
+                    zone_index, tile, zone_readers, maximum_source_window_pixels
+                )
+                if zone_readers
+                else _resample_geographic_tile(
+                    zone_index,
+                    tile,
+                    geographic_readers,
+                    plan.work_areas[zone_index].crs,
+                    maximum_source_window_pixels,
+                )
             )
             if region is not None:
                 crs = plan.work_areas[zone_index].crs
@@ -116,6 +129,87 @@ def _resample_tile(
                     requested,
                     block_rows + 1,
                     block_columns + 1,
+                    mosaic.nodata,
+                )
+            )
+            overlap += mosaic.overlap_valid_pixels
+            conflicts += mosaic.conflicting_valid_pixels
+            maximum_difference = max(maximum_difference, mosaic.maximum_overlap_difference)
+    return ProcessedElevationTile(
+        zone_index,
+        tile,
+        output,
+        nodata,
+        overlap,
+        conflicts,
+        maximum_difference,
+    )
+
+
+def _resample_geographic_tile(
+    zone_index: int,
+    tile: GridTile,
+    readers: tuple[BigTiffFloatTileReader, ...],
+    crs: CRSInfo,
+    maximum_source_window_pixels: int,
+) -> ProcessedElevationTile:
+    """Window and reproject geographic elevation into one projected terrain tile."""
+
+    source_resolution = readers[0].georeference.pixel_width
+    if source_resolution <= 0.0:
+        raise RasterFormatError("Elevation source pixel width must be positive")
+    target_resolution = (tile.bounds.east - tile.bounds.west) / tile.columns
+    # Use the conservative north-south degree length to keep source windows bounded.
+    source_resolution_metres = source_resolution * 110_000.0
+    maximum_block_cells = min(
+        512,
+        max(
+            1,
+            math.floor(
+                math.sqrt(maximum_source_window_pixels)
+                * source_resolution_metres
+                / target_resolution
+            ),
+        ),
+    )
+    nodata = readers[0].layout.nodata
+    if nodata is None:
+        raise RasterFormatError("Elevation sources must declare NoData")
+    output = np.full((tile.rows + 1, tile.columns + 1), nodata, dtype=np.float32)
+    overlap = 0
+    conflicts = 0
+    maximum_difference = 0.0
+
+    for row in range(0, tile.rows, maximum_block_cells):
+        block_rows = min(maximum_block_cells, tile.rows - row)
+        north = tile.bounds.north - row * target_resolution
+        south = north - block_rows * target_resolution
+        target_y = np.linspace(north, south, block_rows + 1, dtype=np.float64)
+        for column in range(0, tile.columns, maximum_block_cells):
+            block_columns = min(maximum_block_cells, tile.columns - column)
+            west = tile.bounds.west + column * target_resolution
+            east = west + block_columns * target_resolution
+            target_x = np.linspace(west, east, block_columns + 1, dtype=np.float64)
+            eastings, northings = np.meshgrid(target_x, target_y)
+            longitude, latitude = project_utm_arrays_to_wgs84(eastings, northings, crs)
+            requested = ProjectedBounds(
+                float(longitude.min()),
+                float(latitude.min()),
+                float(longitude.max()),
+                float(latitude.max()),
+                4326,
+            )
+            mosaic = read_elevation_mosaic(
+                readers, requested, maximum_pixels=maximum_source_window_pixels
+            )
+            output[row : row + block_rows + 1, column : column + block_columns + 1] = (
+                _bilinear_sample_coordinates(
+                    mosaic.data,
+                    mosaic.bounds.west,
+                    mosaic.bounds.north,
+                    source_resolution,
+                    longitude,
+                    latitude,
                     mosaic.nodata,
                 )
             )
@@ -254,6 +348,31 @@ def _bilinear_sample(
     target_y: NDArray[np.float64],
     nodata: float,
 ) -> NDArray[np.float32]:
+    x_coordinates, y_coordinates = np.meshgrid(target_x, target_y)
+    return _bilinear_sample_coordinates(
+        source,
+        source_west,
+        source_north,
+        source_resolution,
+        x_coordinates,
+        y_coordinates,
+        nodata,
+    )
+
+
+def _bilinear_sample_coordinates(
+    source: NDArray[np.float32],
+    source_west: float,
+    source_north: float,
+    source_resolution: float,
+    target_x: NDArray[np.float64],
+    target_y: NDArray[np.float64],
+    nodata: float,
+) -> NDArray[np.float32]:
+    """Bilinearly sample arbitrary two-dimensional coordinates."""
+
+    if target_x.shape != target_y.shape:
+        raise ValueError("Target coordinate arrays must have the same shape")
     source_x = (target_x - source_west) / source_resolution - 0.5
     source_y = (source_north - target_y) / source_resolution - 0.5
     column0 = np.floor(source_x).astype(np.int64)
@@ -265,13 +384,13 @@ def _bilinear_sample(
     dx = source_x - np.floor(source_x)
     dy = source_y - np.floor(source_y)
 
-    result = np.zeros((len(target_y), len(target_x)), dtype=np.float64)
+    result = np.zeros(target_x.shape, dtype=np.float64)
     weight_sum = np.zeros(result.shape, dtype=np.float64)
     for rows, columns, weights in (
-        (row0[:, None], column0[None, :], (1.0 - dy)[:, None] * (1.0 - dx)[None, :]),
-        (row0[:, None], column1[None, :], (1.0 - dy)[:, None] * dx[None, :]),
-        (row1[:, None], column0[None, :], dy[:, None] * (1.0 - dx)[None, :]),
-        (row1[:, None], column1[None, :], dy[:, None] * dx[None, :]),
+        (row0, column0, (1.0 - dy) * (1.0 - dx)),
+        (row0, column1, (1.0 - dy) * dx),
+        (row1, column0, dy * (1.0 - dx)),
+        (row1, column1, dy * dx),
     ):
         values = source[rows, columns]
         valid = values != nodata

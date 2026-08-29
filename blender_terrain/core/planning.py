@@ -73,7 +73,7 @@ class ImportPlan:
 
     bounds: BBoxWGS84
     work_areas: tuple[UTMWorkArea, ...]
-    product: DatasetProduct
+    product: DatasetProduct | str
     elevation_resolution_metres: float
     elevation: ROIEstimate
     imagery: ImageryEstimate | None
@@ -154,13 +154,13 @@ class ImportPlan:
             warnings.append("ROI crosses UTM zones and will create sibling terrain groups")
             if self.manual_tile_rows is not None:
                 warnings.append("Manual terrain rows and columns apply separately to each CRS")
-        warnings.append("Exact Spanish data coverage is confirmed during CNIG discovery")
+        warnings.append("Exact data coverage is confirmed during provider discovery")
         return tuple(warnings)
 
 
 def create_import_plan(
     bounds: BBoxWGS84,
-    product: DatasetProduct,
+    product: DatasetProduct | str,
     elevation_resolution_metres: float | None,
     use_imagery: bool,
     imagery_gsd_metres: float | None,
@@ -173,15 +173,16 @@ def create_import_plan(
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
-    if product not in PRODUCT_NATIVE_RESOLUTION:
-        raise UserInputError("The selected product is not an elevation raster")
     if maximum_elevation_samples <= 0 or maximum_imagery_pixels <= 0:
         raise UserInputError("Resource limits must be positive")
-    native_resolution = (
-        PRODUCT_NATIVE_RESOLUTION[product]
-        if native_resolution_override is None
-        else native_resolution_override
-    )
+    if native_resolution_override is None:
+        if not isinstance(product, DatasetProduct) or product not in PRODUCT_NATIVE_RESOLUTION:
+            raise UserInputError(
+                "A catalog product requires an explicit native elevation resolution"
+            )
+        native_resolution = PRODUCT_NATIVE_RESOLUTION[product]
+    else:
+        native_resolution = native_resolution_override
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
         raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)

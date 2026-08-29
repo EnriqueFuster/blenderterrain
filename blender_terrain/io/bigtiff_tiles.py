@@ -376,6 +376,21 @@ class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
         return tags
 
 
+def open_float_tile_reader(path: Path) -> BigTiffFloatTileReader:
+    """Open a supported classic TIFF or BigTIFF from its version field."""
+
+    with path.open("rb") as stream:
+        header = stream.read(4)
+    if len(header) != 4 or header[:2] != b"II":
+        raise RasterFormatError("Only little-endian TIFF elevation files are supported")
+    version = struct.unpack("<H", header[2:])[0]
+    if version == 42:
+        return ClassicTiffFloatTileReader(path)
+    if version == 43:
+        return BigTiffFloatTileReader(path)
+    raise RasterFormatError("TIFF header version is unsupported")
+
+
 def _decode_value(value_type: int, count: int, encoded: bytes) -> TagValue:
     if value_type == 2:
         return encoded.decode("ascii", errors="strict")
