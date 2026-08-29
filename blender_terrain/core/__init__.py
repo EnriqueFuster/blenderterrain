@@ -1,6 +1,11 @@
 """Portable geographic domain logic."""
 
-from .bathymetry_processing import ProcessedBathymetryTile, process_gebco_tiles
+from .bathymetry_processing import (
+    ComposedTerrainTile,
+    ProcessedBathymetryTile,
+    compose_terrain_bathymetry,
+    process_gebco_tiles,
+)
 from .crs import CRSInfo, UTMWorkArea, split_bbox_by_utm_zone
 from .delivery import DeliveryResult, TransferProgress, deliver_plan_sources
 from .discovery import DiscoveryResult, discover_sources, select_catalog_items
@@ -71,6 +76,7 @@ __all__ = [
     "TERRAIN_SCHEMA_VERSION",
     "BBoxWGS84",
     "CRSInfo",
+    "ComposedTerrainTile",
     "DeliveryResult",
     "DiscoveryResult",
     "ElevationRange",
@@ -105,6 +111,7 @@ __all__ = [
     "calculate_elevation_range",
     "classify_territory_envelope",
     "closed_ring",
+    "compose_terrain_bathymetry",
     "create_import_plan",
     "deliver_plan_sources",
     "discover_sources",

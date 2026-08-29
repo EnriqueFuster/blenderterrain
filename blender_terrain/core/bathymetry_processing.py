@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
-from .elevation_processing import process_elevation_tiles
+from .elevation_processing import ProcessedElevationTile, process_elevation_tiles
 from .grid import GridTile
 from .planning import ImportPlan
 
@@ -24,6 +24,51 @@ class ProcessedBathymetryTile:
     elevation: NDArray[np.float32]
     tid: NDArray[np.uint8]
     nodata: float
+
+
+@dataclass(frozen=True, slots=True)
+class ComposedTerrainTile:
+    zone_index: int
+    tile: GridTile
+    elevation: NDArray[np.float32]
+    marine_mask: NDArray[np.uint8]
+    nodata: float
+
+
+def compose_terrain_bathymetry(
+    terrain_tiles: tuple[ProcessedElevationTile, ...],
+    bathymetry_tiles: tuple[ProcessedBathymetryTile, ...],
+) -> tuple[ComposedTerrainTile, ...]:
+    """Compose a scientific land-seabed grid using GEBCO TID, never elevation sign."""
+
+    if len(terrain_tiles) != len(bathymetry_tiles):
+        raise RasterFormatError("Terrain and bathymetry tile counts differ")
+    outputs: list[ComposedTerrainTile] = []
+    for terrain, bathymetry in zip(terrain_tiles, bathymetry_tiles, strict=True):
+        same_grid = (
+            terrain.zone_index == bathymetry.zone_index
+            and terrain.tile == bathymetry.tile
+            and terrain.data.shape == bathymetry.elevation.shape
+        )
+        if not same_grid:
+            raise RasterFormatError("Terrain and bathymetry grids do not align")
+        marine = (bathymetry.tid != 0) & (bathymetry.tid != 255)
+        known = bathymetry.tid != 255
+        mask = np.full(bathymetry.tid.shape, 255, dtype=np.uint8)
+        mask[known & ~marine] = 0
+        mask[marine] = 1
+        elevation = np.asarray(terrain.data, dtype=np.float32).copy()
+        elevation[marine] = bathymetry.elevation[marine]
+        outputs.append(
+            ComposedTerrainTile(
+                bathymetry.zone_index,
+                bathymetry.tile,
+                elevation,
+                mask,
+                float(terrain.nodata),
+            )
+        )
+    return tuple(outputs)
 
 
 def process_gebco_tiles(

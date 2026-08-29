@@ -19,12 +19,14 @@ from ..catalog.selection import (
 )
 from ..core import (
     BBoxWGS84,
+    ComposedTerrainTile,
     ImportPlan,
     ProcessedBathymetryTile,
     ProcessedElevationTile,
     ProcessedImageryTile,
     RegionOfInterest,
     TransferProgress,
+    compose_terrain_bathymetry,
     create_import_plan,
     deliver_plan_sources,
     discover_sources,
@@ -181,11 +183,24 @@ def run_confirmed_acquisition_job(
             cancellation_requested=cancelled,
             acquirer_factory=acquirer_factory,
         )
-        processed_payload = _write_processed_tiles(
-            prepared.tiles,
-            processed_directory,
-            cancelled,
-        )
+        terrain_source_payload: list[dict[str, object]] | None = None
+        if bathymetry is None:
+            processed_payload = _write_processed_tiles(
+                prepared.tiles,
+                processed_directory,
+                cancelled,
+            )
+        else:
+            terrain_source_payload = _write_processed_tiles(
+                prepared.tiles,
+                processed_directory / "terrain_source",
+                cancelled,
+            )
+            processed_payload = _write_composed_tiles(
+                compose_terrain_bathymetry(prepared.tiles, bathymetry.tiles),
+                processed_directory,
+                cancelled,
+            )
         bathymetry_payload = _write_processed_bathymetry(
             () if bathymetry is None else bathymetry.tiles,
             processed_directory / "bathymetry",
@@ -282,6 +297,7 @@ def run_confirmed_acquisition_job(
                     ]
                 ),
                 "processed_elevation": processed_payload,
+                "terrain_source": terrain_source_payload,
                 "bathymetry": bathymetry_payload,
                 "cache_reuse": {
                     "elevation_files": prepared.acquired.cached_count,
@@ -1059,6 +1075,36 @@ def _write_processed_bathymetry(
             {
                 "path": str(elevation_path),
                 "tid_path": str(tid_path),
+                "bounds": asdict(processed.tile.bounds),
+                "rows": processed.tile.rows,
+                "columns": processed.tile.columns,
+                "nodata": processed.nodata,
+            }
+        )
+    return payload
+
+
+def _write_composed_tiles(
+    tiles: tuple[ComposedTerrainTile, ...],
+    directory: Path,
+    cancellation_requested: Callable[[], bool],
+) -> list[dict[str, object]]:
+    payload: list[dict[str, object]] = []
+    for processed in tiles:
+        if cancellation_requested():
+            raise JobCancelled("Composed terrain output writing was cancelled")
+        stem = (
+            f"elevation_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
+            f"r{processed.tile.row}_c{processed.tile.column}"
+        )
+        elevation_path = directory / f"{stem}.npy"
+        mask_path = directory / f"{stem}_marine_mask.npy"
+        write_elevation_array(elevation_path, processed.elevation)
+        write_quality_array(mask_path, processed.marine_mask)
+        payload.append(
+            {
+                "path": str(elevation_path),
+                "marine_mask_path": str(mask_path),
                 "bounds": asdict(processed.tile.bounds),
                 "rows": processed.tile.rows,
                 "columns": processed.tile.columns,

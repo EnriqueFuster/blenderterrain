@@ -156,7 +156,7 @@ def test_worker_constructs_only_adapters_locked_in_the_plan(tmp_path: Path) -> N
     assert Path(payload["processed_elevation"][0]["path"]).is_file()
 
 
-def test_worker_delivers_independently_selected_elevation_and_imagery(
+def test_worker_delivers_independently_selected_elevation_bathymetry_and_imagery(
     tmp_path: Path,
 ) -> None:
     catalog = load_bundled_catalog()
@@ -165,6 +165,7 @@ def test_worker_delivers_independently_selected_elevation_and_imagery(
         roi,
         (
             LayerRequest(DatasetKind.DSM, 30.0),
+            LayerRequest(DatasetKind.BATHYMETRY, 463.0),
             LayerRequest(DatasetKind.IMAGERY, 10.0, "2021"),
         ),
     )
@@ -174,6 +175,13 @@ def test_worker_delivers_independently_selected_elevation_and_imagery(
                 "copernicus_dem",
                 "COPERNICUS_GLO30_2021",
                 DatasetKind.DSM,
+                SelectionMode.MANUAL,
+                True,
+            ),
+            ProductSelection(
+                "gebco",
+                "GEBCO_2026",
+                DatasetKind.BATHYMETRY,
                 SelectionMode.MANUAL,
                 True,
             ),
@@ -192,6 +200,7 @@ def test_worker_delivers_independently_selected_elevation_and_imagery(
         selections,
         (
             discover_candidates(catalog, roi, DatasetKind.DSM),
+            discover_candidates(catalog, roi, DatasetKind.BATHYMETRY),
             discover_candidates(catalog, roi, DatasetKind.IMAGERY),
         ),
     )
@@ -207,6 +216,35 @@ def test_worker_delivers_independently_selected_elevation_and_imagery(
             progress_callback=None,
             cancellation_requested=lambda: False,
         ):
+            if selection.kind is DatasetKind.BATHYMETRY:
+                bounds = ProjectedBounds(
+                    roi.west - 0.01,
+                    roi.south - 0.01,
+                    roi.east + 0.01,
+                    roi.north + 0.01,
+                    4326,
+                )
+                elevation_path = cache_directory / "bathymetry.npy"
+                tid_path = cache_directory / "tid.npy"
+                write_elevation_window(
+                    elevation_path,
+                    np.full((32, 32), -50.0, np.float32),
+                    bounds,
+                    -32768.0,
+                )
+                write_elevation_window(
+                    tid_path,
+                    np.full((32, 32), 11.0, np.float32),
+                    bounds,
+                    255.0,
+                )
+                return AcquiredRasterLayer(
+                    selection.provider_id,
+                    selection.product_id,
+                    selection.kind,
+                    (elevation_path,),
+                    auxiliary_paths=(tid_path,),
+                )
             if selection.kind is not DatasetKind.IMAGERY:
                 return super().acquire(
                     selection,
@@ -264,12 +302,20 @@ def test_worker_delivers_independently_selected_elevation_and_imagery(
     payload = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
 
     assert state.value == "COMPLETE"
-    assert requested == [("copernicus_dem",), ("esa_worldcover",)]
-    assert [source["kind"] for source in payload["sources"]] == ["dsm", "imagery"]
+    assert requested == [("copernicus_dem",), ("gebco",), ("esa_worldcover",)]
+    assert [source["kind"] for source in payload["sources"]] == [
+        "dsm",
+        "bathymetry",
+        "imagery",
+    ]
     assert all(source["license"] for source in payload["sources"])
     assert payload["request"]["use_imagery"] is True
     assert payload["imagery"]
     assert all(Path(item["path"]).is_file() for item in payload["imagery"])
+    assert payload["request"]["use_bathymetry"] is True
+    assert payload["bathymetry"]
+    assert Path(payload["processed_elevation"][0]["marine_mask_path"]).is_file()
+    assert payload["terrain_source"]
 
 
 def test_worker_prepares_confirmed_bathymetry_without_changing_provider(
