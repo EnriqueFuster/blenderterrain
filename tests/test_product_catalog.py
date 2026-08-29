@@ -60,7 +60,7 @@ def test_global_product_semantics_cannot_confuse_dtm_and_dsm() -> None:
     assert gebco.capabilities.semantics is SemanticConfidence.BATHYMETRY
     assert gebco.capabilities.acquisition_mode.value == "opendap"
     assert not gebco.capabilities.uncertainty_available
-    assert not gebco.selectable
+    assert gebco.selectable
 
 
 def test_researched_products_are_not_selectable() -> None:

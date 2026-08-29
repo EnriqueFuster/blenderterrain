@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.providers.gebco import gebco_query_urls
+
 USER_AGENT = "BlenderTerrain/0.4-source-probe"
 RANGE_BYTES = 65_536
 GEDTM_VERSION = "v20250611"
@@ -27,9 +30,6 @@ WORLDCOVER_BASE = "https://esa-worldcover-s2.s3.eu-central-1.amazonaws.com"
 JRC_GSW_BASE = (
     "https://s3.waw4-1.cloudferro.com/swift/v1/global-surface-water/"
     "download2024/Aggregated/VER1-5"
-)
-GEBCO_DAP_BASE = (
-    "https://dap.ceda.ac.uk/thredds/dodsC/bodc/gebco/global/gebco_2026"
 )
 
 
@@ -82,7 +82,7 @@ def probe_sources(
         if inspect_raster:
             result["raster"] = _inspect_with_rasterio(url, bbox)
         results[name] = result
-    gebco_urls, gebco_shape = gebco_query_urls(bbox)
+    gebco_urls, gebco_shape = gebco_query_urls(BBoxWGS84(*bbox))
     results["gebco_elevation"] = _probe_opendap(
         gebco_urls["elevation"], "elevation", gebco_shape
     )
@@ -104,34 +104,6 @@ def probe_sources(
         },
         "assets": results,
     }
-
-
-def gebco_query_urls(
-    bbox: tuple[float, float, float, float],
-) -> tuple[dict[str, str], tuple[int, int]]:
-    """Build aligned GEBCO elevation and TID subset queries for a WGS84 bbox."""
-
-    west, south, east, north = bbox
-    column_start = max(0, math.floor((west + 180.0) * 240.0))
-    column_end = min(86_399, math.ceil((east + 180.0) * 240.0) - 1)
-    row_start = max(0, math.floor((south + 90.0) * 240.0))
-    row_end = min(43_199, math.ceil((north + 90.0) * 240.0) - 1)
-    if row_end < row_start or column_end < column_start:
-        raise ValueError("GEBCO bbox does not contain a grid cell")
-    section = f"[{row_start}:1:{row_end}][{column_start}:1:{column_end}]"
-    return (
-        {
-            "elevation": (
-                f"{GEBCO_DAP_BASE}/ice_surface_elevation/netcdf/"
-                f"GEBCO_2026.nc.ascii?elevation{section}"
-            ),
-            "tid": (
-                f"{GEBCO_DAP_BASE}/type_identifier_grid/netcdf/"
-                f"gebco_2026_tid.nc.ascii?tid{section}"
-            ),
-        },
-        (row_end - row_start + 1, column_end - column_start + 1),
-    )
 
 
 def _probe_opendap(

@@ -4,12 +4,13 @@ import argparse
 
 import pytest
 
+from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.providers.gebco import gebco_query_urls
 from scripts.probe_global_sources import (
     _bbox,
     _content_range_total,
     _jrc_tile,
     _tiff_variant,
-    gebco_query_urls,
     source_urls,
 )
 
@@ -79,7 +80,7 @@ def test_identifies_tiff_headers() -> None:
 
 
 def test_builds_aligned_bounded_gebco_queries() -> None:
-    urls, shape = gebco_query_urls((-1.0, 50.0, -0.99, 50.01))
+    urls, shape = gebco_query_urls(BBoxWGS84(-1.0, 50.0, -0.99, 50.01))
 
     assert shape == (3, 3)
     assert "elevation[33600:1:33602][42960:1:42962]" in urls["elevation"]
