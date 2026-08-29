@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "blenderterrain"
-version = "0.3.0"
-description = "Portable research foundation for importing official terrain data into Blender"
+version = "0.4.0"
+description = "Portable geospatial terrain acquisition and Blender import toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"

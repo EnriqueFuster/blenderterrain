@@ -203,6 +203,11 @@ def run_confirmed_acquisition_job(
                     {
                         "provider_id": layer.provider_id,
                         "product_id": layer.product_id,
+                        "kind": layer.kind.value,
+                        "license": catalog.product(layer.product_id).license.identifier,
+                        "attribution": (
+                            catalog.product(layer.product_id).license.attribution_text
+                        ),
                         "paths": [str(path) for path in layer.paths],
                         "auxiliary_paths": [
                             str(path) for path in layer.auxiliary_paths
@@ -246,7 +251,8 @@ def run_confirmed_acquisition_job(
         emit(
             JobState.COMPLETE,
             1.0,
-            f"Prepared {len(prepared.tiles)} terrain tile(s) from {product.name}",
+            f"Prepared {len(prepared.tiles)} terrain and "
+            f"{0 if imagery is None else len(imagery.tiles)} texture tile(s)",
         )
         return JobState.COMPLETE
     except JobCancelled as exc:

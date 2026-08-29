@@ -1,12 +1,8 @@
 # BlenderTerrain
 
-BlenderTerrain is an independent, from-scratch Blender terrain importer for
-Spain's official IGN/CNIG MDT, MDS, and PNOA services.
-
-The repository name is intentionally broader than its initial geographic
-coverage. Version 1 will remain focused on Spain; support for another country
-will require an actual provider and compatible data rather than speculative
-abstractions.
+BlenderTerrain is an independent, from-scratch terrain acquisition and Blender
+import tool. It combines Spain's official IGN/CNIG products with traceable
+worldwide fallback products where their declared coverage permits.
 
 ## Current status
 
@@ -14,8 +10,8 @@ The Blender 4.5 extension implements an end-to-end workflow: define a WGS84
 bounding box directly or from a centre and metric dimensions, or load Polygon
 and MultiPolygon geometry from GeoJSON, KML, Shapefile, or a selected GeoPackage
 polygon layer, or draw a rectangle or polygon on a browser map; choose a supported
-MDT or MDS coverage and an output resolution; optionally request PNOA imagery; and create
-georeferenced Blender mesh objects and materials. Network and raster work runs
+elevation product and output resolution; optionally request available imagery;
+and create georeferenced Blender mesh objects and materials. Network and raster work runs
 in a background Blender process with observable states and cooperative
 cancellation. Shapefiles require their matching `.prj`; supported input CRSs
 are WGS84, ETRS89, REGCAN95 and their common Spanish UTM zones. GeoPackage files
@@ -47,7 +43,10 @@ The current implementation includes:
     terrain, job records, or incomplete files;
 16. retry of the last interrupted or failed acquisition job, reusing every
     validated cached file; and
-17. per-stage delivery timing and an explicit cached-file reuse summary.
+17. per-stage delivery timing and an explicit cached-file reuse summary; and
+18. worldwide candidate discovery and confirmed acquisition for Copernicus DEM
+    GLO-30 DSM, GEDTM30 modelled DTM with uncertainty and water-mask QA, and the
+    dated ESA WorldCover 2021 Sentinel-2 composite texture.
 
 Subdivision follows Blender's technical range from 0 to 11. The interface warns
 from level 3 because each additional level can multiply the generated face count
@@ -65,7 +64,10 @@ BlenderTerrain; internet access is used only to obtain the visible, attributed m
 tiles. The local server closes after confirmation, cancellation, or extension shutdown.
 
 Current limitations are deliberate: terrain creation is synchronous, and a large
-number of PNOA tiles has not yet been GPU-benchmarked. The default progressive mesh approaches
+number of imagery tiles has not yet been GPU-benchmarked. WorldCover is a static
+2021 composite rather than current orthophotography. GEDTM30 is a modelled DTM
+and Copernicus GLO-30 is a DSM; BlenderTerrain does not silently interchange
+those semantics. The default progressive mesh approaches
 the processed heightmap density around subdivision level 4; higher levels only
 interpolate the available raster samples. Per-object displacement overrides can
 also create visible seams when adjacent objects use different strengths; the

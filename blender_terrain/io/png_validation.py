@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import struct
 import zlib
 from pathlib import Path
@@ -37,6 +38,7 @@ def write_rgb_png(path: Path, pixels: NDArray[np.uint8]) -> None:
         with part.open("xb") as stream:
             stream.write(encoded)
             stream.flush()
+            os.fsync(stream.fileno())
         finalize_part(part, path)
     except BaseException:
         part.unlink(missing_ok=True)
