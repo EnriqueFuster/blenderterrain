@@ -9,6 +9,7 @@ from scripts.probe_global_sources import (
     _content_range_total,
     _jrc_tile,
     _tiff_variant,
+    gebco_query_urls,
     source_urls,
 )
 
@@ -75,3 +76,12 @@ def test_identifies_tiff_headers() -> None:
     assert _tiff_variant(b"II+\x00rest") == "BigTIFF"
     with pytest.raises(RuntimeError, match="TIFF signature"):
         _tiff_variant(b"<html")
+
+
+def test_builds_aligned_bounded_gebco_queries() -> None:
+    urls, shape = gebco_query_urls((-1.0, 50.0, -0.99, 50.01))
+
+    assert shape == (3, 3)
+    assert "elevation[33600:1:33602][42960:1:42962]" in urls["elevation"]
+    assert "tid[33600:1:33602][42960:1:42962]" in urls["tid"]
+    assert urls["elevation"].startswith("https://dap.ceda.ac.uk/thredds/dodsC/")

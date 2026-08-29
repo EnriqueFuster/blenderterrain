@@ -28,6 +28,9 @@ JRC_GSW_BASE = (
     "https://s3.waw4-1.cloudferro.com/swift/v1/global-surface-water/"
     "download2024/Aggregated/VER1-5"
 )
+GEBCO_DAP_BASE = (
+    "https://dap.ceda.ac.uk/thredds/dodsC/bodc/gebco/global/gebco_2026"
+)
 
 
 class _NoRedirects(HTTPRedirectHandler):
@@ -79,6 +82,11 @@ def probe_sources(
         if inspect_raster:
             result["raster"] = _inspect_with_rasterio(url, bbox)
         results[name] = result
+    gebco_urls, gebco_shape = gebco_query_urls(bbox)
+    results["gebco_elevation"] = _probe_opendap(
+        gebco_urls["elevation"], "elevation", gebco_shape
+    )
+    results["gebco_tid"] = _probe_opendap(gebco_urls["tid"], "tid", gebco_shape)
     return {
         "bbox_wgs84": list(bbox),
         "gedtm_collection": {
@@ -95,6 +103,56 @@ def probe_sources(
             ),
         },
         "assets": results,
+    }
+
+
+def gebco_query_urls(
+    bbox: tuple[float, float, float, float],
+) -> tuple[dict[str, str], tuple[int, int]]:
+    """Build aligned GEBCO elevation and TID subset queries for a WGS84 bbox."""
+
+    west, south, east, north = bbox
+    column_start = max(0, math.floor((west + 180.0) * 240.0))
+    column_end = min(86_399, math.ceil((east + 180.0) * 240.0) - 1)
+    row_start = max(0, math.floor((south + 90.0) * 240.0))
+    row_end = min(43_199, math.ceil((north + 90.0) * 240.0) - 1)
+    if row_end < row_start or column_end < column_start:
+        raise ValueError("GEBCO bbox does not contain a grid cell")
+    section = f"[{row_start}:1:{row_end}][{column_start}:1:{column_end}]"
+    return (
+        {
+            "elevation": (
+                f"{GEBCO_DAP_BASE}/ice_surface_elevation/netcdf/"
+                f"GEBCO_2026.nc.ascii?elevation{section}"
+            ),
+            "tid": (
+                f"{GEBCO_DAP_BASE}/type_identifier_grid/netcdf/"
+                f"gebco_2026_tid.nc.ascii?tid{section}"
+            ),
+        },
+        (row_end - row_start + 1, column_end - column_start + 1),
+    )
+
+
+def _probe_opendap(
+    url: str, variable: str, expected_shape: tuple[int, int]
+) -> dict[str, Any]:
+    maximum_bytes = 2_000_000
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    with build_opener(_NoRedirects()).open(request, timeout=30) as response:
+        payload = response.read(maximum_bytes + 1)
+    if len(payload) > maximum_bytes:
+        raise RuntimeError("GEBCO probe response exceeds the bounded size")
+    shape = f"{variable}.{variable}[{expected_shape[0]}][{expected_shape[1]}]".encode()
+    if response.status != 200 or shape not in payload:
+        raise RuntimeError("GEBCO OPeNDAP response does not match the requested window")
+    return {
+        "url": url,
+        "status": response.status,
+        "rows": expected_shape[0],
+        "columns": expected_shape[1],
+        "response_bytes": len(payload),
+        "response_sha256": hashlib.sha256(payload).hexdigest(),
     }
 
 

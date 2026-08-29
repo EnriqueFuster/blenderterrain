@@ -31,6 +31,7 @@ class AcquisitionMode(StrEnum):
     TILED_COG = "tiled_cog"
     WMS = "wms"
     STAC = "stac"
+    OPENDAP = "opendap"
 
 
 class ImplementationStatus(StrEnum):

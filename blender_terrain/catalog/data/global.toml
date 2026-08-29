@@ -45,3 +45,19 @@ network_cost_score = 35
 capabilities = { kind = "imagery", native_resolution_m = 10.0, semantics = "satellite_surface_reflectance", authoritative = false, acquisition_mode = "tiled_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = false }
 coverage = { bounds = [[-180.0, -60.0, 180.0, 84.0]], requires_discovery = true, limitations = ["Static annual 2021 composite", "Resolution and valid coverage vary near product limits"] }
 license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021)" }
+
+[[products]]
+id = "GEBCO_2026"
+provider_id = "gebco"
+name = "GEBCO 2026 Grid"
+jurisdiction = "global"
+implementation_status = "spike"
+version = "2026"
+last_verified = "2026-08-29"
+endpoint = "https://dap.ceda.ac.uk/thredds/dodsC/bodc/gebco/global/gebco_2026/"
+evidence_urls = ["https://www.gebco.net/data-products/gridded-bathymetry-data/gebco2026-grid", "https://doi.org/10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa"]
+reliability_score = 92
+network_cost_score = 30
+capabilities = { kind = "bathymetry", native_resolution_m = 463.0, semantics = "bathymetry", authoritative = false, acquisition_mode = "opendap", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-180.0, -90.0, 180.0, 90.0]], requires_discovery = true, limitations = ["15 arc-second spacing does not imply measured seabed at that resolution", "Mean sea level is assumed but shallow-water source datums can differ", "TID quality grid must accompany elevation", "Not for navigation or safety-critical use"] }
+license = { identifier = "https://www.gebco.net/data-products-gridded-bathymetry-data/gebco2026-grid", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "GEBCO Bathymetric Compilation Group 2026 (2026), doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa" }

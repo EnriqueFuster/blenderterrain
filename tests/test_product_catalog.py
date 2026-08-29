@@ -47,6 +47,7 @@ def test_global_product_semantics_cannot_confuse_dtm_and_dsm() -> None:
     gedtm = catalog.product("GEDTM30_V11")
     glo30 = catalog.product("COPERNICUS_GLO30_2021")
     worldcover = catalog.product("ESA_WORLDCOVER_S2_2021")
+    gebco = catalog.product("GEBCO_2026")
 
     assert gedtm.capabilities.kind is DatasetKind.DTM
     assert gedtm.capabilities.semantics is SemanticConfidence.MODELLED_DTM
@@ -55,6 +56,11 @@ def test_global_product_semantics_cannot_confuse_dtm_and_dsm() -> None:
     assert glo30.capabilities.semantics is SemanticConfidence.DSM
     assert worldcover.capabilities.kind is DatasetKind.IMAGERY
     assert worldcover.version == "2021"
+    assert gebco.capabilities.kind is DatasetKind.BATHYMETRY
+    assert gebco.capabilities.semantics is SemanticConfidence.BATHYMETRY
+    assert gebco.capabilities.acquisition_mode.value == "opendap"
+    assert not gebco.capabilities.uncertainty_available
+    assert not gebco.selectable
 
 
 def test_researched_products_are_not_selectable() -> None:

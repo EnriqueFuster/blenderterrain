@@ -105,12 +105,15 @@ def test_license_incompatibility_rejects_an_otherwise_valid_product() -> None:
     assert candidates.recommended.product.id != "MDT02"
 
 
-def test_empty_layer_has_no_recommendation() -> None:
+def test_unimplemented_bathymetry_is_visible_but_not_selectable() -> None:
     candidates = discover_candidates(load_bundled_catalog(), PARIS, DatasetKind.BATHYMETRY)
 
     assert candidates.valid == ()
-    assert candidates.rejected == ()
     assert candidates.recommended is None
+    assert [candidate.product.id for candidate in candidates.rejected] == ["GEBCO_2026"]
+    assert candidates.rejected[0].rejection_reasons == (
+        RejectionReason.PRODUCT_UNAVAILABLE,
+    )
 
 
 def _with_status(product_id: str, status: ImplementationStatus) -> Catalog:
