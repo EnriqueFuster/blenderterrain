@@ -12,6 +12,37 @@ from ..errors import BlenderTerrainError
 
 _IMPORT_ITEMS_CACHE: list[tuple[str, str, str]] = []
 _GPKG_LAYER_ITEMS_CACHE: list[tuple[str, str, str]] = []
+_PRODUCT_ITEMS_CACHE: list[tuple[str, str, str, int, int]] = []
+_PRODUCT_ITEMS = (
+    ("MDT02", "DTM (MDT02, 2nd)", "2 m bare-earth terrain", 0, 1),
+    ("MDT50CM", "DTM (MDT50 cm, 3rd)", "0.5 m terrain; coverage is incomplete", 0, 2),
+    ("MDT05", "DTM (MDT05, 1st)", "5 m bare-earth terrain", 0, 3),
+    ("MDT25", "DTM (MDT25, 2nd)", "25 m bare-earth terrain", 0, 4),
+    ("MDT200", "DTM (MDT200, 2nd)", "200 m bare-earth terrain", 0, 5),
+    ("MDS50CM", "DSM (MDS50 cm, 3rd)", "0.5 m surface; coverage is incomplete", 0, 6),
+    ("MDS02", "DSM (MDS02, 2nd)", "2 m buildings and vegetation", 0, 7),
+    ("MDS05", "DSM (MDS05, 1st)", "5 m buildings and vegetation", 0, 8),
+    (
+        "COPERNICUS_GLO30_2021",
+        "DSM (Copernicus GLO-30, Global)",
+        "30 m global surface model; not a bare-earth DTM",
+        0,
+        9,
+    ),
+)
+
+
+def _product_items(
+    properties: object, context: bpy.types.Context
+) -> list[tuple[str, str, str, int, int]]:
+    try:
+        available = set(json.loads(properties.available_product_ids_json))
+    except (json.JSONDecodeError, TypeError):
+        available = set()
+    _PRODUCT_ITEMS_CACHE[:] = [
+        item for item in _PRODUCT_ITEMS if not available or item[0] in available
+    ]
+    return _PRODUCT_ITEMS_CACHE
 
 
 def _terrain_import_items(
@@ -64,6 +95,18 @@ def _data_source_changed(properties: object, context: bpy.types.Context) -> None
     """Reset validation when switching between online and local workflows."""
 
     _invalidate_validation(properties, context)
+    properties.available_product_ids_json = "[]"
+
+
+def _product_changed(properties: object, context: bpy.types.Context) -> None:
+    """Reset incompatible output options when the native product changes."""
+
+    if (
+        properties.product == "COPERNICUS_GLO30_2021"
+        and properties.elevation_resolution not in {"AUTO", "50.0", "100.0"}
+    ):
+        properties.elevation_resolution = "AUTO"
+    _invalidate_validation(properties, context)
 
 
 def _roi_definition_changed(properties: object, context: bpy.types.Context) -> None:
@@ -72,6 +115,7 @@ def _roi_definition_changed(properties: object, context: bpy.types.Context) -> N
     _invalidate_validation(properties, context)
     if not properties.internal_update:
         properties.roi_geometry_json = ""
+        properties.available_product_ids_json = "[]"
         properties.product_availability_json = "[]"
         properties.product_availability_summary = ""
 
@@ -247,20 +291,12 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
     roi_geometry_json: StringProperty(default="", options={"HIDDEN"})
     internal_update: BoolProperty(default=False, options={"HIDDEN"})
+    available_product_ids_json: StringProperty(default="[]", options={"HIDDEN"})
     product: EnumProperty(
         name="Elevation Product",
-        items=(
-            ("MDT50CM", "DTM (MDT50 cm, 3rd)", "0.5 m terrain; coverage is incomplete"),
-            ("MDT02", "DTM (MDT02, 2nd)", "2 m bare-earth terrain"),
-            ("MDT05", "DTM (MDT05, 1st)", "5 m bare-earth terrain"),
-            ("MDT25", "DTM (MDT25, 2nd)", "25 m bare-earth terrain"),
-            ("MDT200", "DTM (MDT200, 2nd)", "200 m bare-earth terrain"),
-            ("MDS50CM", "DSM (MDS50 cm, 3rd)", "0.5 m surface; coverage is incomplete"),
-            ("MDS02", "DSM (MDS02, 2nd)", "2 m buildings and vegetation"),
-            ("MDS05", "DSM (MDS05, 1st)", "5 m buildings and vegetation"),
-        ),
-        default="MDT02",
-        update=_invalidate_validation,
+        items=_product_items,
+        default=1,
+        update=_product_changed,
     )
     elevation_resolution: EnumProperty(
         name="Elevation Resolution",

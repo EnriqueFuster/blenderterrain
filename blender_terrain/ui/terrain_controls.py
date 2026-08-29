@@ -180,6 +180,35 @@ def sync_selected_settings(
     return True
 
 
+def has_selected_terrain_objects(context: bpy.types.Context, import_id: str) -> bool:
+    """Return whether the active import contains a selected terrain object."""
+
+    collection = _collection(import_id)
+    return collection is not None and bool(
+        _selected_terrain_objects(context, collection)
+    )
+
+
+def request_selected_settings_sync() -> None:
+    """Schedule selection-to-panel synchronization outside the panel draw cycle."""
+
+    if not bpy.app.timers.is_registered(_sync_selected_settings_on_timer):
+        bpy.app.timers.register(_sync_selected_settings_on_timer, first_interval=0.0)
+
+
+def _sync_selected_settings_on_timer() -> None:
+    scene = getattr(bpy.context, "scene", None)
+    if scene is None or not hasattr(scene, "blender_terrain_roi"):
+        return None
+    properties = scene.blender_terrain_roi
+    sync_selected_settings(bpy.context, properties)
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == "VIEW_3D":
+                area.tag_redraw()
+    return None
+
+
 def select_import_objects(context: bpy.types.Context, import_id: str) -> int:
     """Select every mesh object owned by one terrain import."""
 

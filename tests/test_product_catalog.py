@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib.resources import files as resource_files
+
 import pytest
 
 from blender_terrain.catalog import (
@@ -9,6 +11,7 @@ from blender_terrain.catalog import (
     ImplementationStatus,
     SemanticConfidence,
     load_bundled_catalog,
+    loader,
 )
 from blender_terrain.catalog.loader import load_catalog_documents
 from blender_terrain.core.roi import BBoxWGS84
@@ -23,6 +26,20 @@ def test_catalog_contains_existing_spanish_products() -> None:
 
     assert spanish_ids == {product.value for product in DatasetProduct}
     assert all(catalog.product(product_id).selectable for product_id in spanish_ids)
+
+
+def test_bundled_catalog_uses_its_runtime_package_namespace(monkeypatch) -> None:
+    requested: list[str] = []
+
+    def capture(anchor: str):
+        requested.append(anchor)
+        return resource_files(anchor)
+
+    monkeypatch.setattr(loader, "files", capture)
+
+    load_bundled_catalog()
+
+    assert requested == [f"{loader.__package__}.data"]
 
 
 def test_global_product_semantics_cannot_confuse_dtm_and_dsm() -> None:

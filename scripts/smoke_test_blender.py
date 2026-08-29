@@ -61,7 +61,7 @@ def main() -> None:
         assert properties.terrain_tile_count == 6
         assert properties.terrain_tile_summary.startswith("Largest object:")
         assert properties.estimated_memory_mib > 0.0
-        assert "CNIG discovery" in properties.planning_warning
+        assert "provider discovery" in properties.planning_warning
         map_geometry = properties.roi_geometry_json
         properties.roi_input_mode = "MAP_POLYGON"
         properties.roi_geometry_json = map_geometry
@@ -105,6 +105,25 @@ def main() -> None:
         assert "interrupted" in properties.job_message
         _smoke_terrain_operator(properties, use_imagery=_cycle == 0)
         properties = bpy.context.scene.blender_terrain_roi
+        properties.product = "COPERNICUS_GLO30_2021"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert properties.selected_resolution == 30.0
+        assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
+        assert properties.discovery_ready
+        assert "Copernicus GLO-30" in properties.discovery_summary
+        assert not properties.job_active
+        properties.roi_input_mode = "BOUNDING_BOX"
+        properties.west = 2.34
+        properties.south = 48.85
+        properties.east = 2.36
+        properties.north = 48.87
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert json.loads(properties.available_product_ids_json) == [
+            "COPERNICUS_GLO30_2021"
+        ]
+        assert properties.product == "COPERNICUS_GLO30_2021"
+        properties.available_product_ids_json = "[]"
+        properties.product = "MDT02"
         properties.use_imagery = True
         properties.elevation_source = "LOCAL"
         assert properties.elevation_source == "LOCAL"

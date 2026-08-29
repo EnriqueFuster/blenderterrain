@@ -8,6 +8,7 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
+from ..catalog import DatasetKind, discover_candidates, load_bundled_catalog
 from ..core import (
     RESOURCE_PROFILES,
     BBoxWGS84,
@@ -275,8 +276,11 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     )
             else:
                 bounds = _bounds_from_properties(properties, store_derived=True)
+            if properties.elevation_source == "CNIG":
+                _refresh_available_products(properties, bounds)
             if (
                 properties.elevation_source == "CNIG"
+                and properties.product != "COPERNICUS_GLO30_2021"
                 and _product_availability_status(properties, properties.product)
                 == "NO_COVERAGE"
             ):
@@ -284,16 +288,23 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     "The availability check found no coverage for this product and ROI"
                 )
             elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
+            is_glo30 = properties.product == "COPERNICUS_GLO30_2021"
             plan = create_import_plan(
                 bounds=bounds,
-                product=DatasetProduct(properties.product),
+                product=(
+                    properties.product
+                    if is_glo30
+                    else DatasetProduct(properties.product)
+                ),
                 elevation_resolution_metres=(
                     None
                     if properties.elevation_resolution == "AUTO"
                     else float(properties.elevation_resolution)
                 ),
                 use_imagery=(
-                    properties.use_imagery and properties.elevation_source == "CNIG"
+                    properties.use_imagery
+                    and properties.elevation_source == "CNIG"
+                    and not is_glo30
                 ),
                 imagery_gsd_metres=(
                     None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
@@ -311,15 +322,20 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 maximum_elevation_samples=elevation_limit,
                 maximum_imagery_pixels=imagery_limit,
                 native_resolution_override=(
-                    None
-                    if local_inspection is None
-                    else local_inspection.native_resolution_metres
+                    30.0
+                    if is_glo30
+                    else (
+                        None
+                        if local_inspection is None
+                        else local_inspection.native_resolution_metres
+                    )
                 ),
                 projected_bounds_override=(
                     None
                     if local_inspection is None
                     else local_inspection.projected_bounds
                 ),
+                use_global_utm=is_glo30,
             )
         except BlenderTerrainError as exc:
             properties.is_valid = False
@@ -394,6 +410,41 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         )
         self.report({"INFO"}, properties.validation_message)
         return {"FINISHED"}
+
+
+def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
+    """Restrict the online product selector to catalog candidates covering the ROI."""
+
+    catalog = load_bundled_catalog()
+    valid_ids = {
+        candidate.product.id
+        for kind in (DatasetKind.DTM, DatasetKind.DSM)
+        for candidate in discover_candidates(catalog, bounds, kind).valid
+    }
+    if not valid_ids:
+        raise UserInputError("No implemented elevation product covers this ROI")
+    current = properties.product
+    ordered_ids = [
+        product_id
+        for product_id in (
+            "MDT02",
+            "MDT50CM",
+            "MDT05",
+            "MDT25",
+            "MDT200",
+            "MDS50CM",
+            "MDS02",
+            "MDS05",
+            "COPERNICUS_GLO30_2021",
+        )
+        if product_id in valid_ids
+    ]
+    properties.internal_update = True
+    try:
+        properties.available_product_ids_json = json.dumps(ordered_ids)
+        properties.product = current if current in valid_ids else ordered_ids[0]
+    finally:
+        properties.internal_update = False
 
 
 class BLENDERTERRAIN_OT_check_product_availability(bpy.types.Operator):
@@ -581,7 +632,14 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
         except BlenderTerrainError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
-        self.report({"INFO"}, "Source discovery started in the background")
+        self.report(
+            {"INFO"},
+            (
+                "Copernicus GLO-30 sources resolved"
+                if properties.product == "COPERNICUS_GLO30_2021"
+                else "Source discovery started in the background"
+            ),
+        )
         return {"FINISHED"}
 
 

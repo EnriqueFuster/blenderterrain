@@ -1,4 +1,4 @@
-"""Selection of native projected coordinate systems for supported Spanish data."""
+"""Selection of projected coordinate systems for terrain processing."""
 
 from __future__ import annotations
 
@@ -69,4 +69,42 @@ def split_bbox_by_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
         work_areas.append(UTMWorkArea(part, _SUPPORTED_CRS[zone]))
     if not work_areas:
         raise NoCoverageError("ROI does not intersect a supported Spanish UTM zone")
+    return tuple(work_areas)
+
+
+def split_bbox_by_wgs84_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
+    """Split a non-polar ROI into standard WGS84 UTM work areas."""
+
+    if bounds.south < -80.0 or bounds.north > 84.0:
+        raise NoCoverageError("WGS84 UTM processing is limited to 80°S-84°N")
+    first_zone = min(60, int((bounds.west + 180.0) // 6.0) + 1)
+    last_zone = min(60, int((bounds.east + 180.0 - 1e-12) // 6.0) + 1)
+    latitude_parts = (
+        ((bounds.south, min(bounds.north, 0.0), False),)
+        if bounds.north <= 0.0
+        else (
+            ((max(bounds.south, 0.0), bounds.north, True),)
+            if bounds.south >= 0.0
+            else ((bounds.south, 0.0, False), (0.0, bounds.north, True))
+        )
+    )
+    work_areas: list[UTMWorkArea] = []
+    for zone in range(first_zone, last_zone + 1):
+        zone_west = -180.0 + (zone - 1) * 6.0
+        zone_east = zone_west + 6.0
+        west = max(bounds.west, zone_west)
+        east = min(bounds.east, zone_east)
+        if east <= west:
+            continue
+        for south, north, northern in latitude_parts:
+            if north <= south:
+                continue
+            epsg = (32600 if northern else 32700) + zone
+            hemisphere = "N" if northern else "S"
+            work_areas.append(
+                UTMWorkArea(
+                    BBoxWGS84(west, south, east, north),
+                    CRSInfo(epsg, f"WGS 84 / UTM zone {zone}{hemisphere}", "WGS84", zone),
+                )
+            )
     return tuple(work_areas)

@@ -24,7 +24,7 @@ from .models import (
 def load_bundled_catalog() -> Catalog:
     """Load every catalog document shipped with the Python package."""
 
-    directory = files("blender_terrain.catalog.data")
+    directory = files(f"{__package__}.data")
     documents = (
         (entry.name, entry.read_bytes())
         for entry in sorted(directory.iterdir(), key=lambda item: item.name)

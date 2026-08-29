@@ -14,7 +14,7 @@ from blender_terrain.catalog import (
     SelectionBundle,
     SelectionMode,
 )
-from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.core.roi import BBoxWGS84, RegionOfInterest
 from blender_terrain.jobs.acquisition_job import AcquisitionJob
 from blender_terrain.jobs.models import JobState, ProgressEvent
 from blender_terrain.jobs.storage import (
@@ -42,6 +42,9 @@ class ProgressStorageTests(unittest.TestCase):
             str(uuid4()),
             str(uuid4()),
             AcquisitionPlan(request, SelectionBundle((selection,))),
+            region=RegionOfInterest.from_bbox(request.roi),
+            manual_tile_rows=2,
+            manual_tile_columns=3,
         )
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "job.json"

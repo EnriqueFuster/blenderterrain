@@ -7,7 +7,10 @@ import json
 import bpy
 
 from ..core import SUBDIVISION_WARNING_LEVEL
-from .terrain_controls import sync_selected_settings
+from .terrain_controls import (
+    has_selected_terrain_objects,
+    request_selected_settings_sync,
+)
 
 
 class BLENDERTERRAIN_PT_main(bpy.types.Panel):
@@ -151,8 +154,15 @@ class BLENDERTERRAIN_PT_data(bpy.types.Panel):
 def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> None:
     layout.row().prop(properties, "data_settings_tab", expand=True)
     if properties.data_settings_tab == "ELEVATION":
-        layout.prop(properties, "product")
-        layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
+        products_loaded = properties.available_product_ids_json != "[]"
+        if products_loaded:
+            layout.prop(properties, "product")
+        else:
+            layout.label(text="Validate the ROI to load available products", icon="INFO")
+        if products_loaded and properties.product != "COPERNICUS_GLO30_2021":
+            layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
+        elif products_loaded:
+            layout.label(text="Global 30 m surface model; not a bare-earth DTM", icon="INFO")
         if properties.product_availability_summary:
             availability_box = layout.box()
             availability_box.label(text=properties.product_availability_summary, icon="INFO")
@@ -173,6 +183,9 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             layout.label(text="Third-coverage availability is still incomplete", icon="INFO")
         _draw_elevation_output_settings(layout, properties)
     else:
+        if properties.product == "COPERNICUS_GLO30_2021":
+            layout.label(text="Global imagery is not implemented yet", icon="INFO")
+            return
         layout.prop(properties, "use_imagery")
         if properties.use_imagery:
             layout.prop(properties, "imagery_gsd", text="Resolution")
@@ -411,7 +424,10 @@ class BLENDERTERRAIN_PT_imported(bpy.types.Panel):
             editable.prop(properties, "terrain_displacement_enabled")
             editable.operator("blender_terrain.apply_import_settings")
         else:
-            has_selection = sync_selected_settings(context, properties)
+            has_selection = has_selected_terrain_objects(
+                context, properties.active_import_id
+            )
+            request_selected_settings_sync()
             if has_selection:
                 editable.label(
                     text=f"Values from: {properties.selected_object_name}",

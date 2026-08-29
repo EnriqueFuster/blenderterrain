@@ -121,12 +121,15 @@ def run_confirmed_acquisition_job(
             job.plan,
             catalog,
             job_path.parents[2],
-            transfer,
-            processing,
-            cancelled,
-            job.maximum_elevation_samples,
-            acquirer_factory,
-            elevation_processor,
+            transfer_callback=transfer,
+            processing_callback=processing,
+            cancellation_requested=cancelled,
+            maximum_elevation_samples=job.maximum_elevation_samples,
+            region=job.region,
+            manual_tile_rows=job.manual_tile_rows,
+            manual_tile_columns=job.manual_tile_columns,
+            acquirer_factory=acquirer_factory,
+            elevation_processor=elevation_processor,
         )
         processed_directory = job_path.parents[2] / "processed" / job.task_id
         processed_payload = _write_processed_tiles(
@@ -145,15 +148,19 @@ def run_confirmed_acquisition_job(
                 "warnings": list(product.coverage.limitations),
                 "request": {
                     "bounds_wgs84": asdict(job.plan.request.roi),
-                    "roi_geometry_wgs84": None,
+                    "roi_geometry_wgs84": (
+                        None
+                        if job.region is None
+                        else job.region.to_geojson_geometry()
+                    ),
                     "product": product.id,
                     "elevation_resolution_metres": (
                         prepared.import_plan.elevation_resolution_metres
                     ),
                     "use_imagery": False,
                     "imagery_gsd_metres": None,
-                    "manual_tile_rows": None,
-                    "manual_tile_columns": None,
+                    "manual_tile_rows": job.manual_tile_rows,
+                    "manual_tile_columns": job.manual_tile_columns,
                 },
                 "crs": [asdict(area.crs) for area in prepared.import_plan.work_areas],
                 "sources": [
@@ -228,6 +235,9 @@ def prepare_confirmed_elevation(
     processing_callback: Callable[[int, int], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
     maximum_elevation_samples: int = 16_777_216,
+    region: RegionOfInterest | None = None,
+    manual_tile_rows: int | None = None,
+    manual_tile_columns: int | None = None,
     acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
         build_raster_acquirers
     ),
@@ -271,8 +281,11 @@ def prepare_confirmed_elevation(
         layer_request.target_resolution_m,
         False,
         None,
+        manual_tile_rows,
+        manual_tile_columns,
         maximum_elevation_samples=maximum_elevation_samples,
         native_resolution_override=product.capabilities.native_resolution_m,
+        use_global_utm=product.provider_id == "copernicus_dem",
     )
     def report_processing(completed: int, total: int) -> None:
         if cancellation_requested():
@@ -282,7 +295,12 @@ def prepare_confirmed_elevation(
 
     if cancellation_requested():
         raise JobCancelled("Elevation processing was cancelled")
-    tiles = elevation_processor(acquired.paths, import_plan, report_processing)
+    tiles = elevation_processor(
+        acquired.paths,
+        import_plan,
+        report_processing,
+        region=region,
+    )
     return PreparedElevation(acquired, import_plan, tiles)
 
 

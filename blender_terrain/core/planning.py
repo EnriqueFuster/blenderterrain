@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
 from ..models import DatasetProduct, ProjectedBounds
-from .crs import UTMWorkArea, split_bbox_by_utm_zone
+from .crs import UTMWorkArea, split_bbox_by_utm_zone, split_bbox_by_wgs84_utm_zone
 from .estimates import ROIEstimate, estimate_bbox
 from .grid import (
     DEFAULT_MAX_TILE_CELLS,
@@ -170,6 +170,7 @@ def create_import_plan(
     maximum_imagery_pixels: int = MAX_IMAGERY_PIXELS,
     native_resolution_override: float | None = None,
     projected_bounds_override: tuple[ProjectedBounds, ...] | None = None,
+    use_global_utm: bool = False,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
@@ -186,7 +187,11 @@ def create_import_plan(
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
         raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
-    work_areas = split_bbox_by_utm_zone(bounds)
+    work_areas = (
+        split_bbox_by_wgs84_utm_zone(bounds)
+        if use_global_utm
+        else split_bbox_by_utm_zone(bounds)
+    )
     if projected_bounds_override is not None and {
         projected.epsg for projected in projected_bounds_override
     } != {area.crs.epsg for area in work_areas}:

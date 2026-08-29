@@ -12,6 +12,17 @@ from uuid import uuid4
 
 import bpy
 
+from ..catalog import (
+    AcquisitionRequest,
+    DatasetKind,
+    LayerRequest,
+    ProductSelection,
+    SelectionBundle,
+    SelectionMode,
+    create_acquisition_plan,
+    discover_candidates,
+    load_bundled_catalog,
+)
 from ..core import (
     RESOURCE_PROFILES,
     RegionOfInterest,
@@ -19,14 +30,18 @@ from ..core import (
     resolve_local_elevation_paths,
 )
 from ..errors import JobFormatError, UserInputError
+from ..jobs.acquisition_job import AcquisitionJob
 from ..jobs.models import DiscoveryJob, JobState
 from ..jobs.storage import (
+    read_acquisition_job,
     read_discovery_job,
     read_progress_events,
     request_cancellation,
+    write_acquisition_job,
     write_discovery_job,
 )
 from ..models import DatasetProduct
+from ..providers.copernicus_dem import GLO30_PRODUCT_ID, glo30_tiles_for_roi
 
 _POLL_INTERVAL_SECONDS = 0.25
 _TERMINAL_STATES = {
@@ -115,6 +130,18 @@ def start_discovery(context: bpy.types.Context) -> None:
     if not properties.is_valid:
         raise UserInputError("Validate the ROI before discovering sources")
     properties.discovery_ready = False
+    if properties.product == GLO30_PRODUCT_ID:
+        region = RegionOfInterest.from_geojson_geometry(
+            json.loads(properties.roi_geometry_json)
+        )
+        count = len(glo30_tiles_for_roi(region.bounds))
+        properties.discovered_file_count = count
+        properties.discovery_summary = f"{count} Copernicus GLO-30 tile(s) required"
+        properties.discovery_ready = True
+        properties.job_state = JobState.COMPLETE.value
+        properties.job_progress = 1.0
+        properties.job_message = "Global DSM sources resolved from the confirmed ROI"
+        return
     _start_worker(context, properties, "discovery", "Starting background source discovery")
 
 
@@ -125,7 +152,71 @@ def start_delivery(context: bpy.types.Context) -> None:
     if not properties.is_valid or not properties.discovery_ready:
         raise UserInputError("Discover the current sources before downloading data")
     properties.delivery_summary = ""
+    if properties.product == GLO30_PRODUCT_ID:
+        _start_acquisition_worker(context, properties)
+        return
     _start_worker(context, properties, "delivery", "Starting background data download")
+
+
+def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> None:
+    """Persist the confirmed GLO-30 choice and launch its portable worker."""
+
+    global _active_job
+    if _active_job is not None:
+        raise UserInputError("Another BlenderTerrain job is already running")
+    if not bpy.app.online_access:
+        raise UserInputError("Blender online access is disabled in Preferences")
+    region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
+    catalog = load_bundled_catalog()
+    product = catalog.product(GLO30_PRODUCT_ID)
+    layer = LayerRequest(
+        DatasetKind.DSM,
+        None
+        if properties.elevation_resolution == "AUTO"
+        else float(properties.elevation_resolution),
+    )
+    request = AcquisitionRequest(region.bounds, (layer,))
+    selection = ProductSelection(
+        product.provider_id,
+        product.id,
+        DatasetKind.DSM,
+        SelectionMode.MANUAL,
+        True,
+    )
+    plan = create_acquisition_plan(
+        request,
+        SelectionBundle((selection,)),
+        (discover_candidates(catalog, region.bounds, DatasetKind.DSM),),
+    )
+    cache_directory = configured_cache_directory(context)
+    task_id = str(uuid4())
+    if not properties.import_id:
+        properties.import_id = str(uuid4())
+    job_directory = cache_directory / "jobs" / task_id
+    elevation_limit, _imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
+    write_acquisition_job(
+        job_directory / "job.json",
+        AcquisitionJob(
+            task_id,
+            properties.import_id,
+            plan,
+            elevation_limit,
+            region,
+            properties.manual_tile_rows
+            if properties.tiling_mode == "MANUAL"
+            else None,
+            properties.manual_tile_columns
+            if properties.tiling_mode == "MANUAL"
+            else None,
+        ),
+    )
+    _launch_worker(
+        context,
+        properties,
+        "acquisition",
+        "Starting Copernicus GLO-30 acquisition",
+        job_directory,
+    )
 
 
 def start_availability(context: bpy.types.Context) -> None:
@@ -175,10 +266,29 @@ def retry_last_job(context: bpy.types.Context) -> None:
         resolved_previous.relative_to(jobs_directory)
     except (OSError, ValueError) as exc:
         raise UserInputError("The previous job is no longer available in the cache") from exc
-    previous = read_discovery_job(resolved_previous)
     mode = properties.last_job_mode
-    if mode not in {"discovery", "availability", "delivery"}:
+    if mode not in {"discovery", "availability", "delivery", "acquisition"}:
         raise UserInputError("The previous job mode cannot be retried")
+    if mode == "acquisition":
+        previous_acquisition = read_acquisition_job(resolved_previous)
+        if not bpy.app.online_access:
+            raise UserInputError("Blender online access is disabled in Preferences")
+        task_id = str(uuid4())
+        job_directory = cache_directory / "jobs" / task_id
+        write_acquisition_job(
+            job_directory / "job.json",
+            replace(previous_acquisition, task_id=task_id),
+        )
+        properties.import_id = previous_acquisition.import_id
+        _launch_worker(
+            context,
+            properties,
+            mode,
+            "Retrying previous acquisition job",
+            job_directory,
+        )
+        return
+    previous = read_discovery_job(resolved_previous)
     if _job_requires_network(previous, mode) and not bpy.app.online_access:
         raise UserInputError("Blender online access is disabled in Preferences")
     task_id = str(uuid4())
@@ -417,7 +527,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
                 str(warnings[0]) if warnings else "Product availability check completed"
             )
             return
-        if active.mode == "delivery":
+        if active.mode in {"delivery", "acquisition"}:
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
             terrain_count = len(result.get("processed_elevation", []))

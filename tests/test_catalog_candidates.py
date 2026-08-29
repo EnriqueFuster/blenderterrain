@@ -61,6 +61,20 @@ def test_french_roi_uses_global_only_after_global_provider_is_implemented() -> N
     assert french.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
 
 
+def test_french_roi_exposes_global_dsm_but_not_researched_national_dsm() -> None:
+    candidates = discover_candidates(load_bundled_catalog(), PARIS, DatasetKind.DSM)
+
+    assert [candidate.product.id for candidate in candidates.valid] == [
+        "COPERNICUS_GLO30_2021"
+    ]
+    assert candidates.recommended is not None
+    assert candidates.recommended.product.id == "COPERNICUS_GLO30_2021"
+    assert all(
+        candidate.product.provider_id != "ign_france"
+        for candidate in candidates.valid
+    )
+
+
 def test_layer_kinds_are_resolved_independently() -> None:
     catalog = load_bundled_catalog()
 
