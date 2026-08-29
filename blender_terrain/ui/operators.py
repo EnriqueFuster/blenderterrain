@@ -307,10 +307,15 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 use_imagery=(
                     properties.use_imagery
                     and properties.elevation_source == "CNIG"
-                    and not global_product
                 ),
                 imagery_gsd_metres=(
-                    None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
+                    10.0
+                    if global_product
+                    else (
+                        None
+                        if properties.imagery_gsd == "AUTO"
+                        else float(properties.imagery_gsd)
+                    )
                 ),
                 manual_tile_rows=(
                     properties.manual_tile_rows

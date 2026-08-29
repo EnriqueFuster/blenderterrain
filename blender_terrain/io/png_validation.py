@@ -6,9 +6,46 @@ import struct
 import zlib
 from pathlib import Path
 
+import numpy as np
+from numpy.typing import NDArray
+
 from ..errors import DownloadIntegrityError
+from .atomic import finalize_part
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def write_rgb_png(path: Path, pixels: NDArray[np.uint8]) -> None:
+    """Atomically write an unfiltered eight-bit RGB PNG."""
+
+    if pixels.dtype != np.uint8 or pixels.ndim != 3 or pixels.shape[2] != 3:
+        raise ValueError("PNG pixels must be an HxWx3 UInt8 array")
+    height, width, _ = pixels.shape
+    if width <= 0 or height <= 0:
+        raise ValueError("PNG dimensions must be positive")
+    rows = b"".join(b"\x00" + row.tobytes() for row in pixels)
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    encoded = (
+        _PNG_SIGNATURE
+        + _png_chunk(b"IHDR", header)
+        + _png_chunk(b"IDAT", zlib.compress(rows))
+        + _png_chunk(b"IEND", b"")
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")
+    try:
+        with part.open("xb") as stream:
+            stream.write(encoded)
+            stream.flush()
+        finalize_part(part, path)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+
+
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+    checksum = zlib.crc32(payload, zlib.crc32(kind))
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", checksum)
 
 
 def read_png_dimensions(path: Path) -> tuple[int, int]:

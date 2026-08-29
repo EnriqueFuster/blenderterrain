@@ -14,6 +14,7 @@ import bpy
 
 from ..catalog import (
     AcquisitionRequest,
+    DatasetKind,
     LayerRequest,
     ProductSelection,
     SelectionBundle,
@@ -42,6 +43,7 @@ from ..jobs.storage import (
 from ..models import DatasetProduct
 from ..providers.copernicus_dem import GLO30_PRODUCT_ID, glo30_tiles_for_roi
 from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
+from ..providers.worldcover import PRODUCT_ID as WORLDCOVER_PRODUCT_ID
 
 _GLOBAL_PRODUCT_IDS = {GLO30_PRODUCT_ID, GEDTM30_PRODUCT_ID}
 
@@ -185,25 +187,48 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
         if properties.elevation_resolution == "AUTO"
         else float(properties.elevation_resolution),
     )
-    request = AcquisitionRequest(region.bounds, (layer,))
-    selection = ProductSelection(
-        product.provider_id,
-        product.id,
-        product.capabilities.kind,
-        SelectionMode.MANUAL,
-        True,
-    )
+    layers = [layer]
+    selections = [
+        ProductSelection(
+            product.provider_id,
+            product.id,
+            product.capabilities.kind,
+            SelectionMode.MANUAL,
+            True,
+        )
+    ]
+    candidate_sets = [
+        discover_candidates(catalog, region.bounds, product.capabilities.kind)
+    ]
+    if properties.use_imagery:
+        imagery_product = catalog.product(WORLDCOVER_PRODUCT_ID)
+        imagery_layer = LayerRequest(DatasetKind.IMAGERY, 10.0, "2021")
+        layers.append(imagery_layer)
+        selections.append(
+            ProductSelection(
+                imagery_product.provider_id,
+                imagery_product.id,
+                DatasetKind.IMAGERY,
+                SelectionMode.MANUAL,
+                True,
+                "2021",
+            )
+        )
+        candidate_sets.append(
+            discover_candidates(catalog, region.bounds, DatasetKind.IMAGERY)
+        )
+    request = AcquisitionRequest(region.bounds, tuple(layers))
     plan = create_acquisition_plan(
         request,
-        SelectionBundle((selection,)),
-        (discover_candidates(catalog, region.bounds, product.capabilities.kind),),
+        SelectionBundle(tuple(selections)),
+        tuple(candidate_sets),
     )
     cache_directory = configured_cache_directory(context)
     task_id = str(uuid4())
     if not properties.import_id:
         properties.import_id = str(uuid4())
     job_directory = cache_directory / "jobs" / task_id
-    elevation_limit, _imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
+    elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
     write_acquisition_job(
         job_directory / "job.json",
         AcquisitionJob(
@@ -218,6 +243,7 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
             properties.manual_tile_columns
             if properties.tiling_mode == "MANUAL"
             else None,
+            imagery_limit,
         ),
     )
     _launch_worker(

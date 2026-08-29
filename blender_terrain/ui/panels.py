@@ -190,7 +190,9 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         _draw_elevation_output_settings(layout, properties)
     else:
         if properties.product in {"COPERNICUS_GLO30_2021", "GEDTM30_V11"}:
-            layout.label(text="Global imagery is not implemented yet", icon="INFO")
+            layout.prop(properties, "use_imagery")
+            if properties.use_imagery:
+                layout.label(text="ESA WorldCover 2021 composite, 10 m", icon="WORLD")
             return
         layout.prop(properties, "use_imagery")
         if properties.use_imagery:

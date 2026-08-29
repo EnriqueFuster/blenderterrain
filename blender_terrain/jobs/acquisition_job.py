@@ -34,6 +34,7 @@ class AcquisitionJob:
     region: RegionOfInterest | None = None
     manual_tile_rows: int | None = None
     manual_tile_columns: int | None = None
+    maximum_imagery_pixels: int = 67_108_864
 
     def __post_init__(self) -> None:
         try:
@@ -43,6 +44,8 @@ class AcquisitionJob:
             raise JobFormatError("Task and import identifiers must be UUIDs") from exc
         if self.maximum_elevation_samples <= 0:
             raise JobFormatError("Maximum elevation samples must be positive")
+        if self.maximum_imagery_pixels <= 0:
+            raise JobFormatError("Maximum imagery pixels must be positive")
         if self.region is not None and self.region.bounds != self.plan.request.roi:
             raise JobFormatError("ROI geometry bounds do not match the acquisition plan")
         manual_values = (self.manual_tile_rows, self.manual_tile_columns)
@@ -57,6 +60,7 @@ class AcquisitionJob:
             "task_id": self.task_id,
             "import_id": self.import_id,
             "maximum_elevation_samples": self.maximum_elevation_samples,
+            "maximum_imagery_pixels": self.maximum_imagery_pixels,
             "roi_geometry_wgs84": (
                 None if self.region is None else self.region.to_geojson_geometry()
             ),
@@ -131,6 +135,7 @@ class AcquisitionJob:
             task_id = payload["task_id"]
             import_id = payload["import_id"]
             maximum_samples = payload["maximum_elevation_samples"]
+            maximum_imagery_pixels = payload.get("maximum_imagery_pixels", 67_108_864)
             raw_region = payload.get("roi_geometry_wgs84")
             region = (
                 None
@@ -144,6 +149,8 @@ class AcquisitionJob:
                 or not isinstance(import_id, str)
                 or isinstance(maximum_samples, bool)
                 or not isinstance(maximum_samples, int)
+                or isinstance(maximum_imagery_pixels, bool)
+                or not isinstance(maximum_imagery_pixels, int)
                 or any(
                     not isinstance(selection.confirmed_by_user, bool)
                     for selection in selections.selections
@@ -158,6 +165,7 @@ class AcquisitionJob:
                 region,
                 manual_rows,
                 manual_columns,
+                maximum_imagery_pixels,
             )
         except (KeyError, TypeError, ValueError, JobFormatError) as exc:
             raise JobFormatError("Acquisition job contains invalid fields") from exc

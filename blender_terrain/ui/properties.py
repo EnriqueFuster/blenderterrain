@@ -343,7 +343,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         name="Columns", default=1, min=1, max=64, update=_invalidate_validation
     )
     use_imagery: BoolProperty(
-        name="Use PNOA Orthophoto", default=True, update=_invalidate_validation
+        name="Use Imagery", default=True, update=_invalidate_validation
     )
     imagery_gsd: EnumProperty(
         name="Imagery GSD",

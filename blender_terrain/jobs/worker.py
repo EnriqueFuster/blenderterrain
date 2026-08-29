@@ -21,6 +21,7 @@ from ..core import (
     BBoxWGS84,
     ImportPlan,
     ProcessedElevationTile,
+    ProcessedImageryTile,
     RegionOfInterest,
     TransferProgress,
     create_import_plan,
@@ -30,6 +31,7 @@ from ..core import (
     inspect_local_imagery,
     plan_imagery_tiles,
     process_elevation_tiles,
+    process_worldcover_imagery,
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
 from ..core.delivery import ElevationDownloader
@@ -73,6 +75,12 @@ class PreparedElevation:
     acquired: AcquiredRasterLayer
     import_plan: ImportPlan
     tiles: tuple[ProcessedElevationTile, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedImagery:
+    acquired: AcquiredRasterLayer
+    tiles: tuple[ProcessedImageryTile, ...]
 
 
 def run_confirmed_acquisition_job(
@@ -128,6 +136,7 @@ def run_confirmed_acquisition_job(
             processing_callback=processing,
             cancellation_requested=cancelled,
             maximum_elevation_samples=job.maximum_elevation_samples,
+            maximum_imagery_pixels=job.maximum_imagery_pixels,
             region=job.region,
             manual_tile_rows=job.manual_tile_rows,
             manual_tile_columns=job.manual_tile_columns,
@@ -135,12 +144,31 @@ def run_confirmed_acquisition_job(
             elevation_processor=elevation_processor,
         )
         processed_directory = job_path.parents[2] / "processed" / job.task_id
+        imagery = prepare_confirmed_imagery(
+            job.plan,
+            catalog,
+            prepared.import_plan,
+            job_path.parents[2],
+            processed_directory / "imagery",
+            transfer_callback=transfer,
+            processing_callback=lambda completed, total: emit(
+                JobState.PROCESSING_ELEVATION,
+                0.9 + 0.07 * completed / max(1, total),
+                f"Processing texture tile {completed}/{total}",
+            ),
+            cancellation_requested=cancelled,
+            acquirer_factory=acquirer_factory,
+        )
         processed_payload = _write_processed_tiles(
             prepared.tiles,
             processed_directory,
             cancelled,
         )
         product = catalog.product(prepared.acquired.product_id)
+        imagery_product = (
+            None if imagery is None else catalog.product(imagery.acquired.product_id)
+        )
+        source_layers = [prepared.acquired] + ([] if imagery is None else [imagery.acquired])
         write_result(
             result_path,
             {
@@ -148,7 +176,8 @@ def run_confirmed_acquisition_job(
                 "task_id": job.task_id,
                 "import_id": job.import_id,
                 "state": JobState.COMPLETE.value,
-                "warnings": list(product.coverage.limitations),
+                "warnings": list(product.coverage.limitations)
+                + ([] if imagery_product is None else list(imagery_product.coverage.limitations)),
                 "request": {
                     "bounds_wgs84": asdict(job.plan.request.roi),
                     "roi_geometry_wgs84": (
@@ -160,21 +189,26 @@ def run_confirmed_acquisition_job(
                     "elevation_resolution_metres": (
                         prepared.import_plan.elevation_resolution_metres
                     ),
-                    "use_imagery": False,
-                    "imagery_gsd_metres": None,
+                    "use_imagery": imagery is not None,
+                    "imagery_gsd_metres": (
+                        None
+                        if prepared.import_plan.imagery is None
+                        else prepared.import_plan.imagery.gsd_metres
+                    ),
                     "manual_tile_rows": job.manual_tile_rows,
                     "manual_tile_columns": job.manual_tile_columns,
                 },
                 "crs": [asdict(area.crs) for area in prepared.import_plan.work_areas],
                 "sources": [
                     {
-                        "provider_id": product.provider_id,
-                        "product_id": product.id,
-                        "paths": [str(path) for path in prepared.acquired.paths],
+                        "provider_id": layer.provider_id,
+                        "product_id": layer.product_id,
+                        "paths": [str(path) for path in layer.paths],
                         "auxiliary_paths": [
-                            str(path) for path in prepared.acquired.auxiliary_paths
+                            str(path) for path in layer.auxiliary_paths
                         ],
                     }
+                    for layer in source_layers
                 ],
                 "provenance": {
                     "source": product.name,
@@ -185,10 +219,28 @@ def run_confirmed_acquisition_job(
                     "uncertainty_summary": _uncertainty_summary(prepared.acquired),
                 },
                 "elevation_paths": [str(path) for path in prepared.acquired.paths],
-                "imagery_paths": [],
-                "imagery": [],
+                "imagery_paths": (
+                    [] if imagery is None else [str(tile.path) for tile in imagery.tiles]
+                ),
+                "imagery": (
+                    []
+                    if imagery is None
+                    else [
+                        {
+                            "path": str(tile.path),
+                            "bounds": asdict(tile.bounds),
+                            "width": tile.width,
+                            "height": tile.height,
+                            "gsd_metres": tile.gsd_metres,
+                        }
+                        for tile in imagery.tiles
+                    ]
+                ),
                 "processed_elevation": processed_payload,
-                "cache_reuse": {"elevation_files": prepared.acquired.cached_count},
+                "cache_reuse": {
+                    "elevation_files": prepared.acquired.cached_count,
+                    "imagery_files": 0 if imagery is None else imagery.acquired.cached_count,
+                },
             },
         )
         emit(
@@ -258,6 +310,7 @@ def prepare_confirmed_elevation(
     processing_callback: Callable[[int, int], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
     maximum_elevation_samples: int = 16_777_216,
+    maximum_imagery_pixels: int = 67_108_864,
     region: RegionOfInterest | None = None,
     manual_tile_rows: int | None = None,
     manual_tile_columns: int | None = None,
@@ -283,6 +336,10 @@ def prepare_confirmed_elevation(
     ):
         raise UserInputError("Selected elevation product does not match the catalog")
     layer_request = plan.request.layer(selection.kind)
+    imagery_selection = plan.selections.for_kind(DatasetKind.IMAGERY)
+    imagery_request = (
+        None if imagery_selection is None else plan.request.layer(DatasetKind.IMAGERY)
+    )
     elevation_plan = AcquisitionPlan(
         AcquisitionRequest(
             plan.request.roi,
@@ -295,11 +352,12 @@ def prepare_confirmed_elevation(
         plan.request.roi,
         product.id,
         layer_request.target_resolution_m,
-        False,
-        None,
+        imagery_selection is not None,
+        None if imagery_request is None else imagery_request.target_resolution_m,
         manual_tile_rows,
         manual_tile_columns,
         maximum_elevation_samples=maximum_elevation_samples,
+        maximum_imagery_pixels=maximum_imagery_pixels,
         native_resolution_override=product.capabilities.native_resolution_m,
         use_global_utm=product.jurisdiction == "global",
     )
@@ -331,6 +389,54 @@ def prepare_confirmed_elevation(
         region=region,
     )
     return PreparedElevation(acquired, import_plan, tiles)
+
+
+def prepare_confirmed_imagery(
+    plan: AcquisitionPlan,
+    catalog: Catalog,
+    import_plan: ImportPlan,
+    cache_directory: Path,
+    output_directory: Path,
+    transfer_callback: Callable[[TransferProgress], None] | None = None,
+    processing_callback: Callable[[int, int], None] | None = None,
+    cancellation_requested: Callable[[], bool] = lambda: False,
+    acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
+        build_raster_acquirers
+    ),
+) -> PreparedImagery | None:
+    """Acquire and project the explicitly confirmed imagery selection, if any."""
+
+    selection = plan.selections.for_kind(DatasetKind.IMAGERY)
+    if selection is None:
+        return None
+    product = catalog.product(selection.product_id)
+    if (
+        product.provider_id != selection.provider_id
+        or product.capabilities.kind is not DatasetKind.IMAGERY
+        or product.id != "ESA_WORLDCOVER_S2_2021"
+    ):
+        raise UserInputError("Selected imagery product is not supported by this worker")
+    request = plan.request.layer(DatasetKind.IMAGERY)
+    imagery_plan = AcquisitionPlan(
+        AcquisitionRequest(plan.request.roi, (request,), plan.request.license_profile),
+        SelectionBundle((selection,)),
+    )
+    acquired = acquire_confirmed_sources(
+        imagery_plan,
+        cache_directory,
+        transfer_callback,
+        cancellation_requested,
+        acquirer_factory,
+        geographic_source_bounds(import_plan),
+    )[0]
+    tiles = process_worldcover_imagery(
+        acquired.paths,
+        import_plan,
+        output_directory,
+        processing_callback,
+        cancellation_requested,
+    )
+    return PreparedImagery(acquired, tiles)
 
 
 class _LocalElevationClient:

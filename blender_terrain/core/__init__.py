@@ -19,6 +19,7 @@ from .grid import (
 )
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
 from .imagery import ImageryTileRequest, plan_imagery_tiles
+from .imagery_processing import ProcessedImageryTile, process_worldcover_imagery
 from .local_elevation import (
     LocalElevationInspection,
     inspect_local_elevation,
@@ -82,6 +83,7 @@ __all__ = [
     "LocalImageryInspection",
     "PolygonWGS84",
     "ProcessedElevationTile",
+    "ProcessedImageryTile",
     "ProjectedPoint",
     "ROIEstimate",
     "RegionOfInterest",
@@ -113,6 +115,7 @@ __all__ = [
     "parse_bbox",
     "plan_imagery_tiles",
     "process_elevation_tiles",
+    "process_worldcover_imagery",
     "project_utm_to_wgs84",
     "project_wgs84_to_utm",
     "project_work_area_bounds",
