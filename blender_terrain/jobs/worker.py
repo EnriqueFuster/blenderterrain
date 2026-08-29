@@ -9,6 +9,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Protocol
 
+from ..catalog import load_bundled_catalog
 from ..catalog.models import Catalog, DatasetKind
 from ..catalog.selection import (
     AcquisitionPlan,
@@ -51,6 +52,7 @@ from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
 from .storage import (
     append_progress_event,
     is_cancellation_requested,
+    read_acquisition_job,
     read_discovery_job,
     write_result,
 )
@@ -68,6 +70,131 @@ class PreparedElevation:
     acquired: AcquiredRasterLayer
     import_plan: ImportPlan
     tiles: tuple[ProcessedElevationTile, ...]
+
+
+def run_confirmed_acquisition_job(
+    job_path: Path,
+    acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
+        build_raster_acquirers
+    ),
+    elevation_processor: ElevationProcessor = process_elevation_tiles,
+) -> JobState:
+    """Execute a persisted confirmed elevation plan and publish Blender-ready output."""
+
+    events_path = job_path.with_name("events.jsonl")
+    result_path = job_path.with_name("result.json")
+    sequence = 0
+
+    def emit(state: JobState, progress: float, message: str) -> None:
+        nonlocal sequence
+        append_progress_event(events_path, ProgressEvent(sequence, state, progress, message))
+        sequence += 1
+
+    def cancelled() -> bool:
+        return is_cancellation_requested(job_path.parent)
+
+    try:
+        emit(JobState.VALIDATING, 0.02, "Validating confirmed acquisition")
+        job = read_acquisition_job(job_path)
+        catalog = load_bundled_catalog()
+
+        def transfer(progress: TransferProgress) -> None:
+            fraction = (
+                progress.written_bytes / progress.expected_bytes
+                if progress.expected_bytes
+                else 0.0
+            )
+            emit(
+                JobState.DOWNLOADING_ELEVATION,
+                0.05 + 0.65 * min(1.0, fraction),
+                _transfer_message(progress),
+            )
+
+        def processing(completed: int, total: int) -> None:
+            emit(
+                JobState.PROCESSING_ELEVATION,
+                0.72 + 0.22 * completed / max(1, total),
+                f"Processing terrain tile {completed}/{total}",
+            )
+
+        prepared = prepare_confirmed_elevation(
+            job.plan,
+            catalog,
+            job_path.parents[2],
+            transfer,
+            processing,
+            cancelled,
+            job.maximum_elevation_samples,
+            acquirer_factory,
+            elevation_processor,
+        )
+        processed_directory = job_path.parents[2] / "processed" / job.task_id
+        processed_payload = _write_processed_tiles(
+            prepared.tiles,
+            processed_directory,
+            cancelled,
+        )
+        product = catalog.product(prepared.acquired.product_id)
+        write_result(
+            result_path,
+            {
+                "schema_version": RESULT_SCHEMA_VERSION,
+                "task_id": job.task_id,
+                "import_id": job.import_id,
+                "state": JobState.COMPLETE.value,
+                "warnings": list(product.coverage.limitations),
+                "request": {
+                    "bounds_wgs84": asdict(job.plan.request.roi),
+                    "roi_geometry_wgs84": None,
+                    "product": product.id,
+                    "elevation_resolution_metres": (
+                        prepared.import_plan.elevation_resolution_metres
+                    ),
+                    "use_imagery": False,
+                    "imagery_gsd_metres": None,
+                    "manual_tile_rows": None,
+                    "manual_tile_columns": None,
+                },
+                "crs": [asdict(area.crs) for area in prepared.import_plan.work_areas],
+                "sources": [
+                    {
+                        "provider_id": product.provider_id,
+                        "product_id": product.id,
+                        "paths": [str(path) for path in prepared.acquired.paths],
+                    }
+                ],
+                "provenance": {
+                    "source": product.name,
+                    "data_policy_url": product.license.identifier,
+                    "license": product.license.identifier,
+                    "attribution": product.license.attribution_text,
+                    "retrieved_at_utc": datetime.now(UTC).isoformat(),
+                },
+                "elevation_paths": [str(path) for path in prepared.acquired.paths],
+                "imagery_paths": [],
+                "imagery": [],
+                "processed_elevation": processed_payload,
+                "cache_reuse": {"elevation_files": prepared.acquired.cached_count},
+            },
+        )
+        emit(
+            JobState.COMPLETE,
+            1.0,
+            f"Prepared {len(prepared.tiles)} terrain tile(s) from {product.name}",
+        )
+        return JobState.COMPLETE
+    except JobCancelled as exc:
+        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
+    except ProviderUnavailableError as exc:
+        return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
+    except (
+        DownloadIntegrityError,
+        JobFormatError,
+        RasterFormatError,
+        UserInputError,
+        ValueError,
+    ) as exc:
+        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
 
 
 def acquire_confirmed_sources(
@@ -100,6 +227,7 @@ def prepare_confirmed_elevation(
     transfer_callback: Callable[[TransferProgress], None] | None = None,
     processing_callback: Callable[[int, int], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
+    maximum_elevation_samples: int = 16_777_216,
     acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
         build_raster_acquirers
     ),
@@ -143,6 +271,7 @@ def prepare_confirmed_elevation(
         layer_request.target_resolution_m,
         False,
         None,
+        maximum_elevation_samples=maximum_elevation_samples,
         native_resolution_override=product.capabilities.native_resolution_m,
     )
     def report_processing(completed: int, total: int) -> None:
@@ -461,33 +590,19 @@ def run_delivery_job(
             report_processing,
             region=job.region,
         )
-        processed_payload: list[dict[str, object]] = []
-        for processed in processed_tiles:
-            if cancelled():
-                raise JobCancelled("Data delivery was cancelled")
-            filename = (
-                f"elevation_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
-                f"r{processed.tile.row}_c{processed.tile.column}.npy"
-            )
-            output_path = processed_directory / filename
-            write_elevation_array(output_path, processed.data)
-            processed_payload.append(
-                {
-                    "path": str(output_path),
-                    "bounds": asdict(processed.tile.bounds),
-                    "rows": processed.tile.rows,
-                    "columns": processed.tile.columns,
-                    "nodata": processed.nodata,
-                    "overlap_valid_pixels": processed.overlap_valid_pixels,
-                    "conflicting_valid_pixels": processed.conflicting_valid_pixels,
-                    "maximum_overlap_difference": processed.maximum_overlap_difference,
-                }
-            )
+        def report_written(completed: int, total: int) -> None:
             emit(
                 JobState.PROCESSING_ELEVATION,
                 0.99,
-                f"Writing terrain tile {len(processed_payload)} of {len(processed_tiles)}",
+                f"Writing terrain tile {completed} of {total}",
             )
+
+        processed_payload = _write_processed_tiles(
+            processed_tiles,
+            processed_directory,
+            cancelled,
+            report_written,
+        )
         terminal_state = (
             JobState.COMPLETE_WITH_WARNINGS if delivered.warnings else JobState.COMPLETE
         )
@@ -621,7 +736,12 @@ def run_delivery_job(
 
 
 def _transfer_message(transfer: TransferProgress) -> str:
-    kind = "elevation" if transfer.kind == "elevation" else "PNOA imagery"
+    kind = {
+        "elevation": "elevation",
+        "imagery": "PNOA imagery",
+        "dtm": "DTM",
+        "dsm": "DSM",
+    }.get(transfer.kind, transfer.kind)
     position = f"{transfer.file_index + 1}/{transfer.file_count}"
     if transfer.cached:
         return f"Using cached {kind} {position}: {transfer.filename}"
@@ -633,6 +753,39 @@ def _transfer_message(transfer: TransferProgress) -> str:
     else:
         size = f"{written_mib:.1f} MiB"
     return f"Downloading {kind} {position}: {transfer.filename} ({size})"
+
+
+def _write_processed_tiles(
+    tiles: tuple[ProcessedElevationTile, ...],
+    directory: Path,
+    cancellation_requested: Callable[[], bool],
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> list[dict[str, object]]:
+    payload: list[dict[str, object]] = []
+    for processed in tiles:
+        if cancellation_requested():
+            raise JobCancelled("Elevation output writing was cancelled")
+        filename = (
+            f"elevation_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
+            f"r{processed.tile.row}_c{processed.tile.column}.npy"
+        )
+        output_path = directory / filename
+        write_elevation_array(output_path, processed.data)
+        payload.append(
+            {
+                "path": str(output_path),
+                "bounds": asdict(processed.tile.bounds),
+                "rows": processed.tile.rows,
+                "columns": processed.tile.columns,
+                "nodata": processed.nodata,
+                "overlap_valid_pixels": processed.overlap_valid_pixels,
+                "conflicting_valid_pixels": processed.conflicting_valid_pixels,
+                "maximum_overlap_difference": processed.maximum_overlap_difference,
+            }
+        )
+        if progress_callback is not None:
+            progress_callback(len(payload), len(tiles))
+    return payload
 
 
 def _create_plan(job: DiscoveryJob) -> ImportPlan:

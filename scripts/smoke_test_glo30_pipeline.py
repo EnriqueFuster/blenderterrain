@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import replace
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 
@@ -21,9 +23,12 @@ from blender_terrain.catalog import (
     discover_candidates,
     load_bundled_catalog,
 )
-from blender_terrain.core.delivery import TransferProgress
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.jobs import prepare_confirmed_elevation
+from blender_terrain.jobs import AcquisitionJob, run_confirmed_acquisition_job
+from blender_terrain.jobs.storage import (
+    read_progress_events,
+    write_acquisition_job,
+)
 
 PRODUCT_ID = "COPERNICUS_GLO30_2021"
 
@@ -59,24 +64,30 @@ def main() -> int:
         SelectionBundle((selection,)),
         (discover_candidates(catalog, roi, DatasetKind.DSM),),
     )
-    prepared = prepare_confirmed_elevation(
-        plan,
-        catalog,
-        arguments.cache,
-        transfer_callback=_report_transfer,
-        processing_callback=lambda completed, total: print(
-            f"Processing terrain: {completed}/{total}"
-        ),
+    task_id = str(uuid4())
+    job_path = arguments.cache / "jobs" / task_id / "job.json"
+    write_acquisition_job(
+        job_path,
+        AcquisitionJob(task_id, str(uuid4()), plan),
     )
+    state = run_confirmed_acquisition_job(job_path)
+    events, _offset = read_progress_events(job_path.with_name("events.jsonl"))
+    for event in events:
+        print(f"{event.progress * 100:5.1f}% {event.message}")
+    if state.value != "COMPLETE":
+        raise RuntimeError(f"Acquisition worker finished with {state.value}")
+    result = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
     valid_samples = sum(
-        int(np.count_nonzero(tile.data != tile.nodata)) for tile in prepared.tiles
+        int(np.count_nonzero(data != float(entry["nodata"])))
+        for entry in result["processed_elevation"]
+        for data in (np.load(entry["path"], allow_pickle=False),)
     )
     if valid_samples == 0:
         raise RuntimeError("GLO-30 processing produced no valid elevation samples")
     print(
-        f"Prepared {len(prepared.tiles)} terrain tile(s), "
+        f"Prepared {len(result['processed_elevation'])} terrain tile(s), "
         f"{valid_samples} valid samples at "
-        f"{prepared.import_plan.elevation_resolution_metres:g} m"
+        f"{result['request']['elevation_resolution_metres']:g} m"
     )
     return 0
 
@@ -90,15 +101,6 @@ def _development_catalog() -> Catalog:
             else product
             for product in catalog.products
         )
-    )
-
-
-def _report_transfer(transfer: TransferProgress) -> None:
-    total = "?" if transfer.expected_bytes is None else str(transfer.expected_bytes)
-    source = "cache" if transfer.cached else "network"
-    print(
-        f"{source}: {transfer.filename} "
-        f"({transfer.written_bytes}/{total} bytes)"
     )
 
 

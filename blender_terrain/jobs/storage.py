@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import JobFormatError
+from .acquisition_job import AcquisitionJob
 from .models import DiscoveryJob, ProgressEvent
 
 CANCELLATION_FILENAME = "cancel.request"
@@ -28,6 +29,23 @@ def read_discovery_job(path: Path) -> DiscoveryJob:
     except (OSError, json.JSONDecodeError) as exc:
         raise JobFormatError(f"Cannot read job JSON: {path}") from exc
     return DiscoveryJob.from_dict(payload)
+
+
+def write_acquisition_job(path: Path, job: AcquisitionJob) -> None:
+    """Create a confirmed acquisition job without overwriting prior evidence."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json_atomic(path, job.to_dict(), overwrite=False)
+
+
+def read_acquisition_job(path: Path) -> AcquisitionJob:
+    """Read and validate a confirmed acquisition job."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise JobFormatError(f"Cannot read acquisition job JSON: {path}") from exc
+    return AcquisitionJob.from_dict(payload)
 
 
 def append_progress_event(path: Path, event: ProgressEvent) -> None:

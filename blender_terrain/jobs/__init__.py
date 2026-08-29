@@ -1,19 +1,23 @@
 """Portable background-job protocol and execution."""
 
+from .acquisition_job import AcquisitionJob
 from .models import DiscoveryJob, JobState, ProgressEvent
 from .worker import (
     PreparedElevation,
     acquire_confirmed_sources,
     prepare_confirmed_elevation,
+    run_confirmed_acquisition_job,
     run_discovery_job,
 )
 
 __all__ = [
+    "AcquisitionJob",
     "DiscoveryJob",
     "JobState",
     "PreparedElevation",
     "ProgressEvent",
     "acquire_confirmed_sources",
     "prepare_confirmed_elevation",
+    "run_confirmed_acquisition_job",
     "run_discovery_job",
 ]

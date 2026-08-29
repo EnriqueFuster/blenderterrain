@@ -3,12 +3,54 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
+from blender_terrain.catalog import (
+    AcquisitionPlan,
+    AcquisitionRequest,
+    DatasetKind,
+    LayerRequest,
+    ProductSelection,
+    SelectionBundle,
+    SelectionMode,
+)
+from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.jobs.acquisition_job import AcquisitionJob
 from blender_terrain.jobs.models import JobState, ProgressEvent
-from blender_terrain.jobs.storage import append_progress_event, read_progress_events
+from blender_terrain.jobs.storage import (
+    append_progress_event,
+    read_acquisition_job,
+    read_progress_events,
+    write_acquisition_job,
+)
 
 
 class ProgressStorageTests(unittest.TestCase):
+    def test_round_trips_confirmed_acquisition_job(self) -> None:
+        request = AcquisitionRequest(
+            BBoxWGS84(-0.39, 39.46, -0.38, 39.47),
+            (LayerRequest(DatasetKind.DSM, 100.0),),
+        )
+        selection = ProductSelection(
+            "copernicus_dem",
+            "COPERNICUS_GLO30_2021",
+            DatasetKind.DSM,
+            SelectionMode.MANUAL,
+            True,
+        )
+        job = AcquisitionJob(
+            str(uuid4()),
+            str(uuid4()),
+            AcquisitionPlan(request, SelectionBundle((selection,))),
+        )
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "job.json"
+            write_acquisition_job(path, job)
+
+            restored = read_acquisition_job(path)
+
+        self.assertEqual(restored, job)
+
     def test_reads_only_new_complete_events(self) -> None:
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "events.jsonl"
