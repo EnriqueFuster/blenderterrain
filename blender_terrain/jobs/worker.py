@@ -20,6 +20,7 @@ from ..catalog.selection import (
 from ..core import (
     BBoxWGS84,
     ImportPlan,
+    ProcessedBathymetryTile,
     ProcessedElevationTile,
     ProcessedImageryTile,
     RegionOfInterest,
@@ -31,6 +32,7 @@ from ..core import (
     inspect_local_imagery,
     plan_imagery_tiles,
     process_elevation_tiles,
+    process_gebco_tiles,
     process_worldcover_imagery,
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
@@ -48,7 +50,7 @@ from ..errors import (
     UserInputError,
 )
 from ..io.bigtiff_tiles import open_float_tile_reader
-from ..io.elevation_output import write_elevation_array
+from ..io.elevation_output import write_elevation_array, write_quality_array
 from ..models import CatalogItem, DatasetProduct
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
@@ -81,6 +83,12 @@ class PreparedElevation:
 class PreparedImagery:
     acquired: AcquiredRasterLayer
     tiles: tuple[ProcessedImageryTile, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedBathymetry:
+    acquired: AcquiredRasterLayer
+    tiles: tuple[ProcessedBathymetryTile, ...]
 
 
 def run_confirmed_acquisition_job(
@@ -144,6 +152,20 @@ def run_confirmed_acquisition_job(
             elevation_processor=elevation_processor,
         )
         processed_directory = job_path.parents[2] / "processed" / job.task_id
+        bathymetry = prepare_confirmed_bathymetry(
+            job.plan,
+            catalog,
+            prepared.import_plan,
+            job_path.parents[2],
+            transfer_callback=transfer,
+            processing_callback=lambda completed, total: emit(
+                JobState.PROCESSING_ELEVATION,
+                0.85 + 0.07 * completed / max(1, total),
+                f"Processing bathymetry tile {completed}/{total}",
+            ),
+            cancellation_requested=cancelled,
+            acquirer_factory=acquirer_factory,
+        )
         imagery = prepare_confirmed_imagery(
             job.plan,
             catalog,
@@ -164,11 +186,23 @@ def run_confirmed_acquisition_job(
             processed_directory,
             cancelled,
         )
+        bathymetry_payload = _write_processed_bathymetry(
+            () if bathymetry is None else bathymetry.tiles,
+            processed_directory / "bathymetry",
+            cancelled,
+        )
         product = catalog.product(prepared.acquired.product_id)
         imagery_product = (
             None if imagery is None else catalog.product(imagery.acquired.product_id)
         )
-        source_layers = [prepared.acquired] + ([] if imagery is None else [imagery.acquired])
+        bathymetry_product = (
+            None if bathymetry is None else catalog.product(bathymetry.acquired.product_id)
+        )
+        source_layers = (
+            [prepared.acquired]
+            + ([] if bathymetry is None else [bathymetry.acquired])
+            + ([] if imagery is None else [imagery.acquired])
+        )
         write_result(
             result_path,
             {
@@ -177,6 +211,11 @@ def run_confirmed_acquisition_job(
                 "import_id": job.import_id,
                 "state": JobState.COMPLETE.value,
                 "warnings": list(product.coverage.limitations)
+                + (
+                    []
+                    if bathymetry_product is None
+                    else list(bathymetry_product.coverage.limitations)
+                )
                 + ([] if imagery_product is None else list(imagery_product.coverage.limitations)),
                 "request": {
                     "bounds_wgs84": asdict(job.plan.request.roi),
@@ -190,6 +229,7 @@ def run_confirmed_acquisition_job(
                         prepared.import_plan.elevation_resolution_metres
                     ),
                     "use_imagery": imagery is not None,
+                    "use_bathymetry": bathymetry is not None,
                     "imagery_gsd_metres": (
                         None
                         if prepared.import_plan.imagery is None
@@ -242,9 +282,13 @@ def run_confirmed_acquisition_job(
                     ]
                 ),
                 "processed_elevation": processed_payload,
+                "bathymetry": bathymetry_payload,
                 "cache_reuse": {
                     "elevation_files": prepared.acquired.cached_count,
                     "imagery_files": 0 if imagery is None else imagery.acquired.cached_count,
+                    "bathymetry_files": (
+                        0 if bathymetry is None else bathymetry.acquired.cached_count
+                    ),
                 },
             },
         )
@@ -252,6 +296,7 @@ def run_confirmed_acquisition_job(
             JobState.COMPLETE,
             1.0,
             f"Prepared {len(prepared.tiles)} terrain and "
+            f"{len(bathymetry_payload)} bathymetry and "
             f"{0 if imagery is None else len(imagery.tiles)} texture tile(s)",
         )
         return JobState.COMPLETE
@@ -443,6 +488,52 @@ def prepare_confirmed_imagery(
         cancellation_requested,
     )
     return PreparedImagery(acquired, tiles)
+
+
+def prepare_confirmed_bathymetry(
+    plan: AcquisitionPlan,
+    catalog: Catalog,
+    import_plan: ImportPlan,
+    cache_directory: Path,
+    transfer_callback: Callable[[TransferProgress], None] | None = None,
+    processing_callback: Callable[[int, int], None] | None = None,
+    cancellation_requested: Callable[[], bool] = lambda: False,
+    acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
+        build_raster_acquirers
+    ),
+) -> PreparedBathymetry | None:
+    """Acquire and align the explicitly confirmed bathymetry selection, if any."""
+
+    selection = plan.selections.for_kind(DatasetKind.BATHYMETRY)
+    if selection is None:
+        return None
+    product = catalog.product(selection.product_id)
+    if (
+        product.provider_id != selection.provider_id
+        or product.capabilities.kind is not DatasetKind.BATHYMETRY
+        or product.id != "GEBCO_2026"
+    ):
+        raise UserInputError("Selected bathymetry product is not supported by this worker")
+    request = plan.request.layer(DatasetKind.BATHYMETRY)
+    bathymetry_plan = AcquisitionPlan(
+        AcquisitionRequest(plan.request.roi, (request,), plan.request.license_profile),
+        SelectionBundle((selection,)),
+    )
+    acquired = acquire_confirmed_sources(
+        bathymetry_plan,
+        cache_directory,
+        transfer_callback,
+        cancellation_requested,
+        acquirer_factory,
+        geographic_source_bounds(import_plan),
+    )[0]
+    tid_path = next((path for path in acquired.auxiliary_paths if path.name == "tid.npy"), None)
+    if tid_path is None or len(acquired.paths) != 1:
+        raise RasterFormatError("GEBCO elevation and TID windows are required")
+    tiles = process_gebco_tiles(
+        acquired.paths[0], tid_path, import_plan, processing_callback
+    )
+    return PreparedBathymetry(acquired, tiles)
 
 
 class _LocalElevationClient:
@@ -944,6 +1035,36 @@ def _write_processed_tiles(
         )
         if progress_callback is not None:
             progress_callback(len(payload), len(tiles))
+    return payload
+
+
+def _write_processed_bathymetry(
+    tiles: tuple[ProcessedBathymetryTile, ...],
+    directory: Path,
+    cancellation_requested: Callable[[], bool],
+) -> list[dict[str, object]]:
+    payload: list[dict[str, object]] = []
+    for processed in tiles:
+        if cancellation_requested():
+            raise JobCancelled("Bathymetry output writing was cancelled")
+        stem = (
+            f"bathymetry_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
+            f"r{processed.tile.row}_c{processed.tile.column}"
+        )
+        elevation_path = directory / f"{stem}.npy"
+        tid_path = directory / f"{stem}_tid.npy"
+        write_elevation_array(elevation_path, processed.elevation)
+        write_quality_array(tid_path, processed.tid)
+        payload.append(
+            {
+                "path": str(elevation_path),
+                "tid_path": str(tid_path),
+                "bounds": asdict(processed.tile.bounds),
+                "rows": processed.tile.rows,
+                "columns": processed.tile.columns,
+                "nodata": processed.nodata,
+            }
+        )
     return payload
 
 

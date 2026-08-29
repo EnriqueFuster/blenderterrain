@@ -1,4 +1,4 @@
-"""Windowed elevation mosaicking and bilinear resampling for terrain tiles."""
+"""Windowed elevation mosaicking and controlled resampling for terrain tiles."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -83,11 +84,14 @@ def process_elevation_tiles(
     progress_callback: Callable[[int, int], None] | None = None,
     maximum_source_window_pixels: int = DEFAULT_MAX_SOURCE_WINDOW_PIXELS,
     region: RegionOfInterest | None = None,
+    sampling: Literal["bilinear", "nearest"] = "bilinear",
 ) -> tuple[ProcessedElevationTile, ...]:
     """Build every planned terrain tile while bounding native source windows."""
 
     if maximum_source_window_pixels <= 0:
         raise ValueError("Maximum source window pixels must be positive")
+    if sampling not in {"bilinear", "nearest"}:
+        raise ValueError("Elevation sampling must be bilinear or nearest")
     readers = tuple(
         ElevationWindowReader(path)
         if path.suffix.lower() == ".npy"
@@ -110,7 +114,7 @@ def process_elevation_tiles(
         for tile in plan.tiles_for_grid(zone_index):
             processed = (
                 _resample_tile(
-                    zone_index, tile, zone_readers, maximum_source_window_pixels
+                    zone_index, tile, zone_readers, maximum_source_window_pixels, sampling
                 )
                 if zone_readers
                 else _resample_geographic_tile(
@@ -119,6 +123,7 @@ def process_elevation_tiles(
                     geographic_readers,
                     plan.work_areas[zone_index].crs,
                     maximum_source_window_pixels,
+                    sampling,
                 )
             )
             if region is not None:
@@ -135,6 +140,7 @@ def _resample_tile(
     tile: GridTile,
     readers: tuple[ElevationReader, ...],
     maximum_source_window_pixels: int,
+    sampling: Literal["bilinear", "nearest"],
 ) -> ProcessedElevationTile:
     source_resolution = readers[0].georeference.pixel_width
     if source_resolution <= 0.0:
@@ -165,7 +171,7 @@ def _resample_tile(
                 readers, requested, maximum_pixels=maximum_source_window_pixels
             )
             output[row : row + block_rows + 1, column : column + block_columns + 1] = (
-                _bilinear_sample_grid(
+                _sample_grid(
                     mosaic.data,
                     mosaic.bounds.west,
                     mosaic.bounds.north,
@@ -174,6 +180,7 @@ def _resample_tile(
                     block_rows + 1,
                     block_columns + 1,
                     mosaic.nodata,
+                    sampling,
                 )
             )
             overlap += mosaic.overlap_valid_pixels
@@ -196,6 +203,7 @@ def _resample_geographic_tile(
     readers: tuple[ElevationReader, ...],
     crs: CRSInfo,
     maximum_source_window_pixels: int,
+    sampling: Literal["bilinear", "nearest"],
 ) -> ProcessedElevationTile:
     """Window and reproject geographic elevation into one projected terrain tile."""
 
@@ -245,7 +253,7 @@ def _resample_geographic_tile(
                 readers, requested, maximum_pixels=maximum_source_window_pixels
             )
             output[row : row + block_rows + 1, column : column + block_columns + 1] = (
-                _bilinear_sample_coordinates(
+                _sample_coordinates(
                     mosaic.data,
                     mosaic.bounds.west,
                     mosaic.bounds.north,
@@ -253,6 +261,7 @@ def _resample_geographic_tile(
                     longitude,
                     latitude,
                     mosaic.nodata,
+                    sampling,
                 )
             )
             overlap += mosaic.overlap_valid_pixels
@@ -360,7 +369,7 @@ def _bilinear_resample(
     )
 
 
-def _bilinear_sample_grid(
+def _sample_grid(
     source: NDArray[np.float32],
     source_west: float,
     source_north: float,
@@ -369,6 +378,7 @@ def _bilinear_sample_grid(
     target_rows: int,
     target_columns: int,
     nodata: float,
+    sampling: Literal["bilinear", "nearest"],
 ) -> NDArray[np.float32]:
     target_x = np.linspace(
         target_bounds.west, target_bounds.east, target_columns, dtype=np.float64
@@ -376,9 +386,43 @@ def _bilinear_sample_grid(
     target_y = np.linspace(
         target_bounds.north, target_bounds.south, target_rows, dtype=np.float64
     )
-    return _bilinear_sample(
-        source, source_west, source_north, source_resolution, target_x, target_y, nodata
+    x, y = np.meshgrid(target_x, target_y)
+    return _sample_coordinates(
+        source, source_west, source_north, source_resolution, x, y, nodata, sampling
     )
+
+
+def _sample_coordinates(
+    source: NDArray[np.float32],
+    source_west: float,
+    source_north: float,
+    source_resolution: float,
+    target_x: NDArray[np.float64],
+    target_y: NDArray[np.float64],
+    nodata: float,
+    sampling: Literal["bilinear", "nearest"],
+) -> NDArray[np.float32]:
+    if sampling == "bilinear":
+        return _bilinear_sample_coordinates(
+            source,
+            source_west,
+            source_north,
+            source_resolution,
+            target_x,
+            target_y,
+            nodata,
+        )
+    columns = np.rint((target_x - source_west) / source_resolution - 0.5).astype(int)
+    rows = np.rint((source_north - target_y) / source_resolution - 0.5).astype(int)
+    valid = (
+        (rows >= 0)
+        & (columns >= 0)
+        & (rows < source.shape[0])
+        & (columns < source.shape[1])
+    )
+    output = np.full(target_x.shape, nodata, dtype=np.float32)
+    output[valid] = source[rows[valid], columns[valid]]
+    return output
 
 
 def _bilinear_sample(

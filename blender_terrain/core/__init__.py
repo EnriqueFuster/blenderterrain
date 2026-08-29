@@ -1,5 +1,6 @@
 """Portable geographic domain logic."""
 
+from .bathymetry_processing import ProcessedBathymetryTile, process_gebco_tiles
 from .crs import CRSInfo, UTMWorkArea, split_bbox_by_utm_zone
 from .delivery import DeliveryResult, TransferProgress, deliver_plan_sources
 from .discovery import DiscoveryResult, discover_sources, select_catalog_items
@@ -82,6 +83,7 @@ __all__ = [
     "LocalElevationInspection",
     "LocalImageryInspection",
     "PolygonWGS84",
+    "ProcessedBathymetryTile",
     "ProcessedElevationTile",
     "ProcessedImageryTile",
     "ProjectedPoint",
@@ -115,6 +117,7 @@ __all__ = [
     "parse_bbox",
     "plan_imagery_tiles",
     "process_elevation_tiles",
+    "process_gebco_tiles",
     "process_worldcover_imagery",
     "project_utm_to_wgs84",
     "project_wgs84_to_utm",

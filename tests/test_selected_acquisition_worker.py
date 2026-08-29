@@ -22,12 +22,15 @@ from blender_terrain.catalog import (
 )
 from blender_terrain.core.acquisition import AcquiredRasterLayer, RasterAcquirer
 from blender_terrain.core.elevation_processing import ProcessedElevationTile
+from blender_terrain.core.planning import create_import_plan
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.io.elevation_window import write_elevation_window
 from blender_terrain.io.imagery_window import write_imagery_window
 from blender_terrain.jobs.acquisition_job import AcquisitionJob
 from blender_terrain.jobs.storage import write_acquisition_job
 from blender_terrain.jobs.worker import (
     acquire_confirmed_sources,
+    prepare_confirmed_bathymetry,
     prepare_confirmed_elevation,
     run_confirmed_acquisition_job,
 )
@@ -267,3 +270,85 @@ def test_worker_delivers_independently_selected_elevation_and_imagery(
     assert payload["request"]["use_imagery"] is True
     assert payload["imagery"]
     assert all(Path(item["path"]).is_file() for item in payload["imagery"])
+
+
+def test_worker_prepares_confirmed_bathymetry_without_changing_provider(
+    tmp_path: Path,
+) -> None:
+    catalog = load_bundled_catalog()
+    roi = BBoxWGS84(-1.0, 50.0, -0.998, 50.002)
+    request = AcquisitionRequest(roi, (LayerRequest(DatasetKind.BATHYMETRY, 463.0),))
+    selection = ProductSelection(
+        "gebco",
+        "GEBCO_2026",
+        DatasetKind.BATHYMETRY,
+        SelectionMode.MANUAL,
+        True,
+    )
+    plan = create_acquisition_plan(
+        request,
+        SelectionBundle((selection,)),
+        (discover_candidates(catalog, roi, DatasetKind.BATHYMETRY),),
+    )
+    import_plan = create_import_plan(
+        roi,
+        "COPERNICUS_GLO30_2021",
+        30.0,
+        False,
+        None,
+        native_resolution_override=30.0,
+        use_global_utm=True,
+    )
+    requested: list[tuple[str, ...]] = []
+
+    class BathymetryAcquirer(Acquirer):
+        def acquire(
+            self,
+            selection,
+            request,
+            roi,
+            cache_directory,
+            progress_callback=None,
+            cancellation_requested=lambda: False,
+        ):
+            bounds = ProjectedBounds(
+                roi.west - 0.01,
+                roi.south - 0.01,
+                roi.east + 0.01,
+                roi.north + 0.01,
+                4326,
+            )
+            elevation_path = cache_directory / "bathymetry.npy"
+            tid_path = cache_directory / "tid.npy"
+            write_elevation_window(
+                elevation_path, np.full((32, 32), -50.0, np.float32), bounds, -32768.0
+            )
+            write_elevation_window(
+                tid_path, np.full((32, 32), 11.0, np.float32), bounds, 255.0
+            )
+            return AcquiredRasterLayer(
+                selection.provider_id,
+                selection.product_id,
+                selection.kind,
+                (elevation_path,),
+                auxiliary_paths=(tid_path,),
+            )
+
+    def factory(provider_ids: tuple[str, ...]) -> dict[str, RasterAcquirer]:
+        requested.append(provider_ids)
+        return {"gebco": BathymetryAcquirer()}
+
+    prepared = prepare_confirmed_bathymetry(
+        plan,
+        catalog,
+        import_plan,
+        tmp_path,
+        acquirer_factory=factory,
+    )
+
+    assert prepared is not None
+    assert requested == [("gebco",)]
+    assert prepared.acquired.product_id == "GEBCO_2026"
+    assert len(prepared.tiles) == import_plan.terrain_tile_count
+    assert all(np.all(tile.elevation == -50.0) for tile in prepared.tiles)
+    assert all(set(np.unique(tile.tid)) == {11} for tile in prepared.tiles)
