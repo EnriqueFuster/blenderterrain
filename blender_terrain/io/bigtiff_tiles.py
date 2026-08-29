@@ -20,6 +20,7 @@ from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
+from .random_access import LocalRandomAccessReader, RandomAccessReader
 
 _TYPE_SIZES: Final = {1: 1, 2: 1, 3: 2, 4: 4, 12: 8, 16: 8}
 _NUMERIC_FORMATS: Final = {1: "B", 3: "H", 4: "I", 12: "d", 16: "Q"}
@@ -135,9 +136,11 @@ class PixelWindow:
 class BigTiffFloatTileReader:
     """Read one compressed Float32 tile at a time from a verified CNIG TIFF."""
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._file_size = path.stat().st_size
+    def __init__(self, path: Path | RandomAccessReader) -> None:
+        self._source = (
+            LocalRandomAccessReader.open(path) if isinstance(path, Path) else path
+        )
+        self._file_size = self._source.size
         self._byte_order, first_ifd_offset = self._read_header()
         tags = self._read_first_directory(first_ifd_offset)
         self._predictor = _single_value(tags, _PREDICTOR)
@@ -171,9 +174,7 @@ class BigTiffFloatTileReader:
         if offset < 0 or byte_count <= 0 or offset + byte_count > self._file_size:
             raise RasterFormatError("TIFF tile points outside the source file")
 
-        with self._path.open("rb") as stream:
-            stream.seek(offset)
-            compressed = stream.read(byte_count)
+        compressed = self._source.read(offset, byte_count)
         if len(compressed) != byte_count:
             raise RasterFormatError("TIFF tile is truncated")
 
@@ -263,8 +264,7 @@ class BigTiffFloatTileReader:
         return data, self.georeference.window_bounds(window)
 
     def _read_header(self) -> tuple[str, int]:
-        with self._path.open("rb") as stream:
-            header = stream.read(16)
+        header = self._source.read(0, 16)
         if len(header) != 16 or header[:2] != b"II":
             raise RasterFormatError("Only little-endian BigTIFF files are supported")
         version, offset_size, reserved, first_ifd_offset = struct.unpack("<HHHQ", header[2:])
@@ -275,16 +275,12 @@ class BigTiffFloatTileReader:
         return "<", first_ifd_offset
 
     def _read_first_directory(self, offset: int) -> dict[int, TagValue]:
-        with self._path.open("rb") as stream:
-            stream.seek(offset)
-            count_bytes = stream.read(8)
-            if len(count_bytes) != 8:
-                raise RasterFormatError("BigTIFF directory is truncated")
-            entry_count = struct.unpack("<Q", count_bytes)[0]
-            directory_size = 8 + entry_count * 20 + 8
-            if offset + directory_size > self._file_size:
-                raise RasterFormatError("BigTIFF directory points outside the source file")
-            entries = stream.read(entry_count * 20)
+        count_bytes = self._source.read(offset, 8)
+        entry_count = struct.unpack("<Q", count_bytes)[0]
+        directory_size = 8 + entry_count * 20 + 8
+        if offset + directory_size > self._file_size:
+            raise RasterFormatError("BigTIFF directory points outside the source file")
+        entries = self._source.read(offset + 8, entry_count * 20)
 
         tags: dict[int, TagValue] = {}
         for index in range(entry_count):
@@ -300,9 +296,7 @@ class BigTiffFloatTileReader:
             else:
                 if value_or_offset + value_size > self._file_size:
                     raise RasterFormatError("BigTIFF tag points outside the source file")
-                with self._path.open("rb") as stream:
-                    stream.seek(value_or_offset)
-                    encoded = stream.read(value_size)
+                encoded = self._source.read(value_or_offset, value_size)
             tags[tag] = _decode_value(value_type, value_count, encoded)
         return tags
 
@@ -339,8 +333,7 @@ class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
     """Read the classic little-endian Float32 tiled layout used by GLO-30."""
 
     def _read_header(self) -> tuple[str, int]:
-        with self._path.open("rb") as stream:
-            header = stream.read(8)
+        header = self._source.read(0, 8)
         if len(header) != 8 or header[:2] != b"II":
             raise RasterFormatError("Only little-endian classic TIFF files are supported")
         version, first_ifd_offset = struct.unpack("<HI", header[2:])
@@ -351,16 +344,12 @@ class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
         return "<", first_ifd_offset
 
     def _read_first_directory(self, offset: int) -> dict[int, TagValue]:
-        with self._path.open("rb") as stream:
-            stream.seek(offset)
-            count_bytes = stream.read(2)
-            if len(count_bytes) != 2:
-                raise RasterFormatError("Classic TIFF directory is truncated")
-            entry_count = struct.unpack("<H", count_bytes)[0]
-            directory_size = 2 + entry_count * 12 + 4
-            if offset + directory_size > self._file_size:
-                raise RasterFormatError("Classic TIFF directory points outside the source file")
-            entries = stream.read(entry_count * 12)
+        count_bytes = self._source.read(offset, 2)
+        entry_count = struct.unpack("<H", count_bytes)[0]
+        directory_size = 2 + entry_count * 12 + 4
+        if offset + directory_size > self._file_size:
+            raise RasterFormatError("Classic TIFF directory points outside the source file")
+        entries = self._source.read(offset + 2, entry_count * 12)
 
         tags: dict[int, TagValue] = {}
         for index in range(entry_count):
@@ -376,25 +365,25 @@ class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
             else:
                 if value_or_offset + value_size > self._file_size:
                     raise RasterFormatError("Classic TIFF tag points outside the source file")
-                with self._path.open("rb") as stream:
-                    stream.seek(value_or_offset)
-                    encoded = stream.read(value_size)
+                encoded = self._source.read(value_or_offset, value_size)
             tags[tag] = _decode_value(value_type, value_count, encoded)
         return tags
 
 
-def open_float_tile_reader(path: Path) -> BigTiffFloatTileReader:
+def open_float_tile_reader(
+    path: Path | RandomAccessReader,
+) -> BigTiffFloatTileReader:
     """Open a supported classic TIFF or BigTIFF from its version field."""
 
-    with path.open("rb") as stream:
-        header = stream.read(4)
+    source = LocalRandomAccessReader.open(path) if isinstance(path, Path) else path
+    header = source.read(0, 4)
     if len(header) != 4 or header[:2] != b"II":
         raise RasterFormatError("Only little-endian TIFF elevation files are supported")
     version = struct.unpack("<H", header[2:])[0]
     if version == 42:
-        return ClassicTiffFloatTileReader(path)
+        return ClassicTiffFloatTileReader(source)
     if version == 43:
-        return BigTiffFloatTileReader(path)
+        return BigTiffFloatTileReader(source)
     raise RasterFormatError("TIFF header version is unsupported")
 
 

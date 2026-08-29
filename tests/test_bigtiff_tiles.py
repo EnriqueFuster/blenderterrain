@@ -10,12 +10,34 @@ import numpy as np
 
 from blender_terrain.core import inspect_local_elevation, resolve_local_elevation_paths
 from blender_terrain.errors import RasterFormatError
-from blender_terrain.io.bigtiff_tiles import BigTiffFloatTileReader, PixelWindow
+from blender_terrain.io.bigtiff_tiles import (
+    BigTiffFloatTileReader,
+    PixelWindow,
+    open_float_tile_reader,
+)
 from blender_terrain.io.elevation_mosaic import read_elevation_mosaic
+from blender_terrain.io.random_access import RandomAccessReader
 from blender_terrain.models import ProjectedBounds
 
 
 class BigTiffTilesTests(unittest.TestCase):
+    def test_reads_the_same_tiff_through_random_access(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "elevation.tif"
+            expected = np.array([[10.5, 11.5], [12.5, 13.5]], dtype="<f4")
+            _write_minimal_bigtiff(path, expected)
+            payload = path.read_bytes()
+
+            class MemoryReader(RandomAccessReader):
+                size = len(payload)
+
+                def read(self, offset: int, length: int) -> bytes:
+                    return payload[offset : offset + length]
+
+            reader = open_float_tile_reader(MemoryReader())
+
+            np.testing.assert_array_equal(reader.read_tile(0, 0), expected)
+
     def test_inspects_local_elevation_and_derives_wgs84_bounds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "elevation.tif"
