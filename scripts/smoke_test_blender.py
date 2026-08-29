@@ -154,6 +154,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         array_path = directory / "terrain.npy"
+        marine_mask_path = directory / "marine-mask.npy"
         image_paths = (directory / "pnoa-west.png", directory / "pnoa-east.png")
         elevation = np.array([[1, 2], [3, 4]], dtype=np.float32)
         if use_imagery:
@@ -164,6 +165,10 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             elevation[-1, -1] = 4
             elevation[8, 8] = 10
         np.save(array_path, elevation)
+        if use_imagery:
+            marine_mask = np.zeros(elevation.shape, dtype=np.uint8)
+            marine_mask[:, elevation.shape[1] // 2 :] = 1
+            np.save(marine_mask_path, marine_mask)
         if use_imagery:
             for image_path in image_paths:
                 _write_png(image_path)
@@ -185,6 +190,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                         "product": "MDT02",
                         "elevation_resolution_metres": 10.0,
                         "use_imagery": use_imagery,
+                        "use_bathymetry": use_imagery,
                         "imagery_gsd_metres": 1.0 if use_imagery else None,
                     },
                     "crs": [
@@ -224,6 +230,11 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                             "rows": elevation.shape[0] - 1,
                             "columns": elevation.shape[1] - 1,
                             "nodata": -9999,
+                            **(
+                                {"marine_mask_path": str(marine_mask_path)}
+                                if use_imagery
+                                else {}
+                            ),
                         }
                     ],
                     "imagery": [
@@ -335,16 +346,31 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                 for node in terrain.data.materials[0].node_tree.nodes
                 if node.bl_idname == "ShaderNodeTexImage"
             )
-            assert len(image_nodes) == 2
-            assert all(node.image.colorspace_settings.name == "sRGB" for node in image_nodes)
+            assert len(image_nodes) == 3
+            marine_node = terrain.data.materials[0].node_tree.nodes["Marine_Mask"]
+            assert marine_node.image.colorspace_settings.name == "Non-Color"
+            assert marine_node.interpolation == "Closest"
+            assert all(
+                node.image.colorspace_settings.name == "sRGB"
+                for node in image_nodes
+                if node != marine_node
+            )
             mix_nodes = tuple(
                 node
                 for node in terrain.data.materials[0].node_tree.nodes
                 if node.bl_idname == "ShaderNodeMixRGB"
             )
-            assert len(mix_nodes) == 1
-            assert mix_nodes[0].blend_type == "MIX"
-            assert mix_nodes[0].inputs[0].is_linked
+            assert len(mix_nodes) == 2
+            marine_mix = terrain.data.materials[0].node_tree.nodes["Land_Seabed_Mix"]
+            assert marine_mix.inputs[0].is_linked
+            assert all(
+                math.isclose(actual, expected, rel_tol=1e-6)
+                for actual, expected in zip(
+                    marine_mix.inputs[2].default_value,
+                    (0.18, 0.07, 0.025, 1.0),
+                    strict=True,
+                )
+            )
             assert bpy.ops.blender_terrain.pack_imagery() == {"FINISHED"}
             assert all(node.image.packed_file is not None for node in image_nodes)
         collection = bpy.data.collections["BlenderTerrain_12345678"]
