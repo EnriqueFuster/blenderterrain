@@ -266,7 +266,7 @@ def _acquisition_plan_from_properties(
         )
         imagery_layer = LayerRequest(
             DatasetKind.IMAGERY,
-            10.0
+            properties.selected_imagery_gsd or 10.0
             if is_global
             else (
                 None

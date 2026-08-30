@@ -96,6 +96,7 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.local_elevation_summary = ""
     properties.local_native_resolution = 0.0
     properties.local_imagery_summary = ""
+    properties.selected_imagery_gsd = 0.0
 
 
 def _data_source_changed(properties: object, context: bpy.types.Context) -> None:
@@ -370,6 +371,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     area_square_metres: FloatProperty(default=0.0, options={"HIDDEN"})
     sample_count: IntProperty(default=0, min=0, options={"HIDDEN"})
     selected_resolution: FloatProperty(default=0.0, options={"HIDDEN"})
+    selected_imagery_gsd: FloatProperty(default=0.0, options={"HIDDEN"})
     imagery_summary: StringProperty(default="", options={"HIDDEN"})
     local_elevation_summary: StringProperty(default="", options={"HIDDEN"})
     local_native_resolution: FloatProperty(default=0.0, min=0.0, options={"HIDDEN"})

@@ -202,6 +202,36 @@ class ImportPlanningTests(unittest.TestCase):
 
         self.assertIsNotNone(plan.imagery)
 
+    def test_global_imagery_auto_coarsens_from_native_resolution(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(1.0, 54.0, 3.0, 56.0),
+            "COPERNICUS_GLO30_2021",
+            100.0,
+            True,
+            None,
+            maximum_imagery_pixels=16_777_216,
+            native_resolution_override=30.0,
+            use_global_utm=True,
+            imagery_native_resolution_metres=10.0,
+        )
+
+        self.assertIsNotNone(plan.imagery)
+        assert plan.imagery is not None
+        self.assertGreaterEqual(plan.imagery.gsd_metres, 50.0)
+
+    def test_imagery_cannot_be_requested_finer_than_source(self) -> None:
+        with self.assertRaisesRegex(UserInputError, "finer than the source"):
+            create_import_plan(
+                BBoxWGS84(1.0, 54.0, 1.1, 54.1),
+                "COPERNICUS_GLO30_2021",
+                30.0,
+                True,
+                5.0,
+                native_resolution_override=30.0,
+                use_global_utm=True,
+                imagery_native_resolution_metres=10.0,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -198,7 +198,10 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         if properties.product in {"COPERNICUS_GLO30_2021", "GEDTM30_V11"}:
             layout.prop(properties, "use_imagery")
             if properties.use_imagery:
-                layout.label(text="ESA WorldCover 2021 composite, 10 m", icon="WORLD")
+                layout.label(text="WorldCover 2021; native resolution 10 m", icon="WORLD")
+                layout.label(text="Auto may use a coarser output for large areas", icon="INFO")
+                if properties.is_valid:
+                    layout.label(text=properties.imagery_summary)
             return
         layout.prop(properties, "use_imagery")
         if properties.use_imagery:

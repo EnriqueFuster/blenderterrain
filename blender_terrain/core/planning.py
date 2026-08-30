@@ -31,7 +31,7 @@ PRODUCT_NATIVE_RESOLUTION = {
     DatasetProduct.MDS02: 2.0,
     DatasetProduct.MDS05: 5.0,
 }
-IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0, 10.0)
+IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
 MAX_ELEVATION_SAMPLES = 16_777_216
 PLANNING_WMS_TILE_DIMENSION = 4_096
 MAX_IMAGERY_PIXELS = 67_108_864
@@ -46,7 +46,7 @@ RESOURCE_PROFILES = {
 
 @dataclass(frozen=True, slots=True)
 class ImageryEstimate:
-    """Estimated PNOA output before live WMS capabilities are available."""
+    """Estimated imagery output before live provider discovery."""
 
     gsd_metres: float
     pixel_width: int
@@ -171,6 +171,7 @@ def create_import_plan(
     native_resolution_override: float | None = None,
     projected_bounds_override: tuple[ProjectedBounds, ...] | None = None,
     use_global_utm: bool = False,
+    imagery_native_resolution_metres: float = 0.25,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
@@ -207,7 +208,12 @@ def create_import_plan(
         projected_bounds_override,
     )
     imagery = (
-        _estimate_imagery(bounds, imagery_gsd_metres, maximum_imagery_pixels)
+        _estimate_imagery(
+            bounds,
+            imagery_gsd_metres,
+            maximum_imagery_pixels,
+            imagery_native_resolution_metres,
+        )
         if use_imagery
         else None
     )
@@ -314,12 +320,23 @@ def _manual_layout_is_safe(
 
 
 def _estimate_imagery(
-    bounds: BBoxWGS84, requested_gsd: float | None, maximum_pixels: int
+    bounds: BBoxWGS84,
+    requested_gsd: float | None,
+    maximum_pixels: int,
+    native_resolution: float,
 ) -> ImageryEstimate:
+    if not math.isfinite(native_resolution) or native_resolution <= 0.0:
+        raise UserInputError("Native imagery resolution must be positive")
     physical = estimate_bbox(bounds)
-    candidates = IMAGERY_RESOLUTIONS if requested_gsd is None else (requested_gsd,)
+    candidates = (
+        tuple(gsd for gsd in IMAGERY_RESOLUTIONS if gsd >= native_resolution)
+        if requested_gsd is None
+        else (requested_gsd,)
+    )
     if requested_gsd is not None and requested_gsd not in IMAGERY_RESOLUTIONS:
         raise UserInputError("Unsupported imagery resolution")
+    if requested_gsd is not None and requested_gsd < native_resolution:
+        raise UserInputError("Imagery resolution cannot be finer than the source data")
     for gsd in candidates:
         pixel_width = math.ceil(physical.width_metres / gsd)
         pixel_height = math.ceil(physical.height_metres / gsd)
@@ -333,7 +350,7 @@ def _estimate_imagery(
         if estimate.pixel_count <= maximum_pixels:
             return estimate
     raise PlanningLimitExceeded(
-        "PNOA output exceeds the safe texture limit even at 5 m GSD"
+        "Imagery output exceeds the safe texture limit even at 100 m GSD"
         if requested_gsd is None
-        else "PNOA output exceeds the safe texture limit; use Auto or a coarser GSD"
+        else "Imagery output exceeds the safe texture limit; use Auto or a coarser GSD"
     )

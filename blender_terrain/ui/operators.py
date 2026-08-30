@@ -309,7 +309,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     and properties.elevation_source == "CNIG"
                 ),
                 imagery_gsd_metres=(
-                    10.0
+                    None
                     if global_product
                     else (
                         None
@@ -344,6 +344,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     else local_inspection.projected_bounds
                 ),
                 use_global_utm=global_product,
+                imagery_native_resolution_metres=(10.0 if global_product else 0.25),
             )
         except BlenderTerrainError as exc:
             properties.is_valid = False
@@ -353,6 +354,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             properties.sample_count = 0
             properties.selected_resolution = 0.0
             properties.imagery_summary = ""
+            properties.selected_imagery_gsd = 0.0
             properties.terrain_tile_count = 0
             properties.terrain_tile_summary = ""
             properties.estimated_memory_mib = 0.0
@@ -386,6 +388,9 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         properties.area_square_metres = plan.elevation.area_square_metres
         properties.sample_count = plan.elevation_sample_count
         properties.selected_resolution = plan.elevation_resolution_metres
+        properties.selected_imagery_gsd = (
+            0.0 if plan.imagery is None else plan.imagery.gsd_metres
+        )
         properties.terrain_tile_count = plan.terrain_tile_count
         terrain_tiles = tuple(
             tile
@@ -408,10 +413,11 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             warnings.append("Large profile can exhaust system or GPU memory")
         properties.planning_warning = " | ".join(warnings)
         properties.imagery_summary = (
-            "PNOA disabled"
+            "Imagery disabled"
             if plan.imagery is None
             else (
-                f"PNOA {plan.imagery.gsd_metres:g} m: "
+                f"{'WorldCover' if global_product else 'PNOA'} "
+                f"{plan.imagery.gsd_metres:g} m: "
                 f"{plan.imagery.pixel_width:,} x {plan.imagery.pixel_height:,} px, "
                 f"{plan.imagery.tile_count} provisional tile(s)"
             )
