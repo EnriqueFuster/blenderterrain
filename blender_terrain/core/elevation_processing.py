@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
 from ..io.bigtiff_tiles import open_float_tile_reader
-from ..io.elevation_mosaic import ElevationReader, read_elevation_mosaic
+from ..io.elevation_mosaic import ElevationReader
 from ..io.elevation_window import ElevationWindowReader
 from ..models import ProjectedBounds
 from .crs import CRSInfo
@@ -71,6 +71,15 @@ class ProcessedElevationTile:
 
     zone_index: int
     tile: GridTile
+    data: NDArray[np.float32]
+    nodata: float
+    overlap_valid_pixels: int
+    conflicting_valid_pixels: int
+    maximum_overlap_difference: float
+
+
+@dataclass(frozen=True, slots=True)
+class _SampledSources:
     data: NDArray[np.float32]
     nodata: float
     overlap_valid_pixels: int
@@ -142,7 +151,7 @@ def _resample_tile(
     maximum_source_window_pixels: int,
     sampling: Literal["bilinear", "nearest"],
 ) -> ProcessedElevationTile:
-    source_resolution = readers[0].georeference.pixel_width
+    source_resolution = min(reader.georeference.pixel_width for reader in readers)
     if source_resolution <= 0.0:
         raise RasterFormatError("Elevation source pixel width must be positive")
     target_resolution = (tile.bounds.east - tile.bounds.west) / tile.columns
@@ -167,25 +176,16 @@ def _resample_tile(
             west = tile.bounds.west + column * target_resolution
             east = west + block_columns * target_resolution
             requested = ProjectedBounds(west, south, east, north, tile.bounds.epsg)
-            mosaic = read_elevation_mosaic(
-                readers, requested, maximum_pixels=maximum_source_window_pixels
-            )
+            target_x = np.linspace(west, east, block_columns + 1, dtype=np.float64)
+            target_y = np.linspace(north, south, block_rows + 1, dtype=np.float64)
+            x, y = np.meshgrid(target_x, target_y)
+            sampled = _sample_sources(readers, requested, x, y, sampling)
             output[row : row + block_rows + 1, column : column + block_columns + 1] = (
-                _sample_grid(
-                    mosaic.data,
-                    mosaic.bounds.west,
-                    mosaic.bounds.north,
-                    source_resolution,
-                    requested,
-                    block_rows + 1,
-                    block_columns + 1,
-                    mosaic.nodata,
-                    sampling,
-                )
+                sampled.data
             )
-            overlap += mosaic.overlap_valid_pixels
-            conflicts += mosaic.conflicting_valid_pixels
-            maximum_difference = max(maximum_difference, mosaic.maximum_overlap_difference)
+            overlap += sampled.overlap_valid_pixels
+            conflicts += sampled.conflicting_valid_pixels
+            maximum_difference = max(maximum_difference, sampled.maximum_overlap_difference)
     return ProcessedElevationTile(
         zone_index,
         tile,
@@ -207,7 +207,7 @@ def _resample_geographic_tile(
 ) -> ProcessedElevationTile:
     """Window and reproject geographic elevation into one projected terrain tile."""
 
-    source_resolution = readers[0].georeference.pixel_width
+    source_resolution = min(reader.georeference.pixel_width for reader in readers)
     if source_resolution <= 0.0:
         raise RasterFormatError("Elevation source pixel width must be positive")
     target_resolution = (tile.bounds.east - tile.bounds.west) / tile.columns
@@ -249,24 +249,15 @@ def _resample_geographic_tile(
                 float(latitude.max()),
                 4326,
             )
-            mosaic = read_elevation_mosaic(
-                readers, requested, maximum_pixels=maximum_source_window_pixels
+            sampled = _sample_sources(
+                readers, requested, longitude, latitude, sampling
             )
             output[row : row + block_rows + 1, column : column + block_columns + 1] = (
-                _sample_coordinates(
-                    mosaic.data,
-                    mosaic.bounds.west,
-                    mosaic.bounds.north,
-                    source_resolution,
-                    longitude,
-                    latitude,
-                    mosaic.nodata,
-                    sampling,
-                )
+                sampled.data
             )
-            overlap += mosaic.overlap_valid_pixels
-            conflicts += mosaic.conflicting_valid_pixels
-            maximum_difference = max(maximum_difference, mosaic.maximum_overlap_difference)
+            overlap += sampled.overlap_valid_pixels
+            conflicts += sampled.conflicting_valid_pixels
+            maximum_difference = max(maximum_difference, sampled.maximum_overlap_difference)
     return ProcessedElevationTile(
         zone_index,
         tile,
@@ -276,6 +267,89 @@ def _resample_geographic_tile(
         conflicts,
         maximum_difference,
     )
+
+
+def _sample_sources(
+    readers: tuple[ElevationReader, ...],
+    requested_bounds: ProjectedBounds,
+    target_x: NDArray[np.float64],
+    target_y: NDArray[np.float64],
+    sampling: Literal["bilinear", "nearest"],
+) -> _SampledSources:
+    """Sample independent source grids and merge them on the target coordinates."""
+
+    nodata = readers[0].nodata
+    output = np.full(target_x.shape, nodata, dtype=np.float32)
+    source_index = np.full(target_x.shape, -1, dtype=np.int16)
+    overlap_count = 0
+    conflict_count = 0
+    maximum_difference = 0.0
+    for index, reader in enumerate(readers):
+        reference = reader.georeference
+        if reference.epsg != requested_bounds.epsg:
+            raise RasterFormatError("Elevation source does not share the requested CRS")
+        if reference.pixel_width <= 0.0 or reference.pixel_height >= 0.0:
+            raise RasterFormatError("Elevation source pixels must be north-up")
+        source_bounds = _elevation_reader_bounds(reader)
+        intersection = _projected_intersection(requested_bounds, source_bounds)
+        if intersection is None:
+            continue
+        source, actual_bounds = reader.read_bounds(intersection)
+        sampled = _sample_coordinates(
+            source,
+            actual_bounds.west,
+            actual_bounds.north,
+            reference.pixel_width,
+            target_x,
+            target_y,
+            reader.nodata,
+            sampling,
+            -reference.pixel_height,
+        )
+        tolerance = reference.pixel_width * 1e-8
+        inside = (
+            (target_x >= source_bounds.west - tolerance)
+            & (target_x <= source_bounds.east + tolerance)
+            & (target_y >= source_bounds.south - tolerance)
+            & (target_y <= source_bounds.north + tolerance)
+        )
+        valid_new = inside & (sampled != reader.nodata)
+        valid_current = source_index >= 0
+        overlap = valid_current & valid_new
+        if overlap.any():
+            differences = np.abs(output[overlap] - sampled[overlap])
+            overlap_count += int(overlap.sum())
+            conflict_count += int(np.count_nonzero(differences))
+            maximum_difference = max(maximum_difference, float(differences.max()))
+        fill = valid_new & ~valid_current
+        output[fill] = sampled[fill]
+        source_index[fill] = index
+    return _SampledSources(
+        output,
+        nodata,
+        overlap_count,
+        conflict_count,
+        maximum_difference,
+    )
+
+
+def _elevation_reader_bounds(reader: ElevationReader) -> ProjectedBounds:
+    west, south, east, north = reader.georeference.bounds(
+        reader.layout.width, reader.layout.height
+    )
+    return ProjectedBounds(west, south, east, north, reader.georeference.epsg)
+
+
+def _projected_intersection(
+    left: ProjectedBounds, right: ProjectedBounds
+) -> ProjectedBounds | None:
+    west = max(left.west, right.west)
+    south = max(left.south, right.south)
+    east = min(left.east, right.east)
+    north = min(left.north, right.north)
+    if east <= west or north <= south:
+        return None
+    return ProjectedBounds(west, south, east, north, left.epsg)
 
 
 def _mask_outside_region(
@@ -401,7 +475,9 @@ def _sample_coordinates(
     target_y: NDArray[np.float64],
     nodata: float,
     sampling: Literal["bilinear", "nearest"],
+    source_y_resolution: float | None = None,
 ) -> NDArray[np.float32]:
+    y_resolution = source_resolution if source_y_resolution is None else source_y_resolution
     if sampling == "bilinear":
         return _bilinear_sample_coordinates(
             source,
@@ -411,9 +487,10 @@ def _sample_coordinates(
             target_x,
             target_y,
             nodata,
+            y_resolution,
         )
     columns = np.rint((target_x - source_west) / source_resolution - 0.5).astype(int)
-    rows = np.rint((source_north - target_y) / source_resolution - 0.5).astype(int)
+    rows = np.rint((source_north - target_y) / y_resolution - 0.5).astype(int)
     valid = (
         (rows >= 0)
         & (columns >= 0)
@@ -454,13 +531,15 @@ def _bilinear_sample_coordinates(
     target_x: NDArray[np.float64],
     target_y: NDArray[np.float64],
     nodata: float,
+    source_y_resolution: float | None = None,
 ) -> NDArray[np.float32]:
     """Bilinearly sample arbitrary two-dimensional coordinates."""
 
     if target_x.shape != target_y.shape:
         raise ValueError("Target coordinate arrays must have the same shape")
+    y_resolution = source_resolution if source_y_resolution is None else source_y_resolution
     source_x = (target_x - source_west) / source_resolution - 0.5
-    source_y = (source_north - target_y) / source_resolution - 0.5
+    source_y = (source_north - target_y) / y_resolution - 0.5
     column0 = np.floor(source_x).astype(np.int64)
     row0 = np.floor(source_y).astype(np.int64)
     column1 = np.clip(column0 + 1, 0, source.shape[1] - 1)

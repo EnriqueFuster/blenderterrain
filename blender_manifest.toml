@@ -23,6 +23,7 @@ paths_exclude_pattern = [
   "/.mypy_cache/",
   "/.pytest_cache/",
   "/.pytest-tmp/",
+  "/.tmp/",
   "/.ruff_cache/",
   "/.venv/",
   "/*.egg-info/",
