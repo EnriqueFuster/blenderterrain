@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from blender_terrain.catalog import DatasetKind, LayerRequest, ProductSelection, SelectionMode
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.bigtiff_tiles import GeoReference, TileLayout
 from blender_terrain.io.imagery_window import ImageryWindowReader
 from blender_terrain.models import ProjectedBounds
@@ -63,3 +65,38 @@ def test_acquires_and_reuses_bounded_rgbnir_window(tmp_path: Path) -> None:
     window = ImageryWindowReader(first.paths[0])
     assert window.data.shape == (4, 4, 4)
     assert window.metadata.bands == ("B02", "B03", "B04", "B08")
+
+
+def test_skips_missing_ocean_tiles_and_requires_one_imagery_window(
+    tmp_path: Path,
+) -> None:
+    bounds = ProjectedBounds(1.9, 54.8, 2.0, 54.9, 4326)
+
+    def partial_factory(url: str, cache: Path) -> Reader:
+        if "E001" in url:
+            raise NoCoverageError("ocean")
+        return Reader(bounds)
+
+    acquirer = WorldCoverAcquirer(partial_factory)
+    selection = ProductSelection(
+        "esa_worldcover",
+        "ESA_WORLDCOVER_S2_2021",
+        DatasetKind.IMAGERY,
+        SelectionMode.MANUAL,
+        True,
+        "2021",
+    )
+    request = LayerRequest(DatasetKind.IMAGERY, 10.0, "2021")
+
+    partial = acquirer.acquire(
+        selection, request, BBoxWGS84(1.9, 54.8, 2.1, 54.9), tmp_path
+    )
+    assert len(partial.paths) == 1
+
+    missing = WorldCoverAcquirer(
+        lambda url, cache: (_ for _ in ()).throw(NoCoverageError("ocean"))
+    )
+    with pytest.raises(NoCoverageError, match="no imagery"):
+        missing.acquire(
+            selection, request, BBoxWGS84(1.9, 54.8, 2.1, 54.9), tmp_path / "missing"
+        )

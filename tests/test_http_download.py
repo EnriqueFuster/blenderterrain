@@ -3,11 +3,11 @@ from __future__ import annotations
 from email.message import Message
 from io import BytesIO
 from pathlib import Path
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
-from blender_terrain.errors import DownloadIntegrityError, JobCancelled
+from blender_terrain.errors import DownloadIntegrityError, JobCancelled, NoCoverageError
 from blender_terrain.io.http_download import download_public_tiff
 
 TIFF = b"II*\x00\x08\x00\x00\x00\x00"
@@ -151,4 +151,18 @@ def test_rejects_non_tiff_response_and_unsafe_url(tmp_path: Path) -> None:
             tmp_path,
             "source.tif",
             maximum_bytes=100,
+        )
+
+
+def test_can_treat_a_missing_deterministic_tile_as_no_coverage(tmp_path: Path) -> None:
+    missing = HTTPError("https://example.test/missing.tif", 404, "missing", {}, None)
+
+    with pytest.raises(NoCoverageError, match="no data"):
+        download_public_tiff(
+            "https://example.test/missing.tif",
+            tmp_path,
+            "missing.tif",
+            maximum_bytes=100,
+            opener=SequenceOpener([missing]),
+            not_found_is_no_coverage=True,
         )

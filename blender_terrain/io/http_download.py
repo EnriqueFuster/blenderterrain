@@ -12,7 +12,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from ..errors import DownloadIntegrityError, JobCancelled, ProviderUnavailableError
+from ..errors import (
+    DownloadIntegrityError,
+    JobCancelled,
+    NoCoverageError,
+    ProviderUnavailableError,
+)
 from .atomic import finalize_part, safe_destination
 from .tiff_validation import validate_tiff_header
 
@@ -70,6 +75,7 @@ def download_public_tiff(
     cancelled: Callable[[], bool] | None = None,
     opener: _Opener | None = None,
     sleeper: Callable[[float], None] = time.sleep,
+    not_found_is_no_coverage: bool = False,
 ) -> DownloadedAsset:
     """Download one direct HTTPS TIFF or reuse a structurally valid cached file."""
 
@@ -96,6 +102,7 @@ def download_public_tiff(
                 timeout_seconds,
                 progress_callback,
                 cancelled,
+                not_found_is_no_coverage,
             )
             validate_tiff_header(part_path)
             finalize_part(part_path, destination)
@@ -121,6 +128,7 @@ def _download_once(
     timeout_seconds: float,
     progress_callback: Callable[[int, int | None], None] | None,
     cancelled: Callable[[], bool] | None,
+    not_found_is_no_coverage: bool,
 ) -> int:
     request = Request(
         url,
@@ -154,6 +162,8 @@ def _download_once(
                 )
             return written
     except HTTPError as exc:
+        if exc.code == 404 and not_found_is_no_coverage:
+            raise NoCoverageError("Raster source has no data for this area") from None
         if 300 <= exc.code < 400:
             raise DownloadIntegrityError("Raster source attempted a redirect") from None
         if exc.code in _RETRYABLE_HTTP_STATUS:

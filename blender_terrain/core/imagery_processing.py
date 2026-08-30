@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ..errors import JobCancelled, RasterFormatError
+from ..errors import JobCancelled, NoCoverageError
 from ..io.imagery_window import ImageryWindowReader
 from ..io.png_validation import validate_png, write_rgb_png
 from ..models import ProjectedBounds
@@ -42,20 +42,25 @@ def process_worldcover_imagery(
     outputs: list[ProcessedImageryTile] = []
     if progress_callback is not None:
         progress_callback(0, len(requests))
-    for request in requests:
+    for completed, request in enumerate(requests, start=1):
         if cancellation_requested():
             raise JobCancelled("Imagery processing was cancelled")
         path = output_directory / request.filename.replace("pnoa_", "worldcover_")
         if path.is_file():
             validate_png(path, request.width, request.height)
         else:
-            pixels = _reproject_request(
-                readers,
-                request.bounds,
-                request.width,
-                request.height,
-                plan.work_areas[request.zone_index].crs,
-            )
+            try:
+                pixels = _reproject_request(
+                    readers,
+                    request.bounds,
+                    request.width,
+                    request.height,
+                    plan.work_areas[request.zone_index].crs,
+                )
+            except NoCoverageError:
+                if progress_callback is not None:
+                    progress_callback(completed, len(requests))
+                continue
             write_rgb_png(path, pixels)
         outputs.append(
             ProcessedImageryTile(
@@ -63,7 +68,9 @@ def process_worldcover_imagery(
             )
         )
         if progress_callback is not None:
-            progress_callback(len(outputs), len(requests))
+            progress_callback(completed, len(requests))
+    if not outputs:
+        raise NoCoverageError("WorldCover has no usable imagery for the texture grid")
     return tuple(outputs)
 
 
@@ -111,6 +118,6 @@ def _reproject_request(
             rgb = np.power(np.clip(rgb_linear / 0.3, 0.0, 1.0), 1.0 / 2.2)
             block.reshape(-1, 3)[locations] = np.rint(rgb * 255.0).astype(np.uint8)
             block_covered.reshape(-1)[locations] = True
-    if not covered.all():
-        raise RasterFormatError("WorldCover imagery does not fully cover the texture tile")
+    if not covered.any():
+        raise NoCoverageError("WorldCover does not cover this texture tile")
     return output

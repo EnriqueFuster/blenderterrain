@@ -24,6 +24,7 @@ from blender_terrain.core.acquisition import AcquiredRasterLayer, RasterAcquirer
 from blender_terrain.core.elevation_processing import ProcessedElevationTile
 from blender_terrain.core.planning import create_import_plan
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.elevation_window import write_elevation_window
 from blender_terrain.io.imagery_window import write_imagery_window
 from blender_terrain.io.png_validation import write_rgb_png
@@ -318,6 +319,119 @@ def test_worker_delivers_independently_selected_elevation_bathymetry_and_imagery
     assert payload["bathymetry"]
     assert Path(payload["processed_elevation"][0]["marine_mask_path"]).is_file()
     assert payload["terrain_source"]
+
+
+def test_worker_builds_confirmed_bathymetry_when_glo30_has_no_ocean_data(
+    tmp_path: Path,
+) -> None:
+    catalog = load_bundled_catalog()
+    roi = BBoxWGS84(1.5, 54.5, 1.502, 54.502)
+    request = AcquisitionRequest(
+        roi,
+        (
+            LayerRequest(DatasetKind.DSM, 30.0),
+            LayerRequest(DatasetKind.BATHYMETRY, 463.0),
+            LayerRequest(DatasetKind.IMAGERY, 100.0, "2021"),
+        ),
+    )
+    selections = SelectionBundle(
+        (
+            ProductSelection(
+                "copernicus_dem",
+                "COPERNICUS_GLO30_2021",
+                DatasetKind.DSM,
+                SelectionMode.MANUAL,
+                True,
+            ),
+            ProductSelection(
+                "gebco",
+                "GEBCO_2026",
+                DatasetKind.BATHYMETRY,
+                SelectionMode.MANUAL,
+                True,
+            ),
+            ProductSelection(
+                "esa_worldcover",
+                "ESA_WORLDCOVER_S2_2021",
+                DatasetKind.IMAGERY,
+                SelectionMode.MANUAL,
+                True,
+                "2021",
+            ),
+        )
+    )
+    plan = create_acquisition_plan(
+        request,
+        selections,
+        (
+            discover_candidates(catalog, roi, DatasetKind.DSM),
+            discover_candidates(catalog, roi, DatasetKind.BATHYMETRY),
+            discover_candidates(catalog, roi, DatasetKind.IMAGERY),
+        ),
+    )
+
+    class MarineAcquirer(Acquirer):
+        def acquire(
+            self,
+            selection,
+            request,
+            roi,
+            cache_directory,
+            progress_callback=None,
+            cancellation_requested=lambda: False,
+        ):
+            if selection.kind is DatasetKind.DSM:
+                raise NoCoverageError("GLO-30 ocean tile is absent")
+            if selection.kind is DatasetKind.IMAGERY:
+                raise NoCoverageError("WorldCover ocean tile is absent")
+            bounds = ProjectedBounds(
+                roi.west - 0.01,
+                roi.south - 0.01,
+                roi.east + 0.01,
+                roi.north + 0.01,
+                4326,
+            )
+            elevation_path = cache_directory / "bathymetry.npy"
+            tid_path = cache_directory / "tid.npy"
+            values = np.linspace(-40.0, -15.0, 32 * 32, dtype=np.float32).reshape(32, 32)
+            write_elevation_window(elevation_path, values, bounds, -32768.0)
+            write_elevation_window(
+                tid_path,
+                np.full((32, 32), 11.0, np.float32),
+                bounds,
+                255.0,
+            )
+            return AcquiredRasterLayer(
+                selection.provider_id,
+                selection.product_id,
+                selection.kind,
+                (elevation_path,),
+                auxiliary_paths=(tid_path,),
+            )
+
+    acquirer = MarineAcquirer()
+    job_path = tmp_path / "jobs" / "task" / "job.json"
+    write_acquisition_job(job_path, AcquisitionJob(str(uuid4()), str(uuid4()), plan))
+
+    state = run_confirmed_acquisition_job(
+        job_path,
+        acquirer_factory=lambda provider_ids: {
+            provider_id: acquirer for provider_id in provider_ids
+        },
+    )
+    payload = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
+    events = (job_path.with_name("events.jsonl")).read_text(encoding="utf-8")
+
+    assert state.value == "COMPLETE_WITH_WARNINGS"
+    assert payload["elevation_paths"] == []
+    assert payload["imagery_paths"] == []
+    assert payload["bathymetry"]
+    assert payload["processed_elevation"]
+    assert payload["sources"][0]["product_id"] == "GEBCO_2026"
+    assert "Downloading GEBCO bathymetry" in events
+    assert "continuing without texture" in events
+    assert any("has no data for this ROI" in warning for warning in payload["warnings"])
+    assert any("no imagery" in warning for warning in payload["warnings"])
 
 
 def test_worker_prepares_confirmed_bathymetry_without_changing_provider(

@@ -13,7 +13,7 @@ from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
-from ..errors import JobCancelled
+from ..errors import JobCancelled, NoCoverageError
 from ..io.http_download import download_public_tiff
 
 GLO30_BASE_URL = "https://copernicus-dem-30m.s3.amazonaws.com"
@@ -94,14 +94,18 @@ class CopernicusGlo30Acquirer:
                         )
                     )
 
-            asset = download_public_tiff(
-                tile.url,
-                target,
-                tile.filename,
-                maximum_bytes=self.maximum_tile_bytes,
-                progress_callback=report,
-                cancelled=cancellation_requested,
-            )
+            try:
+                asset = download_public_tiff(
+                    tile.url,
+                    target,
+                    tile.filename,
+                    maximum_bytes=self.maximum_tile_bytes,
+                    progress_callback=report,
+                    cancelled=cancellation_requested,
+                    not_found_is_no_coverage=True,
+                )
+            except NoCoverageError:
+                continue
             paths.append(asset.path)
             cached_count += int(asset.cached)
             if asset.cached and progress_callback is not None:
@@ -116,6 +120,8 @@ class CopernicusGlo30Acquirer:
                         cached=True,
                     )
                 )
+        if not paths:
+            raise NoCoverageError("Copernicus GLO-30 has no data for this ROI")
         return AcquiredRasterLayer(
             selection.provider_id,
             selection.product_id,

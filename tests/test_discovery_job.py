@@ -355,9 +355,7 @@ class DeliveryWorkerTests(unittest.TestCase):
                     for message in download_messages
                 )
             )
-            self.assertTrue(
-                any("PNOA imagery 1/1" in message for message in download_messages)
-            )
+            self.assertTrue(any("imagery 1/1" in message for message in download_messages))
             processing_messages = [
                 event["message"]
                 for event in events

@@ -16,7 +16,7 @@ from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
-from ..errors import JobCancelled, RasterFormatError
+from ..errors import JobCancelled, NoCoverageError, RasterFormatError
 from ..io.bigtiff_tiles import (
     BigTiffFloatTileReader,
     GeoReference,
@@ -78,20 +78,25 @@ class WorldCoverAcquirer:
             f"window-v1|{roi.west},{roi.south},{roi.east},{roi.north}".encode("ascii")
         ).hexdigest()[:20]
         target = cache_directory / PROVIDER_ID / PRODUCT_ID / key
-        paths = tuple(target / f"rgbnir_{name}.npy" for name, _, _ in tiles)
-        if all(imagery_window_is_valid(path) for path in paths):
-            for index, path in enumerate(paths, start=1):
-                _report(progress_callback, index, len(paths), path, True)
-            return AcquiredRasterLayer(
-                PROVIDER_ID, PRODUCT_ID, DatasetKind.IMAGERY, paths, len(paths)
-            )
-        for path in paths:
-            path.unlink(missing_ok=True)
-            path.with_suffix(path.suffix + ".json").unlink(missing_ok=True)
-        for index, ((_, bounds, url), path) in enumerate(zip(tiles, paths, strict=True), start=1):
+        expected_paths = tuple(target / f"rgbnir_{name}.npy" for name, _, _ in tiles)
+        paths: list[Path] = []
+        cached_count = 0
+        for index, ((_, bounds, url), path) in enumerate(
+            zip(tiles, expected_paths, strict=True), start=1
+        ):
             if cancellation_requested():
                 raise JobCancelled("WorldCover acquisition was cancelled")
-            reader = self._reader_factory(url, target / "ranges" / path.stem)
+            if imagery_window_is_valid(path):
+                paths.append(path)
+                cached_count += 1
+                _report(progress_callback, index, len(tiles), path, True)
+                continue
+            path.unlink(missing_ok=True)
+            path.with_suffix(path.suffix + ".json").unlink(missing_ok=True)
+            try:
+                reader = self._reader_factory(url, target / "ranges" / path.stem)
+            except NoCoverageError:
+                continue
             window = reader.georeference.enclosing_window(bounds)
             if window.width * window.height > MAXIMUM_WINDOW_PIXELS:
                 raise RasterFormatError("WorldCover source window exceeds the pixel limit")
@@ -99,8 +104,13 @@ class WorldCoverAcquirer:
             if data.ndim != 3 or data.shape[2] != 4:
                 raise RasterFormatError("WorldCover RGBNIR source must contain four bands")
             write_imagery_window(path, data, exact_bounds, reader.nodata, BANDS)
-            _report(progress_callback, index, len(paths), path, False)
-        return AcquiredRasterLayer(PROVIDER_ID, PRODUCT_ID, DatasetKind.IMAGERY, paths)
+            paths.append(path)
+            _report(progress_callback, index, len(tiles), path, False)
+        if not paths:
+            raise NoCoverageError("WorldCover has no imagery for this ROI")
+        return AcquiredRasterLayer(
+            PROVIDER_ID, PRODUCT_ID, DatasetKind.IMAGERY, tuple(paths), cached_count
+        )
 
 
 def _remote_reader(url: str, cache_directory: Path) -> BigTiffFloatTileReader:

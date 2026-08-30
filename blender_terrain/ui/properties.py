@@ -235,7 +235,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         name="Data Settings",
         items=(
             ("ELEVATION", "Elevation", "Configure terrain elevation data"),
-            ("IMAGERY", "Imagery", "Configure optional PNOA imagery"),
+            ("IMAGERY", "Imagery", "Configure optional imagery"),
         ),
         default="ELEVATION",
     )

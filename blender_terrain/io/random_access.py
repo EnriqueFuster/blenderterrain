@@ -8,10 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from ..errors import DownloadIntegrityError, ProviderUnavailableError
+from ..errors import DownloadIntegrityError, NoCoverageError, ProviderUnavailableError
 from .atomic import finalize_part
 
 _CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+)")
@@ -127,6 +128,12 @@ class HttpRangeReader:
                 content_range = response.headers.get("Content-Range", "")
                 match = _CONTENT_RANGE.fullmatch(content_range)
                 payload = response.read(length + 1)
+        except HTTPError as exc:
+            if exc.code == 404:
+                raise NoCoverageError("Remote raster has no data for this area") from None
+            raise ProviderUnavailableError(
+                f"Remote raster range request returned HTTP {exc.code}"
+            ) from None
         except OSError as exc:
             raise ProviderUnavailableError("Remote raster range request failed") from exc
         if status != 206 or match is None:

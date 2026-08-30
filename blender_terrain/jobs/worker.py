@@ -10,6 +10,8 @@ from pathlib import Path
 from time import monotonic
 from typing import Protocol
 
+import numpy as np
+
 from ..catalog import load_bundled_catalog
 from ..catalog.models import Catalog, DatasetKind
 from ..catalog.selection import (
@@ -79,7 +81,7 @@ ELEVATION_PRODUCTS = tuple(
 class PreparedElevation:
     """Acquired sources and processed terrain from one confirmed elevation selection."""
 
-    acquired: AcquiredRasterLayer
+    acquired: AcquiredRasterLayer | None
     import_plan: ImportPlan
     tiles: tuple[ProcessedElevationTile, ...]
 
@@ -157,6 +159,8 @@ def run_confirmed_acquisition_job(
             elevation_processor=elevation_processor,
         )
         processed_directory = job_path.parents[2] / "processed" / job.task_id
+        if job.plan.selections.for_kind(DatasetKind.BATHYMETRY) is not None:
+            emit(JobState.DOWNLOADING_ELEVATION, 0.72, "Downloading GEBCO bathymetry")
         bathymetry = prepare_confirmed_bathymetry(
             job.plan,
             catalog,
@@ -172,21 +176,31 @@ def run_confirmed_acquisition_job(
             acquirer_factory=acquirer_factory,
             region=job.region,
         )
-        imagery = prepare_confirmed_imagery(
-            job.plan,
-            catalog,
-            prepared.import_plan,
-            job_path.parents[2],
-            processed_directory / "imagery",
-            transfer_callback=transfer,
-            processing_callback=lambda completed, total: emit(
+        imagery_unavailable = False
+        try:
+            imagery = prepare_confirmed_imagery(
+                job.plan,
+                catalog,
+                prepared.import_plan,
+                job_path.parents[2],
+                processed_directory / "imagery",
+                transfer_callback=transfer,
+                processing_callback=lambda completed, total: emit(
+                    JobState.PROCESSING_ELEVATION,
+                    0.9 + 0.07 * completed / max(1, total),
+                    f"Processing texture tile {completed}/{total}",
+                ),
+                cancellation_requested=cancelled,
+                acquirer_factory=acquirer_factory,
+            )
+        except NoCoverageError:
+            imagery = None
+            imagery_unavailable = True
+            emit(
                 JobState.PROCESSING_ELEVATION,
-                0.9 + 0.07 * completed / max(1, total),
-                f"Processing texture tile {completed}/{total}",
-            ),
-            cancellation_requested=cancelled,
-            acquirer_factory=acquirer_factory,
-        )
+                0.97,
+                "WorldCover has no imagery for this ROI; continuing without texture",
+            )
         terrain_source_payload: list[dict[str, object]] | None = None
         if bathymetry is None:
             processed_payload = _write_processed_tiles(
@@ -210,7 +224,12 @@ def run_confirmed_acquisition_job(
             processed_directory / "bathymetry",
             cancelled,
         )
-        product = catalog.product(prepared.acquired.product_id)
+        elevation_selection = next(
+            selection
+            for selection in job.plan.selections.selections
+            if selection.kind in {DatasetKind.DTM, DatasetKind.DSM}
+        )
+        product = catalog.product(elevation_selection.product_id)
         imagery_product = (
             None if imagery is None else catalog.product(imagery.acquired.product_id)
         )
@@ -218,9 +237,15 @@ def run_confirmed_acquisition_job(
             None if bathymetry is None else catalog.product(bathymetry.acquired.product_id)
         )
         source_layers = (
-            [prepared.acquired]
+            ([] if prepared.acquired is None else [prepared.acquired])
             + ([] if bathymetry is None else [bathymetry.acquired])
             + ([] if imagery is None else [imagery.acquired])
+        )
+        elevation_unavailable = prepared.acquired is None
+        final_state = (
+            JobState.COMPLETE_WITH_WARNINGS
+            if elevation_unavailable or imagery_unavailable
+            else JobState.COMPLETE
         )
         write_result(
             result_path,
@@ -228,8 +253,21 @@ def run_confirmed_acquisition_job(
                 "schema_version": RESULT_SCHEMA_VERSION,
                 "task_id": job.task_id,
                 "import_id": job.import_id,
-                "state": JobState.COMPLETE.value,
+                "state": final_state.value,
                 "warnings": list(product.coverage.limitations)
+                + (
+                    [
+                        f"{product.name} has no data for this ROI; terrain was built from "
+                        "the confirmed bathymetry source"
+                    ]
+                    if elevation_unavailable
+                    else []
+                )
+                + (
+                    ["WorldCover has no imagery for this ROI; no texture was prepared"]
+                    if imagery_unavailable
+                    else []
+                )
                 + (
                     []
                     if bathymetry_product is None
@@ -280,9 +318,17 @@ def run_confirmed_acquisition_job(
                     "license": product.license.identifier,
                     "attribution": product.license.attribution_text,
                     "retrieved_at_utc": datetime.now(UTC).isoformat(),
-                    "uncertainty_summary": _uncertainty_summary(prepared.acquired),
+                    "uncertainty_summary": (
+                        None
+                        if prepared.acquired is None
+                        else _uncertainty_summary(prepared.acquired)
+                    ),
                 },
-                "elevation_paths": [str(path) for path in prepared.acquired.paths],
+                "elevation_paths": (
+                    []
+                    if prepared.acquired is None
+                    else [str(path) for path in prepared.acquired.paths]
+                ),
                 "imagery_paths": (
                     [] if imagery is None else [str(tile.path) for tile in imagery.tiles]
                 ),
@@ -304,7 +350,9 @@ def run_confirmed_acquisition_job(
                 "terrain_source": terrain_source_payload,
                 "bathymetry": bathymetry_payload,
                 "cache_reuse": {
-                    "elevation_files": prepared.acquired.cached_count,
+                    "elevation_files": (
+                        0 if prepared.acquired is None else prepared.acquired.cached_count
+                    ),
                     "imagery_files": 0 if imagery is None else imagery.acquired.cached_count,
                     "bathymetry_files": (
                         0 if bathymetry is None else bathymetry.acquired.cached_count
@@ -313,13 +361,13 @@ def run_confirmed_acquisition_job(
             },
         )
         emit(
-            JobState.COMPLETE,
+            final_state,
             1.0,
             f"Prepared {len(prepared.tiles)} terrain and "
             f"{len(bathymetry_payload)} bathymetry and "
             f"{0 if imagery is None else len(imagery.tiles)} texture tile(s)",
         )
-        return JobState.COMPLETE
+        return final_state
     except JobCancelled as exc:
         return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
     except ProviderUnavailableError as exc:
@@ -437,14 +485,19 @@ def prepare_confirmed_elevation(
         if product.jurisdiction == "global"
         else None
     )
-    acquired = acquire_confirmed_sources(
-        elevation_plan,
-        cache_directory,
-        transfer_callback,
-        cancellation_requested,
-        acquirer_factory,
-        source_roi,
-    )[0]
+    try:
+        acquired = acquire_confirmed_sources(
+            elevation_plan,
+            cache_directory,
+            transfer_callback,
+            cancellation_requested,
+            acquirer_factory,
+            source_roi,
+        )[0]
+    except NoCoverageError:
+        if plan.selections.for_kind(DatasetKind.BATHYMETRY) is None:
+            raise
+        return PreparedElevation(None, import_plan, _empty_elevation_tiles(import_plan))
     def report_processing(completed: int, total: int) -> None:
         if cancellation_requested():
             raise JobCancelled("Elevation processing was cancelled")
@@ -460,6 +513,25 @@ def prepare_confirmed_elevation(
         region=region,
     )
     return PreparedElevation(acquired, import_plan, tiles)
+
+
+def _empty_elevation_tiles(plan: ImportPlan) -> tuple[ProcessedElevationTile, ...]:
+    """Create only the target grids needed for confirmed bathymetry output."""
+
+    nodata = -32768.0
+    return tuple(
+        ProcessedElevationTile(
+            zone_index,
+            tile,
+            np.full((tile.rows + 1, tile.columns + 1), nodata, np.float32),
+            nodata,
+            0,
+            0,
+            0.0,
+        )
+        for zone_index in range(len(plan.grids))
+        for tile in plan.tiles_for_grid(zone_index)
+    )
 
 
 def prepare_confirmed_imagery(
@@ -1113,9 +1185,10 @@ def run_delivery_job(
 def _transfer_message(transfer: TransferProgress) -> str:
     kind = {
         "elevation": "elevation",
-        "imagery": "PNOA imagery",
+        "imagery": "imagery",
         "dtm": "DTM",
         "dsm": "DSM",
+        "bathymetry": "GEBCO bathymetry",
     }.get(transfer.kind, transfer.kind)
     position = f"{transfer.file_index + 1}/{transfer.file_count}"
     if transfer.cached:

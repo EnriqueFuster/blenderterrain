@@ -473,7 +473,7 @@ def _job_state_label(state: str) -> str:
         "VALIDATING": "Validating",
         "DISCOVERING": "Finding sources",
         "DOWNLOADING_ELEVATION": "Downloading elevation",
-        "DOWNLOADING_IMAGERY": "Downloading PNOA imagery",
+        "DOWNLOADING_IMAGERY": "Downloading imagery",
         "PROCESSING_ELEVATION": "Processing elevation",
     }.get(state, state.replace("_", " ").title())
 

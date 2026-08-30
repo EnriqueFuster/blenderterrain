@@ -3,11 +3,12 @@ from __future__ import annotations
 from email.message import Message
 from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request
 
 import pytest
 
-from blender_terrain.errors import DownloadIntegrityError
+from blender_terrain.errors import DownloadIntegrityError, NoCoverageError
 from blender_terrain.io.random_access import HttpRangeReader
 
 
@@ -77,4 +78,19 @@ def test_rejects_untrusted_hosts(tmp_path: Path) -> None:
             tmp_path,
             allowed_hosts=frozenset({"data.example.test"}),
             maximum_source_bytes=1_000,
+        )
+
+
+def test_reports_a_missing_remote_object_as_no_coverage(tmp_path: Path) -> None:
+    class MissingOpener:
+        def open(self, request: Request, timeout: float):
+            raise HTTPError(request.full_url, 404, "missing", {}, None)
+
+    with pytest.raises(NoCoverageError, match="no data"):
+        HttpRangeReader(
+            "https://data.example.test/missing.tif",
+            tmp_path,
+            allowed_hosts=frozenset({"data.example.test"}),
+            maximum_source_bytes=1_000,
+            opener=MissingOpener(),
         )

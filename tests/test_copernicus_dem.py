@@ -5,6 +5,7 @@ import zlib
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from blender_terrain.catalog import (
     DatasetKind,
@@ -16,6 +17,7 @@ from blender_terrain.core.delivery import TransferProgress
 from blender_terrain.core.elevation_processing import process_elevation_tiles
 from blender_terrain.core.planning import create_import_plan
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.bigtiff_tiles import ClassicTiffFloatTileReader
 from blender_terrain.io.http_download import DownloadedAsset
 from blender_terrain.models import ProjectedBounds
@@ -91,6 +93,32 @@ def test_acquires_confirmed_glo30_selection_into_provider_cache(
     assert result.paths == (calls[0][1] / calls[0][2],)
     assert calls[0][1].parts[-2:] == ("copernicus_dem", "COPERNICUS_GLO30_2021")
     assert progress[0].kind == "dsm"
+
+
+def test_skips_missing_ocean_tiles_but_requires_at_least_one_source(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    def missing(*args, **kwargs):
+        raise NoCoverageError("missing ocean tile")
+
+    monkeypatch.setattr(
+        "blender_terrain.providers.copernicus_dem.download_public_tiff", missing
+    )
+    selection = ProductSelection(
+        "copernicus_dem",
+        "COPERNICUS_GLO30_2021",
+        DatasetKind.DSM,
+        SelectionMode.MANUAL,
+        True,
+    )
+
+    with pytest.raises(NoCoverageError, match="no data for this ROI"):
+        CopernicusGlo30Acquirer().acquire(
+            selection,
+            LayerRequest(DatasetKind.DSM),
+            BBoxWGS84(1.5, 54.5, 2.0, 55.0),
+            tmp_path,
+        )
 
 
 def test_reads_classic_geographic_float_tiff_window(tmp_path: Path) -> None:
