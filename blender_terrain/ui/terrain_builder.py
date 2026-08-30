@@ -168,6 +168,8 @@ def create_terrain_objects(
                     1 if full_resolution_mesh else PREVIEW_MESH_REDUCTION_FACTOR
                 ),
             )
+            if geometry.faces.size == 0:
+                continue
             mesh = _create_mesh(
                 f"BT_{short_id}_Mesh_{index:03d}",
                 geometry.vertices,
@@ -240,6 +242,8 @@ def create_terrain_objects(
                 materials.append(material)
             collection.objects.link(object_)
             objects.append(object_)
+        if not objects:
+            raise RasterFormatError("ROI does not contain terrain geometry")
     except BaseException:
         for object_ in tuple(collection.objects):
             mesh = object_.data if isinstance(object_.data, bpy.types.Mesh) else None

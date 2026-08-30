@@ -170,6 +170,7 @@ def run_confirmed_acquisition_job(
             ),
             cancellation_requested=cancelled,
             acquirer_factory=acquirer_factory,
+            region=job.region,
         )
         imagery = prepare_confirmed_imagery(
             job.plan,
@@ -620,6 +621,7 @@ def prepare_confirmed_bathymetry(
     acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
         build_raster_acquirers
     ),
+    region: RegionOfInterest | None = None,
 ) -> PreparedBathymetry | None:
     """Acquire and align the explicitly confirmed bathymetry selection, if any."""
 
@@ -650,7 +652,11 @@ def prepare_confirmed_bathymetry(
     if tid_path is None or len(acquired.paths) != 1:
         raise RasterFormatError("GEBCO elevation and TID windows are required")
     tiles = process_gebco_tiles(
-        acquired.paths[0], tid_path, import_plan, processing_callback
+        acquired.paths[0],
+        tid_path,
+        import_plan,
+        processing_callback,
+        region,
     )
     return PreparedBathymetry(acquired, tiles)
 
