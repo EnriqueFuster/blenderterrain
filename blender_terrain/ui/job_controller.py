@@ -168,7 +168,7 @@ def start_delivery(context: bpy.types.Context) -> None:
     if not properties.is_valid or not properties.discovery_ready:
         raise UserInputError("Discover the current sources before downloading data")
     properties.delivery_summary = ""
-    if properties.product in _GLOBAL_PRODUCT_IDS:
+    if properties.elevation_source != "LOCAL":
         _start_acquisition_worker(context, properties)
         return
     _start_worker(context, properties, "delivery", "Starting background data download")
@@ -260,8 +260,21 @@ def _acquisition_plan_from_properties(
             discover_candidates(catalog, region.bounds, DatasetKind.BATHYMETRY)
         )
     if properties.use_imagery:
-        imagery_product = catalog.product(WORLDCOVER_PRODUCT_ID)
-        imagery_layer = LayerRequest(DatasetKind.IMAGERY, 10.0, "2021")
+        is_global = product.jurisdiction == "global"
+        imagery_product = catalog.product(
+            WORLDCOVER_PRODUCT_ID if is_global else DatasetProduct.PNOA_MA.value
+        )
+        imagery_layer = LayerRequest(
+            DatasetKind.IMAGERY,
+            10.0
+            if is_global
+            else (
+                None
+                if properties.imagery_gsd == "AUTO"
+                else float(properties.imagery_gsd)
+            ),
+            "2021" if is_global else None,
+        )
         layers.append(imagery_layer)
         selections.append(
             ProductSelection(
@@ -270,7 +283,7 @@ def _acquisition_plan_from_properties(
                 DatasetKind.IMAGERY,
                 SelectionMode.MANUAL,
                 True,
-                "2021",
+                "2021" if is_global else None,
             )
         )
         candidate_sets.append(

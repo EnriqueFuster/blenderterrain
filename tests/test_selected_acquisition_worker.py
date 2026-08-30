@@ -26,15 +26,17 @@ from blender_terrain.core.planning import create_import_plan
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.io.elevation_window import write_elevation_window
 from blender_terrain.io.imagery_window import write_imagery_window
+from blender_terrain.io.png_validation import write_rgb_png
 from blender_terrain.jobs.acquisition_job import AcquisitionJob
 from blender_terrain.jobs.storage import write_acquisition_job
 from blender_terrain.jobs.worker import (
     acquire_confirmed_sources,
     prepare_confirmed_bathymetry,
     prepare_confirmed_elevation,
+    prepare_confirmed_imagery,
     run_confirmed_acquisition_job,
 )
-from blender_terrain.models import ProjectedBounds
+from blender_terrain.models import DatasetProduct, ProjectedBounds
 
 
 class Acquirer:
@@ -398,3 +400,61 @@ def test_worker_prepares_confirmed_bathymetry_without_changing_provider(
     assert len(prepared.tiles) == import_plan.terrain_tile_count
     assert all(np.all(tile.elevation == -50.0) for tile in prepared.tiles)
     assert all(set(np.unique(tile.tid)) == {11} for tile in prepared.tiles)
+
+
+def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
+    tmp_path: Path,
+) -> None:
+    catalog = load_bundled_catalog()
+    roi = BBoxWGS84(-0.381, 39.469, -0.379, 39.471)
+    request = AcquisitionRequest(roi, (LayerRequest(DatasetKind.IMAGERY, 5.0),))
+    selection = ProductSelection(
+        "ign_pnoa",
+        "PNOA_MA",
+        DatasetKind.IMAGERY,
+        SelectionMode.MANUAL,
+        True,
+    )
+    plan = create_acquisition_plan(
+        request,
+        SelectionBundle((selection,)),
+        (discover_candidates(catalog, roi, DatasetKind.IMAGERY),),
+    )
+    import_plan = create_import_plan(
+        roi,
+        DatasetProduct.MDT02,
+        10.0,
+        True,
+        5.0,
+    )
+
+    class FakePnoaClient:
+        def download_png(
+            self,
+            bounds,
+            width,
+            height,
+            cache_directory,
+            filename,
+            progress_callback=None,
+        ):
+            path = cache_directory / filename
+            write_rgb_png(path, np.zeros((height, width, 3), dtype=np.uint8))
+            if progress_callback is not None:
+                progress_callback(path.stat().st_size, path.stat().st_size)
+            return path
+
+    prepared = prepare_confirmed_imagery(
+        plan,
+        catalog,
+        import_plan,
+        tmp_path,
+        tmp_path / "imagery",
+        pnoa_factory=FakePnoaClient,
+    )
+
+    assert prepared is not None
+    assert prepared.acquired.provider_id == "ign_pnoa"
+    assert prepared.acquired.product_id == "PNOA_MA"
+    assert len(prepared.tiles) == import_plan.imagery.tile_count
+    assert all(tile.path.is_file() for tile in prepared.tiles)

@@ -56,6 +56,17 @@ def main() -> None:
         assert properties.is_valid
         assert properties.crs_summary == "EPSG:25830"
         assert properties.product == "MDT02"
+        spanish_region = (
+            extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+                json.loads(properties.roi_geometry_json)
+            )
+        )
+        spanish_plan = job_controller._acquisition_plan_from_properties(
+            properties, spanish_region
+        )
+        assert {
+            selection.product_id for selection in spanish_plan.selections.selections
+        } == {"MDT02", "PNOA_MA", "GEBCO_2026"}
         assert properties.selected_resolution == 2.0
         assert properties.area_square_metres > 0.0
         assert properties.sample_count > 0
