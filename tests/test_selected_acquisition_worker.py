@@ -303,6 +303,12 @@ def test_worker_delivers_independently_selected_elevation_bathymetry_and_imagery
         elevation_processor=terrain_processor,
     )
     payload = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
+    events = [
+        json.loads(line)
+        for line in job_path.with_name("events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
 
     assert state.value == "COMPLETE"
     assert requested == [("copernicus_dem",), ("gebco",), ("esa_worldcover",)]
@@ -319,6 +325,10 @@ def test_worker_delivers_independently_selected_elevation_bathymetry_and_imagery
     assert payload["bathymetry"]
     assert Path(payload["processed_elevation"][0]["marine_mask_path"]).is_file()
     assert payload["terrain_source"]
+    progress = [event["progress"] for event in events]
+    assert progress == sorted(progress)
+    assert len(set(progress)) >= 8
+    assert any(event["state"] == "DOWNLOADING_IMAGERY" for event in events)
 
 
 def test_worker_builds_confirmed_bathymetry_when_glo30_has_no_ocean_data(

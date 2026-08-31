@@ -110,10 +110,13 @@ def run_confirmed_acquisition_job(
     events_path = job_path.with_name("events.jsonl")
     result_path = job_path.with_name("result.json")
     sequence = 0
+    last_progress = 0.0
 
     def emit(state: JobState, progress: float, message: str) -> None:
-        nonlocal sequence
+        nonlocal last_progress, sequence
+        progress = max(last_progress, min(1.0, progress))
         append_progress_event(events_path, ProgressEvent(sequence, state, progress, message))
+        last_progress = progress
         sequence += 1
 
     def cancelled() -> bool:
@@ -123,26 +126,69 @@ def run_confirmed_acquisition_job(
         emit(JobState.VALIDATING, 0.02, "Validating confirmed acquisition")
         job = read_acquisition_job(job_path)
         catalog = load_bundled_catalog()
+        has_bathymetry = job.plan.selections.for_kind(DatasetKind.BATHYMETRY) is not None
+        has_imagery = job.plan.selections.for_kind(DatasetKind.IMAGERY) is not None
+        stage_weights = [
+            ("elevation_download", 3.0),
+            ("elevation_process", 2.0),
+        ]
+        if has_bathymetry:
+            stage_weights.extend(
+                (("bathymetry_download", 1.0), ("bathymetry_process", 2.0))
+            )
+        if has_imagery:
+            stage_weights.extend(
+                (("imagery_download", 3.0), ("imagery_process", 2.0))
+            )
+        stage_weights.append(("output", 1.0))
+        total_weight = sum(weight for _name, weight in stage_weights)
+        stage_ranges: dict[str, tuple[float, float]] = {}
+        cursor = 0.03
+        for name, weight in stage_weights:
+            end = cursor + 0.95 * weight / total_weight
+            stage_ranges[name] = (cursor, end)
+            cursor = end
+
+        def stage_progress(name: str, fraction: float) -> float:
+            start, end = stage_ranges[name]
+            return start + (end - start) * min(1.0, max(0.0, fraction))
 
         def transfer(progress: TransferProgress) -> None:
-            fraction = (
+            file_fraction = (
                 progress.written_bytes / progress.expected_bytes
                 if progress.expected_bytes
-                else 0.0
+                else float(progress.cached or progress.written_bytes > 0)
+            )
+            fraction = (
+                progress.file_index + min(1.0, file_fraction)
+            ) / max(1, progress.file_count)
+            stage = {
+                DatasetKind.BATHYMETRY.value: "bathymetry_download",
+                DatasetKind.IMAGERY.value: "imagery_download",
+            }.get(progress.kind, "elevation_download")
+            state = (
+                JobState.DOWNLOADING_IMAGERY
+                if progress.kind == DatasetKind.IMAGERY.value
+                else JobState.DOWNLOADING_ELEVATION
             )
             emit(
-                JobState.DOWNLOADING_ELEVATION,
-                0.05 + 0.65 * min(1.0, fraction),
+                state,
+                stage_progress(stage, fraction),
                 _transfer_message(progress),
             )
 
         def processing(completed: int, total: int) -> None:
             emit(
                 JobState.PROCESSING_ELEVATION,
-                0.72 + 0.22 * completed / max(1, total),
+                stage_progress("elevation_process", completed / max(1, total)),
                 f"Processing terrain tile {completed}/{total}",
             )
 
+        emit(
+            JobState.DOWNLOADING_ELEVATION,
+            stage_progress("elevation_download", 0.0),
+            "Downloading selected elevation source",
+        )
         prepared = prepare_confirmed_elevation(
             job.plan,
             catalog,
@@ -159,8 +205,12 @@ def run_confirmed_acquisition_job(
             elevation_processor=elevation_processor,
         )
         processed_directory = job_path.parents[2] / "processed" / job.task_id
-        if job.plan.selections.for_kind(DatasetKind.BATHYMETRY) is not None:
-            emit(JobState.DOWNLOADING_ELEVATION, 0.72, "Downloading GEBCO bathymetry")
+        if has_bathymetry:
+            emit(
+                JobState.DOWNLOADING_ELEVATION,
+                stage_progress("bathymetry_download", 0.0),
+                "Downloading GEBCO bathymetry",
+            )
         bathymetry = prepare_confirmed_bathymetry(
             job.plan,
             catalog,
@@ -169,7 +219,7 @@ def run_confirmed_acquisition_job(
             transfer_callback=transfer,
             processing_callback=lambda completed, total: emit(
                 JobState.PROCESSING_ELEVATION,
-                0.85 + 0.07 * completed / max(1, total),
+                stage_progress("bathymetry_process", completed / max(1, total)),
                 f"Processing bathymetry tile {completed}/{total}",
             ),
             cancellation_requested=cancelled,
@@ -178,6 +228,12 @@ def run_confirmed_acquisition_job(
         )
         imagery_unavailable = False
         try:
+            if has_imagery:
+                emit(
+                    JobState.DOWNLOADING_IMAGERY,
+                    stage_progress("imagery_download", 0.0),
+                    "Downloading selected imagery source",
+                )
             imagery = prepare_confirmed_imagery(
                 job.plan,
                 catalog,
@@ -187,7 +243,7 @@ def run_confirmed_acquisition_job(
                 transfer_callback=transfer,
                 processing_callback=lambda completed, total: emit(
                     JobState.PROCESSING_ELEVATION,
-                    0.9 + 0.07 * completed / max(1, total),
+                    stage_progress("imagery_process", completed / max(1, total)),
                     f"Processing texture tile {completed}/{total}",
                 ),
                 cancellation_requested=cancelled,
@@ -198,9 +254,14 @@ def run_confirmed_acquisition_job(
             imagery_unavailable = True
             emit(
                 JobState.PROCESSING_ELEVATION,
-                0.97,
+                stage_progress("imagery_process", 1.0),
                 "WorldCover has no imagery for this ROI; continuing without texture",
             )
+        emit(
+            JobState.PROCESSING_ELEVATION,
+            stage_progress("output", 0.0),
+            "Writing prepared terrain data",
+        )
         terrain_source_payload: list[dict[str, object]] | None = None
         if bathymetry is None:
             processed_payload = _write_processed_tiles(
@@ -223,6 +284,11 @@ def run_confirmed_acquisition_job(
             () if bathymetry is None else bathymetry.tiles,
             processed_directory / "bathymetry",
             cancelled,
+        )
+        emit(
+            JobState.PROCESSING_ELEVATION,
+            stage_progress("output", 0.8),
+            "Finalizing provenance and cache results",
         )
         elevation_selection = next(
             selection

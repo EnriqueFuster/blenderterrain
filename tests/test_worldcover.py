@@ -32,8 +32,9 @@ class Reader:
         return 0.0
 
     def read_bounds(self, bounds: ProjectedBounds):
-        data = np.ones((4, 4, 4), dtype=np.float32)
-        return data, self.bounds
+        window = self.georeference.enclosing_window(bounds)
+        data = np.ones((window.height, window.width, 4), dtype=np.float32)
+        return data, self.georeference.window_bounds(window)
 
 
 def test_acquires_and_reuses_bounded_rgbnir_window(tmp_path: Path) -> None:
@@ -65,6 +66,36 @@ def test_acquires_and_reuses_bounded_rgbnir_window(tmp_path: Path) -> None:
     window = ImageryWindowReader(first.paths[0])
     assert window.data.shape == (4, 4, 4)
     assert window.metadata.bands == ("B02", "B03", "B04", "B08")
+
+
+def test_splits_large_source_windows_without_increasing_memory_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bounds = ProjectedBounds(2.0, 48.0, 3.0, 49.0, 4326)
+    reader = Reader(bounds)
+    reader.georeference = GeoReference(4326, 2.0, 49.0, 0.1, -0.1, 4326)
+    monkeypatch.setattr("blender_terrain.providers.worldcover.MAXIMUM_WINDOW_PIXELS", 16)
+    acquirer = WorldCoverAcquirer(lambda url, cache: reader)
+    selection = ProductSelection(
+        "esa_worldcover",
+        "ESA_WORLDCOVER_S2_2021",
+        DatasetKind.IMAGERY,
+        SelectionMode.MANUAL,
+        True,
+        "2021",
+    )
+
+    result = acquirer.acquire(
+        selection,
+        LayerRequest(DatasetKind.IMAGERY, 10.0, "2021"),
+        BBoxWGS84(2.0, 48.0, 3.0, 49.0),
+        tmp_path,
+    )
+
+    assert len(result.paths) == 9
+    assert all(
+        max(ImageryWindowReader(path).data.shape[:2]) <= 4 for path in result.paths
+    )
 
 
 def test_skips_missing_ocean_tiles_and_requires_one_imagery_window(

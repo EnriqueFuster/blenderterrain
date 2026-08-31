@@ -312,10 +312,11 @@ def _draw_job_activity(layout: bpy.types.UILayout, properties: object) -> None:
         )
     else:
         activity.label(text="No task has been started")
-    for message in _job_history(properties.job_event_history)[-5:]:
+    for message, progress in _job_history(properties.job_event_history)[-5:]:
         row = activity.row()
         row.scale_y = 0.8
-        row.label(text=message, icon="DOT")
+        prefix = "" if progress is None else f"{progress:.0%} · "
+        row.label(text=f"{prefix}{message}", icon="DOT")
     if properties.job_active:
         activity.operator("blender_terrain.cancel_discovery", icon="CANCEL")
     elif properties.last_job_path:
@@ -478,14 +479,26 @@ def _job_state_label(state: str) -> str:
     }.get(state, state.replace("_", " ").title())
 
 
-def _job_history(serialized: str) -> tuple[str, ...]:
+def _job_history(serialized: str) -> tuple[tuple[str, float | None], ...]:
     try:
         values = json.loads(serialized)
     except json.JSONDecodeError:
         return ()
     if not isinstance(values, list):
         return ()
-    return tuple(value for value in values if isinstance(value, str))
+    history: list[tuple[str, float | None]] = []
+    for value in values:
+        if isinstance(value, str):
+            history.append((value, None))
+        elif isinstance(value, dict) and isinstance(value.get("message"), str):
+            progress = value.get("progress")
+            history.append(
+                (
+                    value["message"],
+                    float(progress) if isinstance(progress, (int, float)) else None,
+                )
+            )
+    return tuple(history)
 
 
 def _availability_entries(serialized: str) -> tuple[tuple[str, str, int], ...]:

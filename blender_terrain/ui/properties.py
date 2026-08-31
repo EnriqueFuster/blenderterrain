@@ -419,7 +419,10 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     )
     adjust_viewport_clip_end: BoolProperty(
         name="Adjust Viewport Clip End",
-        description="Increase viewport clipping distance to fit the created terrain",
+        description=(
+            "Increase each viewport clipping distance using the terrain extent and "
+            "current viewing distance, with room to zoom out"
+        ),
         default=True,
     )
     imagery_packed: BoolProperty(default=False, options={"HIDDEN"})

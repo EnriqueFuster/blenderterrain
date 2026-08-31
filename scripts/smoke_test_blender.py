@@ -277,7 +277,19 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         properties.delivery_result_path = str(result_path)
         properties.import_id = "12345678-1234-4234-8234-123456789abc"
         properties.full_resolution_mesh = not use_imagery
+        view_spaces = tuple(
+            space
+            for window in bpy.context.window_manager.windows
+            for area in window.screen.areas
+            if area.type == "VIEW_3D"
+            for space in area.spaces
+            if space.type == "VIEW_3D"
+        )
+        for space in view_spaces:
+            space.clip_end = 100.0
+            space.region_3d.view_distance = 250_000.0
         assert bpy.ops.blender_terrain.create_terrain() == {"FINISHED"}
+        assert all(space.clip_end > 500_000.0 for space in view_spaces)
         terrain = bpy.data.objects["BT_12345678_Terrain_000"]
         assert bpy.context.view_layer.objects.active == terrain
         assert terrain.select_get()

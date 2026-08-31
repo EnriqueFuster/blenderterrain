@@ -772,7 +772,8 @@ def _adjust_viewport_clip_end(
         - min(corner[axis] for corner in world_corners)
         for axis in range(3)
     )
-    target = max(1_000.0, 2.0 * sum(value * value for value in extents) ** 0.5)
+    diagonal = sum(value * value for value in extents) ** 0.5
+    maximum_target = 0.0
     updated = 0
     for window in context.window_manager.windows:
         for area in window.screen.areas:
@@ -780,9 +781,21 @@ def _adjust_viewport_clip_end(
                 continue
             for space in area.spaces:
                 if space.type == "VIEW_3D":
+                    viewer = space.region_3d.view_matrix.inverted().translation
+                    farthest_corner = max(
+                        (corner - viewer).length for corner in world_corners
+                    )
+                    margin = max(100.0, diagonal * 0.25)
+                    required_distance = max(
+                        2.0 * diagonal,
+                        farthest_corner + margin,
+                        space.region_3d.view_distance + diagonal + margin,
+                    )
+                    target = max(1_000.0, 2.0 * required_distance)
                     space.clip_end = max(space.clip_end, target)
+                    maximum_target = max(maximum_target, target)
                     updated += 1
-    return updated, target
+    return updated, maximum_target
 
 
 class BLENDERTERRAIN_OT_select_import_objects(bpy.types.Operator):

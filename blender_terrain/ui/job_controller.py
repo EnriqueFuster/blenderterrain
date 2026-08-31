@@ -443,7 +443,7 @@ def _launch_worker(
     properties.job_state = JobState.VALIDATING.value
     properties.job_progress = 0.0
     properties.job_message = message
-    properties.job_event_history = json.dumps([message])
+    properties.job_event_history = json.dumps([{"message": message, "progress": 0.0}])
     properties.last_job_path = str(job_path)
     properties.last_job_mode = mode
     if mode == "discovery":
@@ -551,24 +551,40 @@ def _apply_new_events(active: _ActiveJob, properties: Any) -> bool:
         if event.sequence <= active.last_sequence:
             continue
         active.last_sequence = event.sequence
+        displayed_progress = max(properties.job_progress, event.progress)
         properties.job_state = event.state.value
-        properties.job_progress = event.progress
+        properties.job_progress = displayed_progress
         properties.job_message = event.message
-        history.append(event.message)
+        history.append({"message": event.message, "progress": displayed_progress})
         changed = True
     if changed:
         properties.job_event_history = json.dumps(history[-6:])
     return changed
 
 
-def _event_history(serialized: str) -> list[str]:
+def _event_history(serialized: str) -> list[dict[str, object]]:
     try:
         values = json.loads(serialized)
     except json.JSONDecodeError:
         return []
     if not isinstance(values, list):
         return []
-    return [value for value in values if isinstance(value, str)]
+    history: list[dict[str, object]] = []
+    for value in values:
+        if isinstance(value, str):
+            history.append({"message": value, "progress": None})
+        elif (
+            isinstance(value, dict)
+            and isinstance(value.get("message"), str)
+            and (
+                value.get("progress") is None
+                or isinstance(value.get("progress"), (int, float))
+            )
+        ):
+            history.append(
+                {"message": value["message"], "progress": value.get("progress")}
+            )
+    return history
 
 
 def _redraw_extension_ui() -> None:
