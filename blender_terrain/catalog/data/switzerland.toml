@@ -1,0 +1,47 @@
+[[products]]
+id = "CH_SWISSALTI3D"
+provider_id = "swisstopo"
+name = "swissALTI3D"
+jurisdiction = "CH"
+implementation_status = "researched"
+version = ""
+last_verified = "2026-08-27"
+endpoint = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swissalti3d"
+evidence_urls = ["https://www.swisstopo.admin.ch/en/height-model-swissalti3d"]
+reliability_score = 94
+network_cost_score = 70
+capabilities = { kind = "dtm", native_resolution_m = 0.5, semantics = "derived_dtm", authoritative = true, acquisition_mode = "stac", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[5.8, 45.7, 10.6, 47.9]], requires_discovery = true, limitations = ["STAC asset, edition and resolution selection are not implemented"] }
+license = { identifier = "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "© swisstopo" }
+
+[[products]]
+id = "CH_SWISSSURFACE3D_RASTER"
+provider_id = "swisstopo"
+name = "swissSURFACE3D Raster"
+jurisdiction = "CH"
+implementation_status = "researched"
+version = ""
+last_verified = "2026-08-27"
+endpoint = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisssurface3d-raster"
+evidence_urls = ["https://www.swisstopo.admin.ch/en/height-model-swisssurface3d-raster"]
+reliability_score = 88
+network_cost_score = 85
+capabilities = { kind = "dsm", native_resolution_m = 0.5, semantics = "dsm", authoritative = true, acquisition_mode = "stac", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[5.8, 45.7, 10.6, 47.9]], requires_discovery = true, limitations = ["Progressive coverage must be determined from STAC items"] }
+license = { identifier = "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "© swisstopo" }
+
+[[products]]
+id = "CH_SWISSIMAGE_DOP10"
+provider_id = "swisstopo"
+name = "SWISSIMAGE 10 cm"
+jurisdiction = "CH"
+implementation_status = "researched"
+version = ""
+last_verified = "2026-08-27"
+endpoint = "https://wms.geo.admin.ch/"
+evidence_urls = ["https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swissimage-dop10"]
+reliability_score = 94
+network_cost_score = 90
+capabilities = { kind = "imagery", native_resolution_m = 0.1, semantics = "orthophoto", authoritative = true, acquisition_mode = "wms", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[5.8, 45.7, 10.6, 47.9]], requires_discovery = true, limitations = ["Edition and exact coverage require service discovery"] }
+license = { identifier = "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "© swisstopo" }

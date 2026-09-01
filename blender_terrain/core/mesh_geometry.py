@@ -16,6 +16,16 @@ PREVIEW_MESH_REDUCTION_FACTOR = 16
 DEFAULT_PREVIEW_SUBDIVISION_LEVEL = 1
 
 
+def native_resolution_subdivision_level(reduction_factor: int) -> int:
+    """Return the first subdivision level that reaches the source sample spacing."""
+
+    if isinstance(reduction_factor, bool) or not isinstance(reduction_factor, int):
+        raise ValueError("Mesh reduction factor must be an integer")
+    if reduction_factor < 1:
+        raise ValueError("Mesh reduction factor must be positive")
+    return math.ceil(math.log2(reduction_factor))
+
+
 @dataclass(frozen=True, slots=True)
 class TerrainMeshGeometry:
     """Local XYZ vertices and counter-clockwise quad indices."""
@@ -56,7 +66,19 @@ def build_terrain_mesh_geometry(
         & valid[1:, 1:]
         & valid[:-1, 1:]
     )
-    return TerrainMeshGeometry(vertices, faces[valid_faces].reshape(-1, 4))
+    valid_faces_array = faces[valid_faces].reshape(-1, 4)
+    if not valid_faces_array.size:
+        return TerrainMeshGeometry(
+            np.empty((0, 3), dtype=np.float32),
+            valid_faces_array,
+        )
+    used_vertices = np.unique(valid_faces_array)
+    remap = np.full(len(vertices), -1, dtype=np.int32)
+    remap[used_vertices] = np.arange(len(used_vertices), dtype=np.int32)
+    return TerrainMeshGeometry(
+        vertices[used_vertices],
+        remap[valid_faces_array],
+    )
 
 
 def build_displacement_mesh_geometry(

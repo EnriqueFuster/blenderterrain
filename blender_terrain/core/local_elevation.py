@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import RasterFormatError, UserInputError
-from ..io.bigtiff_tiles import BigTiffFloatTileReader
+from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
 from ..models import ProjectedBounds
 from .crs import crs_from_epsg
-from .projection import ProjectedPoint, project_utm_to_wgs84
+from .projection import GeographicPoint, ProjectedPoint, project_utm_to_wgs84
 from .roi import BBoxWGS84
 from .texture_mapping import bounds_fully_covered
 
@@ -59,11 +59,11 @@ def inspect_local_elevation(paths: tuple[Path, ...]) -> LocalElevationInspection
         raise UserInputError("A selected local elevation raster is no longer available") from exc
     if len(set(resolved)) != len(resolved):
         raise UserInputError("Local elevation raster paths must be unique")
-    readers = tuple(BigTiffFloatTileReader(path) for path in resolved)
+    readers = tuple(open_float_tile_reader(path) for path in resolved)
     by_epsg: dict[int, list[tuple[BigTiffFloatTileReader, ProjectedBounds]]] = {}
     total_pixels = 0
     resolutions: set[float] = set()
-    geographic_points = []
+    geographic_points: list[GeographicPoint] = []
     for reader in readers:
         reference = reader.georeference
         crs = crs_from_epsg(reference.epsg)

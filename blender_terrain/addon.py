@@ -11,6 +11,7 @@ from .ui import job_controller
 from .ui.operators import (
     BLENDERTERRAIN_OT_apply_import_settings,
     BLENDERTERRAIN_OT_apply_selected_settings,
+    BLENDERTERRAIN_OT_bake_and_merge_terrain,
     BLENDERTERRAIN_OT_cancel_discovery,
     BLENDERTERRAIN_OT_check_product_availability,
     BLENDERTERRAIN_OT_clear_cache,
@@ -18,6 +19,7 @@ from .ui.operators import (
     BLENDERTERRAIN_OT_create_terrain,
     BLENDERTERRAIN_OT_discover_sources,
     BLENDERTERRAIN_OT_download_data,
+    BLENDERTERRAIN_OT_export_prepared_rasters,
     BLENDERTERRAIN_OT_open_roi_map,
     BLENDERTERRAIN_OT_pack_imagery,
     BLENDERTERRAIN_OT_paste_bbox,
@@ -29,14 +31,7 @@ from .ui.operators import (
     BLENDERTERRAIN_OT_validate_roi,
     shutdown_map_selector,
 )
-from .ui.panels import (
-    BLENDERTERRAIN_PT_cache,
-    BLENDERTERRAIN_PT_creation,
-    BLENDERTERRAIN_PT_data,
-    BLENDERTERRAIN_PT_imported,
-    BLENDERTERRAIN_PT_main,
-    BLENDERTERRAIN_PT_source,
-)
+from .ui.panels import BLENDERTERRAIN_PT_main
 from .ui.preferences import BLENDERTERRAIN_AddonPreferences
 from .ui.properties import BLENDERTERRAIN_ROIProperties
 
@@ -55,18 +50,15 @@ _CLASSES: Sequence[type] = (
     BLENDERTERRAIN_OT_discover_sources,
     BLENDERTERRAIN_OT_download_data,
     BLENDERTERRAIN_OT_create_terrain,
+    BLENDERTERRAIN_OT_export_prepared_rasters,
     BLENDERTERRAIN_OT_pack_imagery,
     BLENDERTERRAIN_OT_select_import_objects,
+    BLENDERTERRAIN_OT_bake_and_merge_terrain,
     BLENDERTERRAIN_OT_apply_import_settings,
     BLENDERTERRAIN_OT_apply_selected_settings,
     BLENDERTERRAIN_OT_restore_selected_settings,
     BLENDERTERRAIN_OT_cancel_discovery,
     BLENDERTERRAIN_PT_main,
-    BLENDERTERRAIN_PT_source,
-    BLENDERTERRAIN_PT_data,
-    BLENDERTERRAIN_PT_creation,
-    BLENDERTERRAIN_PT_imported,
-    BLENDERTERRAIN_PT_cache,
 )
 
 

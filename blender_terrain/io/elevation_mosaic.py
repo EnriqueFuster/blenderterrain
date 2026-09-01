@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
-from .bigtiff_tiles import BigTiffFloatTileReader, GeoReference
+from .bigtiff_tiles import GeoReference, TileLayout
+
+
+class ElevationReader(Protocol):
+    layout: TileLayout
+    georeference: GeoReference
+
+    @property
+    def nodata(self) -> float: ...
+
+    def read_bounds(
+        self, bounds: ProjectedBounds
+    ) -> tuple[NDArray[np.float32], ProjectedBounds]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +39,7 @@ class ElevationMosaic:
 
 
 def read_elevation_mosaic(
-    readers: tuple[BigTiffFloatTileReader, ...],
+    readers: tuple[ElevationReader, ...],
     requested_bounds: ProjectedBounds,
     maximum_pixels: int = 16_777_216,
 ) -> ElevationMosaic:
@@ -41,9 +54,7 @@ def read_elevation_mosaic(
     if target_window.width * target_window.height > maximum_pixels:
         raise ValueError("Requested elevation mosaic exceeds the configured pixel limit")
     target_bounds = grid.window_bounds(target_window)
-    nodata = readers[0].layout.nodata
-    if nodata is None:
-        raise RasterFormatError("Elevation mosaic sources must declare NoData")
+    nodata = readers[0].nodata
 
     data = np.full((target_window.height, target_window.width), nodata, dtype=np.float32)
     source_index = np.full(data.shape, -1, dtype=np.int16)
@@ -65,7 +76,11 @@ def read_elevation_mosaic(
         current = data[rows, columns]
         current_sources = source_index[rows, columns]
         current_covered = covered[rows, columns]
-        valid_new = source_data != nodata
+        valid_new = (
+            np.ones(source_data.shape, dtype=bool)
+            if reader.layout.nodata is None
+            else source_data != reader.layout.nodata
+        )
         valid_current = current_sources >= 0
         overlap = valid_current & valid_new
         if overlap.any():
@@ -94,7 +109,7 @@ def read_elevation_mosaic(
 
 
 def _common_grid(
-    readers: tuple[BigTiffFloatTileReader, ...], expected_epsg: int
+    readers: tuple[ElevationReader, ...], expected_epsg: int
 ) -> GeoReference:
     first = readers[0]
     pixel_width = first.georeference.pixel_width
@@ -124,7 +139,7 @@ def _common_grid(
     )
 
 
-def _reader_bounds(reader: BigTiffFloatTileReader) -> ProjectedBounds:
+def _reader_bounds(reader: ElevationReader) -> ProjectedBounds:
     west, south, east, north = reader.georeference.bounds(
         reader.layout.width, reader.layout.height
     )

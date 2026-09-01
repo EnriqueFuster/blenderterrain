@@ -1,0 +1,143 @@
+[[products]]
+id = "MDT50CM"
+provider_id = "ign_cnig"
+name = "Modelo Digital del Terreno MDT50 cm"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "third coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 80
+network_cost_score = 90
+capabilities = { kind = "dtm", native_resolution_m = 0.5, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Third coverage is incomplete and must be checked by ROI"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "MDT02"
+provider_id = "ign_cnig"
+name = "Modelo Digital del Terreno MDT02"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "second coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 92
+network_cost_score = 70
+capabilities = { kind = "dtm", native_resolution_m = 2.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Exact sheet coverage is confirmed by CNIG discovery"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "MDT05"
+provider_id = "ign_cnig"
+name = "Modelo Digital del Terreno MDT05"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "second coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 90
+network_cost_score = 55
+capabilities = { kind = "dtm", native_resolution_m = 5.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Exact sheet coverage is confirmed by CNIG discovery"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "MDT25"
+provider_id = "ign_cnig"
+name = "Modelo Digital del Terreno MDT25"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "second coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 88
+network_cost_score = 25
+capabilities = { kind = "dtm", native_resolution_m = 25.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Exact sheet coverage is confirmed by CNIG discovery"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "MDT200"
+provider_id = "ign_cnig"
+name = "Modelo Digital del Terreno MDT200"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "second coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 86
+network_cost_score = 10
+capabilities = { kind = "dtm", native_resolution_m = 200.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Exact sheet coverage is confirmed by CNIG discovery"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "MDS50CM"
+provider_id = "ign_cnig"
+name = "Modelo Digital de Superficies MDS50 cm"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "third coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 78
+network_cost_score = 90
+capabilities = { kind = "dsm", native_resolution_m = 0.5, semantics = "dsm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Third coverage is incomplete and must be checked by ROI"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "MDS02"
+provider_id = "ign_cnig"
+name = "Modelo Digital de Superficies MDS02"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "second coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 90
+network_cost_score = 70
+capabilities = { kind = "dsm", native_resolution_m = 2.0, semantics = "dsm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Exact sheet coverage is confirmed by CNIG discovery"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "MDS05"
+provider_id = "ign_cnig"
+name = "Modelo Digital de Superficies MDS05"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "second coverage"
+last_verified = "2026-08-26"
+endpoint = "https://centrodedescargas.cnig.es/CentroDescargas/"
+evidence_urls = ["https://centrodedescargas.cnig.es/CentroDescargas/locale?request_locale=en"]
+reliability_score = 88
+network_cost_score = 55
+capabilities = { kind = "dsm", native_resolution_m = 5.0, semantics = "dsm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Exact sheet coverage is confirmed by CNIG discovery"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }
+
+[[products]]
+id = "PNOA_MA"
+provider_id = "ign_pnoa"
+name = "Ortofotos PNOA máxima actualidad"
+jurisdiction = "ES"
+implementation_status = "supported"
+version = "maximum currency"
+last_verified = "2026-08-26"
+endpoint = "https://www.ign.es/wms-inspire/pnoa-ma"
+evidence_urls = ["https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetCapabilities"]
+reliability_score = 92
+network_cost_score = 45
+capabilities = { kind = "imagery", native_resolution_m = 0.25, semantics = "orthophoto", authoritative = true, acquisition_mode = "wms", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-10.0, 35.0, 5.0, 44.5], [-18.5, 27.0, -13.0, 30.5]], requires_discovery = true, limitations = ["Acquisition date and native resolution vary spatially"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Instituto Geográfico Nacional de España" }

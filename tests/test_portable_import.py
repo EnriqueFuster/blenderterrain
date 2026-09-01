@@ -12,7 +12,7 @@ class PortableImportTests(unittest.TestCase):
     def test_package_imports_without_blender(self) -> None:
         import blender_terrain
 
-        self.assertEqual(blender_terrain.__version__, "0.3.0")
+        self.assertEqual(blender_terrain.__version__, "0.4.0")
 
     def test_public_version_matches_package_and_extension_metadata(self) -> None:
         import blender_terrain
@@ -35,6 +35,7 @@ class PortableImportTests(unittest.TestCase):
             "ui/panels.py",
             "ui/preferences.py",
             "ui/properties.py",
+            "ui/terrain_bake.py",
             "ui/terrain_builder.py",
             "ui/terrain_controls.py",
         }

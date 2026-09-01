@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,10 @@ from ..core import (
 )
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
+
+SMOOTH_BY_ANGLE_MODIFIER_NAME = "Terrain Smooth by Angle"
+SMOOTH_BY_ANGLE_NODE_GROUP_NAME = "BlenderTerrain Smooth by Angle"
+DEFAULT_SMOOTH_ANGLE = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,9 +65,16 @@ def create_terrain_objects(
     }
     loaded = tuple(
         (np.load(path, mmap_mode="r", allow_pickle=False), nodata)
-        for path, _bounds, _rows, _columns, nodata in parsed
+        for path, _bounds, _rows, _columns, nodata, _marine_mask_path in parsed
     )
-    for (elevation, _nodata), (path, _bounds, rows, columns, _entry_nodata) in zip(
+    for (elevation, _nodata), (
+        path,
+        _bounds,
+        rows,
+        columns,
+        _entry_nodata,
+        _marine_mask_path,
+    ) in zip(
         loaded, parsed, strict=True
     ):
         if elevation.dtype != np.float32 or elevation.shape != (rows + 1, columns + 1):
@@ -84,6 +96,9 @@ def create_terrain_objects(
         "elevation_resolution_metres"
     ]
     collection["blender_terrain_use_imagery"] = request["use_imagery"]
+    collection["blender_terrain_use_bathymetry"] = request.get(
+        "use_bathymetry", False
+    )
     if request.get("manual_tile_rows") is not None:
         collection["blender_terrain_manual_tile_rows"] = request["manual_tile_rows"]
         collection["blender_terrain_manual_tile_columns"] = request[
@@ -101,8 +116,8 @@ def create_terrain_objects(
         sources, ensure_ascii=False, sort_keys=True
     )
     collection["blender_terrain_source"] = provenance["source"]
-    collection["blender_terrain_attribution"] = (
-        "Source: Instituto Geográfico Nacional de España (IGN-CNIG)"
+    collection["blender_terrain_attribution"] = str(
+        provenance.get("attribution", provenance["source"])
     )
     collection["blender_terrain_data_policy_url"] = provenance["data_policy_url"]
     collection["blender_terrain_data_license"] = provenance["license"]
@@ -114,6 +129,7 @@ def create_terrain_objects(
     collection["blender_terrain_subdivision_viewport"] = initial_subdivision
     collection["blender_terrain_subdivision_render"] = initial_subdivision
     collection["blender_terrain_displacement_enabled"] = True
+    collection["blender_terrain_smooth_angle"] = DEFAULT_SMOOTH_ANGLE
     collection["blender_terrain_full_resolution_mesh"] = full_resolution_mesh
     collection["blender_terrain_base_mesh_reduction_factor"] = (
         1 if full_resolution_mesh else PREVIEW_MESH_REDUCTION_FACTOR
@@ -128,6 +144,7 @@ def create_terrain_objects(
     materials: list[bpy.types.Material] = []
     heightmap_images: list[bpy.types.Image] = []
     heightmap_textures: list[bpy.types.Texture] = []
+    marine_mask_images: list[bpy.types.Image] = []
     try:
         for epsg, (origin_x, origin_y) in origins.items():
             parent = bpy.data.objects.new(f"BT_{short_id}_EPSG_{epsg}", None)
@@ -137,7 +154,10 @@ def create_terrain_objects(
             parent["blender_terrain_origin_northing"] = origin_y
             collection.objects.link(parent)
             parents[epsg] = parent
-        for index, ((elevation, nodata), (path, bounds, _rows, _columns, _)) in enumerate(
+        for index, (
+            (elevation, nodata),
+            (path, bounds, _rows, _columns, _, marine_mask_path),
+        ) in enumerate(
             zip(loaded, parsed, strict=True)
         ):
             _report_build_progress(
@@ -154,11 +174,17 @@ def create_terrain_objects(
                     1 if full_resolution_mesh else PREVIEW_MESH_REDUCTION_FACTOR
                 ),
             )
+            if geometry.faces.size == 0:
+                continue
             mesh = _create_mesh(
                 f"BT_{short_id}_Mesh_{index:03d}",
                 geometry.vertices,
                 geometry.faces,
                 uv_shape=elevation.shape,
+                uv_extent=(
+                    bounds.east - bounds.west,
+                    bounds.north - bounds.south,
+                ),
             )
             object_ = bpy.data.objects.new(f"BT_{short_id}_Terrain_{index:03d}", mesh)
             origin_x, origin_y = origins[bounds.epsg]
@@ -172,6 +198,7 @@ def create_terrain_objects(
             )
             object_["blender_terrain_strength_multiplier"] = 1.0
             object_["blender_terrain_displacement_midlevel"] = 0.0
+            object_["blender_terrain_smooth_angle"] = DEFAULT_SMOOTH_ANGLE
             object_["blender_terrain_full_resolution_mesh"] = full_resolution_mesh
             object_["blender_terrain_heightmap_rows"] = elevation.shape[0]
             object_["blender_terrain_heightmap_columns"] = elevation.shape[1]
@@ -195,6 +222,7 @@ def create_terrain_objects(
             texture.extension = "EXTEND"
             heightmap_images.append(image)
             heightmap_textures.append(texture)
+            ensure_smooth_by_angle_modifier(object_)
             subdivision = object_.modifiers.new("Terrain Subdivision", "SUBSURF")
             subdivision.subdivision_type = "SIMPLE"
             subdivision.levels = initial_subdivision
@@ -206,14 +234,28 @@ def create_terrain_objects(
             displacement.direction = "Z"
             displacement.mid_level = 0.0
             displacement.strength = elevation_range.span
+            marine_mask_image = None
+            if marine_mask_path is not None:
+                marine_mask = _load_marine_mask(marine_mask_path, elevation.shape)
+                marine_mask_image = _create_marine_mask_image(
+                    f"BT_{short_id}_MarineMask_{index:03d}", marine_mask
+                )
+                marine_mask_images.append(marine_mask_image)
+                object_["blender_terrain_marine_mask"] = str(marine_mask_path)
             material = _create_imagery_material(
-                f"BT_{short_id}_Material_{index:03d}", bounds, imagery, import_id
+                f"BT_{short_id}_Material_{index:03d}",
+                bounds,
+                imagery,
+                import_id,
+                marine_mask_image,
             )
             if material is not None:
                 mesh.materials.append(material)
                 materials.append(material)
             collection.objects.link(object_)
             objects.append(object_)
+        if not objects:
+            raise RasterFormatError("ROI does not contain terrain geometry")
     except BaseException:
         for object_ in tuple(collection.objects):
             mesh = object_.data if isinstance(object_.data, bpy.types.Mesh) else None
@@ -227,6 +269,8 @@ def create_terrain_objects(
             bpy.data.textures.remove(texture)
         for image in heightmap_images:
             bpy.data.images.remove(image)
+        for image in marine_mask_images:
+            bpy.data.images.remove(image)
         raise
     _select_created_objects(context, objects)
     if pack_images:
@@ -236,6 +280,98 @@ def create_terrain_objects(
         progress_callback, 1.0, f"Created {len(objects)} terrain object(s)"
     )
     return tuple(objects)
+
+
+def smooth_angle_socket_identifier(node_group: bpy.types.NodeTree) -> str:
+    """Return the modifier input identifier for the smoothing angle."""
+
+    for item in node_group.interface.items_tree:
+        if item.item_type == "SOCKET" and item.in_out == "INPUT" and item.name == "Angle":
+            return item.identifier
+    raise RasterFormatError("Smooth by Angle node group has no Angle input")
+
+
+def ensure_smooth_by_angle_modifier(object_: bpy.types.Object) -> Any:
+    """Return the terrain smoothing modifier, creating it for older imports."""
+
+    modifier = object_.modifiers.get(SMOOTH_BY_ANGLE_MODIFIER_NAME)
+    if modifier is None:
+        modifier = object_.modifiers.new(SMOOTH_BY_ANGLE_MODIFIER_NAME, "NODES")
+        modifier.node_group = _smooth_by_angle_node_group()
+        angle = float(
+            object_.get("blender_terrain_smooth_angle", DEFAULT_SMOOTH_ANGLE)
+        )
+        set_smooth_angle(modifier, angle)
+    if modifier.type != "NODES" or modifier.node_group is None:
+        raise RasterFormatError("Terrain Smooth by Angle modifier is invalid")
+    return modifier
+
+
+def get_smooth_angle(modifier: Any) -> float:
+    """Read the smoothing angle across supported Blender modifier APIs."""
+
+    identifier = smooth_angle_socket_identifier(modifier.node_group)
+    inputs = getattr(getattr(modifier, "properties", None), "inputs", None)
+    socket = getattr(inputs, identifier, None)
+    if socket is not None:
+        return float(socket.value)
+    return float(modifier[identifier])
+
+
+def set_smooth_angle(modifier: Any, angle: float) -> None:
+    """Set the smoothing angle across supported Blender modifier APIs."""
+
+    identifier = smooth_angle_socket_identifier(modifier.node_group)
+    inputs = getattr(getattr(modifier, "properties", None), "inputs", None)
+    socket = getattr(inputs, identifier, None)
+    if socket is not None:
+        socket.value = angle
+    else:
+        modifier[identifier] = angle
+
+
+def _smooth_by_angle_node_group() -> bpy.types.GeometryNodeTree:
+    existing = bpy.data.node_groups.get(SMOOTH_BY_ANGLE_NODE_GROUP_NAME)
+    if isinstance(existing, bpy.types.GeometryNodeTree):
+        return existing
+
+    group = bpy.data.node_groups.new(
+        SMOOTH_BY_ANGLE_NODE_GROUP_NAME, "GeometryNodeTree"
+    )
+    geometry_in = group.interface.new_socket(
+        name="Geometry", in_out="INPUT", socket_type="NodeSocketGeometry"
+    )
+    angle = group.interface.new_socket(
+        name="Angle", in_out="INPUT", socket_type="NodeSocketFloat"
+    )
+    angle.default_value = DEFAULT_SMOOTH_ANGLE
+    angle.min_value = 0.0
+    angle.max_value = math.pi
+    angle.subtype = "ANGLE"
+    geometry_out = group.interface.new_socket(
+        name="Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry"
+    )
+
+    input_node = group.nodes.new("NodeGroupInput")
+    output_node = group.nodes.new("NodeGroupOutput")
+    smooth_faces = group.nodes.new("GeometryNodeSetShadeSmooth")
+    smooth_faces.domain = "FACE"
+    smooth_faces.inputs["Shade Smooth"].default_value = True
+    sharp_edges = group.nodes.new("GeometryNodeSetShadeSmooth")
+    sharp_edges.domain = "EDGE"
+    sharp_edges.inputs["Shade Smooth"].default_value = False
+    edge_angle = group.nodes.new("GeometryNodeInputMeshEdgeAngle")
+    compare = group.nodes.new("FunctionNodeCompare")
+    compare.data_type = "FLOAT"
+    compare.operation = "GREATER_THAN"
+
+    group.links.new(input_node.outputs[geometry_in.identifier], smooth_faces.inputs[0])
+    group.links.new(smooth_faces.outputs[0], sharp_edges.inputs[0])
+    group.links.new(edge_angle.outputs["Unsigned Angle"], compare.inputs["A"])
+    group.links.new(input_node.outputs[angle.identifier], compare.inputs["B"])
+    group.links.new(compare.outputs["Result"], sharp_edges.inputs["Selection"])
+    group.links.new(sharp_edges.outputs[0], output_node.inputs[geometry_out.identifier])
+    return group
 
 
 def _report_build_progress(
@@ -291,6 +427,7 @@ def _create_mesh(
     vertices: Any,
     faces: Any,
     uv_shape: tuple[int, int] | None = None,
+    uv_extent: tuple[float, float] | None = None,
 ) -> bpy.types.Mesh:
     mesh = bpy.data.meshes.new(name)
     mesh.vertices.add(len(vertices))
@@ -302,8 +439,9 @@ def _create_mesh(
     mesh.polygons.foreach_set("loop_total", np.full(len(faces), 4, dtype=np.int32))
     mesh.update(calc_edges=True)
     if uv_shape is not None:
-        width = float(vertices[:, 0].max())
-        height = float(vertices[:, 1].max())
+        if uv_extent is None:
+            raise RasterFormatError("Terrain mesh UV extent is missing")
+        width, height = uv_extent
         if width <= 0.0 or height <= 0.0:
             raise RasterFormatError("Terrain mesh cannot create UVs for empty bounds")
         rows, columns = uv_shape
@@ -361,15 +499,16 @@ def _create_imagery_material(
     terrain_bounds: ProjectedBounds,
     imagery: tuple[_ImageryEntry, ...],
     import_id: str,
+    marine_mask_image: bpy.types.Image | None = None,
 ) -> bpy.types.Material | None:
     coverage = tuple(
         (entry, transform)
         for entry in imagery
         if (transform := projected_texture_transform(terrain_bounds, entry.bounds)) is not None
     )
-    if not coverage:
+    if not coverage and marine_mask_image is None:
         return None
-    if not bounds_fully_covered(
+    if coverage and not bounds_fully_covered(
         terrain_bounds, tuple(entry.bounds for entry, _ in coverage)
     ):
         raise RasterFormatError("Imagery does not cover the complete terrain tile")
@@ -407,9 +546,45 @@ def _create_imagery_material(
             links.new(texture.outputs["Color"], add.inputs[2])
             links.new(texture.outputs["Alpha"], add.inputs[0])
             color_socket = add.outputs[0]
-    links.new(color_socket, shader.inputs["Base Color"])
+    if marine_mask_image is not None:
+        marine_texture = nodes.new("ShaderNodeTexImage")
+        marine_texture.name = "Marine_Mask"
+        marine_texture.image = marine_mask_image
+        marine_texture.extension = "EXTEND"
+        marine_texture.interpolation = "Closest"
+        links.new(coordinates.outputs["Generated"], marine_texture.inputs["Vector"])
+        marine_mix = nodes.new("ShaderNodeMixRGB")
+        marine_mix.name = "Land_Seabed_Mix"
+        marine_mix.blend_type = "MIX"
+        marine_mix.inputs[1].default_value = (0.8, 0.8, 0.8, 1.0)
+        marine_mix.inputs[2].default_value = (0.18, 0.07, 0.025, 1.0)
+        links.new(marine_texture.outputs["Color"], marine_mix.inputs[0])
+        if color_socket is not None:
+            links.new(color_socket, marine_mix.inputs[1])
+        color_socket = marine_mix.outputs[0]
+    if color_socket is not None:
+        links.new(color_socket, shader.inputs["Base Color"])
     links.new(shader.outputs["BSDF"], output.inputs["Surface"])
     return material
+
+
+def _load_marine_mask(path: Path, expected_shape: tuple[int, ...]) -> np.ndarray:
+    try:
+        mask = np.load(path, mmap_mode="r", allow_pickle=False)
+    except (OSError, ValueError) as exc:
+        raise RasterFormatError("Cannot read processed marine mask") from exc
+    if mask.dtype != np.uint8 or mask.shape != expected_shape:
+        raise RasterFormatError("Processed marine mask does not match terrain tile")
+    values = set(np.unique(mask).tolist())
+    if not values <= {0, 1, 255}:
+        raise RasterFormatError("Processed marine mask contains invalid values")
+    return np.asarray(mask == 1, dtype=np.float32)
+
+
+def _create_marine_mask_image(name: str, mask: np.ndarray) -> bpy.types.Image:
+    image = _create_heightmap_image(name, mask)
+    image.colorspace_settings.name = "Non-Color"
+    return image
 
 
 def _select_created_objects(
@@ -476,7 +651,9 @@ def _parse_manifest(
     return request, provenance, sources, crs
 
 
-def _parse_entry(entry: object) -> tuple[Path, ProjectedBounds, int, int, float]:
+def _parse_entry(
+    entry: object,
+) -> tuple[Path, ProjectedBounds, int, int, float, Path | None]:
     try:
         if not isinstance(entry, dict) or not isinstance(entry["bounds"], dict):
             raise TypeError
@@ -489,11 +666,19 @@ def _parse_entry(entry: object) -> tuple[Path, ProjectedBounds, int, int, float]
         rows = int(entry["rows"])
         columns = int(entry["columns"])
         nodata = float(entry["nodata"])
+        raw_mask_path = entry.get("marine_mask_path")
+        marine_mask_path = (
+            None if raw_mask_path is None else Path(raw_mask_path).resolve()
+        )
+        if raw_mask_path is not None and (
+            not isinstance(raw_mask_path, str) or not marine_mask_path.is_file()
+        ):
+            raise ValueError
         if rows <= 0 or columns <= 0:
             raise ValueError
     except (KeyError, TypeError, ValueError) as exc:
         raise RasterFormatError("Delivery result contains an invalid terrain tile") from exc
-    return path, bounds, rows, columns, nodata
+    return path, bounds, rows, columns, nodata, marine_mask_path
 
 
 def _parse_imagery(entries: object) -> tuple[_ImageryEntry, ...]:

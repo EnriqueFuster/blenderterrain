@@ -1,0 +1,63 @@
+[[products]]
+id = "GEDTM30_V11"
+provider_id = "openlandmap"
+name = "GEDTM30 v1.1"
+jurisdiction = "global"
+implementation_status = "experimental"
+version = "v1.1"
+last_verified = "2026-08-28"
+endpoint = "https://s3.opengeohub.org/global/edtm/"
+evidence_urls = ["https://github.com/openlandmap/GEDTM30/releases/tag/v1.1"]
+reliability_score = 86
+network_cost_score = 45
+capabilities = { kind = "dtm", native_resolution_m = 30.0, semantics = "modelled_dtm", authoritative = false, acquisition_mode = "global_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = true, temporal = false }
+coverage = { bounds = [[-180.0, -65.0, 180.0, 85.0]], requires_discovery = true, limitations = ["Modelled terrain with spatially variable uncertainty", "Water requires the separate JRC GSW quality mask", "Antarctica and high Arctic are outside or at the edge of coverage"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "GEDTM30 © OpenGeoHub Foundation, CC BY 4.0" }
+
+[[products]]
+id = "COPERNICUS_GLO30_2021"
+provider_id = "copernicus_dem"
+name = "Copernicus DEM GLO-30"
+jurisdiction = "global"
+implementation_status = "experimental"
+version = "2021"
+last_verified = "2026-08-28"
+endpoint = "https://copernicus-dem-30m.s3.amazonaws.com/"
+evidence_urls = ["https://registry.opendata.aws/copernicus-dem/"]
+reliability_score = 91
+network_cost_score = 25
+capabilities = { kind = "dsm", native_resolution_m = 30.0, semantics = "dsm", authoritative = false, acquisition_mode = "tiled_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-180.0, -90.0, 180.0, 90.0]], requires_discovery = true, limitations = ["This is a surface model, not bare-earth terrain", "The public AWS copy can omit tiles"] }
+license = { identifier = "https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM", commercial_use = true, derivatives = true, redistribution = "unknown", share_alike = false, attribution_required = true, attribution_text = "Contains modified Copernicus DEM data (2021)" }
+
+[[products]]
+id = "ESA_WORLDCOVER_S2_2021"
+provider_id = "esa_worldcover"
+name = "ESA WorldCover Sentinel-2 composite 2021"
+jurisdiction = "global"
+implementation_status = "experimental"
+version = "2021"
+last_verified = "2026-08-28"
+endpoint = "https://esa-worldcover-s2.s3.eu-central-1.amazonaws.com/rgbnir/2021/"
+evidence_urls = ["https://esa-worldcover.org/en/data-access"]
+reliability_score = 94
+network_cost_score = 35
+capabilities = { kind = "imagery", native_resolution_m = 10.0, semantics = "satellite_surface_reflectance", authoritative = false, acquisition_mode = "tiled_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-180.0, -60.0, 180.0, 84.0]], requires_discovery = true, limitations = ["Static annual 2021 composite", "Resolution and valid coverage vary near product limits"] }
+license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021)" }
+
+[[products]]
+id = "GEBCO_2026"
+provider_id = "gebco"
+name = "GEBCO 2026 Grid"
+jurisdiction = "global"
+implementation_status = "experimental"
+version = "2026"
+last_verified = "2026-08-29"
+endpoint = "https://dap.ceda.ac.uk/thredds/dodsC/bodc/gebco/global/gebco_2026/"
+evidence_urls = ["https://www.gebco.net/data-products/gridded-bathymetry-data/gebco2026-grid", "https://doi.org/10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa"]
+reliability_score = 92
+network_cost_score = 30
+capabilities = { kind = "bathymetry", native_resolution_m = 463.0, semantics = "bathymetry", authoritative = false, acquisition_mode = "opendap", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-180.0, -90.0, 180.0, 90.0]], requires_discovery = true, limitations = ["15 arc-second spacing does not imply measured seabed at that resolution", "Mean sea level is assumed but shallow-water source datums can differ", "TID quality grid must accompany elevation", "Not for navigation or safety-critical use"] }
+license = { identifier = "https://www.gebco.net/data-products-gridded-bathymetry-data/gebco2026-grid", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "GEBCO Bathymetric Compilation Group 2026 (2026), doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa" }

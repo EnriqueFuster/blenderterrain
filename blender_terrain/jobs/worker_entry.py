@@ -16,6 +16,7 @@ def main() -> int:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from blender_terrain.jobs.worker import (
         run_availability_job,
+        run_confirmed_acquisition_job,
         run_delivery_job,
         run_discovery_job,
     )
@@ -23,6 +24,8 @@ def main() -> int:
     job_path = Path(arguments[0]).resolve()
     if len(arguments) == 2 and arguments[1] == "delivery":
         run_delivery_job(job_path)
+    elif len(arguments) == 2 and arguments[1] == "acquisition":
+        run_confirmed_acquisition_job(job_path)
     elif len(arguments) == 2 and arguments[1] == "availability":
         run_availability_job(job_path)
     elif len(arguments) == 1:

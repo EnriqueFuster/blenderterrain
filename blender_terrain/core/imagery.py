@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from ..errors import PlanningLimitExceeded
 from ..models import ProjectedBounds
 from .grid import align_projected_grid, tile_grid
-from .planning import MAX_IMAGERY_PIXELS, PLANNING_WMS_TILE_DIMENSION, ImportPlan
+from .planning import PLANNING_WMS_TILE_DIMENSION, ImportPlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +53,11 @@ def plan_imagery_tiles(plan: ImportPlan) -> tuple[ImageryTileRequest, ...]:
                     gsd_metres=plan.imagery.gsd_metres,
                 )
             )
-    if sum(request.width * request.height for request in requests) > MAX_IMAGERY_PIXELS:
-        raise PlanningLimitExceeded("Exact projected PNOA tiles exceed the safe pixel limit")
+    exact_pixels = sum(request.width * request.height for request in requests)
+    if exact_pixels > plan.maximum_imagery_pixels:
+        raise PlanningLimitExceeded(
+            "Exact projected PNOA output requires "
+            f"{exact_pixels:,} pixels but the selected resource profile allows "
+            f"{plan.maximum_imagery_pixels:,}; use a coarser imagery resolution"
+        )
     return tuple(requests)

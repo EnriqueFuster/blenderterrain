@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
 from ..models import DatasetProduct, ProjectedBounds
-from .crs import UTMWorkArea, split_bbox_by_utm_zone
+from .crs import UTMWorkArea, split_bbox_by_utm_zone, split_bbox_by_wgs84_utm_zone
 from .estimates import ROIEstimate, estimate_bbox
 from .grid import (
     DEFAULT_MAX_TILE_CELLS,
@@ -31,7 +31,7 @@ PRODUCT_NATIVE_RESOLUTION = {
     DatasetProduct.MDS02: 2.0,
     DatasetProduct.MDS05: 5.0,
 }
-IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0)
+IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
 MAX_ELEVATION_SAMPLES = 16_777_216
 PLANNING_WMS_TILE_DIMENSION = 4_096
 MAX_IMAGERY_PIXELS = 67_108_864
@@ -46,7 +46,7 @@ RESOURCE_PROFILES = {
 
 @dataclass(frozen=True, slots=True)
 class ImageryEstimate:
-    """Estimated PNOA output before live WMS capabilities are available."""
+    """Estimated imagery output before live provider discovery."""
 
     gsd_metres: float
     pixel_width: int
@@ -73,11 +73,12 @@ class ImportPlan:
 
     bounds: BBoxWGS84
     work_areas: tuple[UTMWorkArea, ...]
-    product: DatasetProduct
+    product: DatasetProduct | str
     elevation_resolution_metres: float
     elevation: ROIEstimate
     imagery: ImageryEstimate | None
     grids: tuple[GridSpec, ...]
+    maximum_imagery_pixels: int
     manual_tile_rows: int | None = None
     manual_tile_columns: int | None = None
 
@@ -154,13 +155,12 @@ class ImportPlan:
             warnings.append("ROI crosses UTM zones and will create sibling terrain groups")
             if self.manual_tile_rows is not None:
                 warnings.append("Manual terrain rows and columns apply separately to each CRS")
-        warnings.append("Exact Spanish data coverage is confirmed during CNIG discovery")
         return tuple(warnings)
 
 
 def create_import_plan(
     bounds: BBoxWGS84,
-    product: DatasetProduct,
+    product: DatasetProduct | str,
     elevation_resolution_metres: float | None,
     use_imagery: bool,
     imagery_gsd_metres: float | None,
@@ -170,22 +170,29 @@ def create_import_plan(
     maximum_imagery_pixels: int = MAX_IMAGERY_PIXELS,
     native_resolution_override: float | None = None,
     projected_bounds_override: tuple[ProjectedBounds, ...] | None = None,
+    use_global_utm: bool = False,
+    imagery_native_resolution_metres: float = 0.25,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
-    if product not in PRODUCT_NATIVE_RESOLUTION:
-        raise UserInputError("The selected product is not an elevation raster")
     if maximum_elevation_samples <= 0 or maximum_imagery_pixels <= 0:
         raise UserInputError("Resource limits must be positive")
-    native_resolution = (
-        PRODUCT_NATIVE_RESOLUTION[product]
-        if native_resolution_override is None
-        else native_resolution_override
-    )
+    if native_resolution_override is None:
+        if not isinstance(product, DatasetProduct) or product not in PRODUCT_NATIVE_RESOLUTION:
+            raise UserInputError(
+                "A catalog product requires an explicit native elevation resolution"
+            )
+        native_resolution = PRODUCT_NATIVE_RESOLUTION[product]
+    else:
+        native_resolution = native_resolution_override
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
         raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
-    work_areas = split_bbox_by_utm_zone(bounds)
+    work_areas = (
+        split_bbox_by_wgs84_utm_zone(bounds)
+        if use_global_utm
+        else split_bbox_by_utm_zone(bounds)
+    )
     if projected_bounds_override is not None and {
         projected.epsg for projected in projected_bounds_override
     } != {area.crs.epsg for area in work_areas}:
@@ -201,7 +208,12 @@ def create_import_plan(
         projected_bounds_override,
     )
     imagery = (
-        _estimate_imagery(bounds, imagery_gsd_metres, maximum_imagery_pixels)
+        _estimate_imagery(
+            bounds,
+            imagery_gsd_metres,
+            maximum_imagery_pixels,
+            imagery_native_resolution_metres,
+        )
         if use_imagery
         else None
     )
@@ -213,6 +225,7 @@ def create_import_plan(
         elevation=elevation,
         imagery=imagery,
         grids=grids,
+        maximum_imagery_pixels=maximum_imagery_pixels,
         manual_tile_rows=manual_tile_rows,
         manual_tile_columns=manual_tile_columns,
     )
@@ -308,12 +321,23 @@ def _manual_layout_is_safe(
 
 
 def _estimate_imagery(
-    bounds: BBoxWGS84, requested_gsd: float | None, maximum_pixels: int
+    bounds: BBoxWGS84,
+    requested_gsd: float | None,
+    maximum_pixels: int,
+    native_resolution: float,
 ) -> ImageryEstimate:
+    if not math.isfinite(native_resolution) or native_resolution <= 0.0:
+        raise UserInputError("Native imagery resolution must be positive")
     physical = estimate_bbox(bounds)
-    candidates = IMAGERY_RESOLUTIONS if requested_gsd is None else (requested_gsd,)
+    candidates = (
+        tuple(gsd for gsd in IMAGERY_RESOLUTIONS if gsd >= native_resolution)
+        if requested_gsd is None
+        else (requested_gsd,)
+    )
     if requested_gsd is not None and requested_gsd not in IMAGERY_RESOLUTIONS:
         raise UserInputError("Unsupported imagery resolution")
+    if requested_gsd is not None and requested_gsd < native_resolution:
+        raise UserInputError("Imagery resolution cannot be finer than the source data")
     for gsd in candidates:
         pixel_width = math.ceil(physical.width_metres / gsd)
         pixel_height = math.ceil(physical.height_metres / gsd)
@@ -327,7 +351,7 @@ def _estimate_imagery(
         if estimate.pixel_count <= maximum_pixels:
             return estimate
     raise PlanningLimitExceeded(
-        "PNOA output exceeds the safe texture limit even at 5 m GSD"
+        "Imagery output exceeds the safe texture limit even at 100 m GSD"
         if requested_gsd is None
-        else "PNOA output exceeds the safe texture limit; use Auto or a coarser GSD"
+        else "Imagery output exceeds the safe texture limit; use Auto or a coarser GSD"
     )

@@ -79,7 +79,7 @@ def _world_values(path: Path) -> tuple[float, float, float, float, float, float]
         raise UserInputError("Local imagery world file is not valid numeric text") from exc
     if len(values) != 6 or not all(math.isfinite(value) for value in values):
         raise UserInputError("Local imagery world file must contain six finite numbers")
-    return values  # type: ignore[return-value]
+    return values
 
 
 def _projected_epsg(path: Path) -> int:

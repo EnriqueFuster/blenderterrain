@@ -55,6 +55,24 @@ class ImageryTilePlanningTests(unittest.TestCase):
 
         self.assertEqual(plan_imagery_tiles(plan), ())
 
+    def test_exact_tiles_respect_the_selected_large_profile(self) -> None:
+        large_limit = 268_435_456
+        plan = create_import_plan(
+            BBoxWGS84(0.677894, 42.490376, 0.764869, 42.557514),
+            DatasetProduct.MDS02,
+            2.0,
+            True,
+            0.5,
+            maximum_elevation_samples=67_108_864,
+            maximum_imagery_pixels=large_limit,
+        )
+
+        requests = plan_imagery_tiles(plan)
+        exact_pixels = sum(request.width * request.height for request in requests)
+
+        self.assertGreater(exact_pixels, 67_108_864)
+        self.assertLessEqual(exact_pixels, large_limit)
+
 
 if __name__ == "__main__":
     unittest.main()

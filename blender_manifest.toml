@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 id = "blender_terrain"
-version = "0.3.0"
+version = "0.4.0"
 name = "BlenderTerrain"
-tagline = "Import IGN terrain and PNOA imagery by area"
+tagline = "Import traceable terrain and imagery by area"
 maintainer = "Enrique Fuster"
 type = "add-on"
 blender_version_min = "4.5.0"
@@ -10,7 +10,7 @@ license = ["SPDX:GPL-3.0-or-later"]
 website = "https://github.com/EnriqueFuster/blenderterrain"
 
 [permissions]
-network = "Download IGN terrain and PNOA imagery"
+network = "Download selected terrain and imagery products"
 files = "Cache geospatial data and generated assets"
 
 [build]
@@ -23,6 +23,7 @@ paths_exclude_pattern = [
   "/.mypy_cache/",
   "/.pytest_cache/",
   "/.pytest-tmp/",
+  "/.tmp/",
   "/.ruff_cache/",
   "/.venv/",
   "/*.egg-info/",

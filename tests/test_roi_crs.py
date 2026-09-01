@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import unittest
 
-from blender_terrain.core.crs import split_bbox_by_utm_zone
+from blender_terrain.core.crs import split_bbox_by_utm_zone, split_bbox_by_wgs84_utm_zone
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import NoCoverageError, UserInputError
 
@@ -29,6 +29,15 @@ class BBoxWGS84Tests(unittest.TestCase):
 
 
 class UTMSelectionTests(unittest.TestCase):
+    def test_selects_wgs84_utm_for_a_global_product_roi(self) -> None:
+        work_areas = split_bbox_by_wgs84_utm_zone(
+            BBoxWGS84(2.34, 48.85, 2.36, 48.87)
+        )
+
+        self.assertEqual(len(work_areas), 1)
+        self.assertEqual(work_areas[0].crs.epsg, 32631)
+        self.assertEqual(work_areas[0].crs.datum, "WGS84")
+
     def test_selects_native_crs_for_mainland_balearic_and_canary_bounds(self) -> None:
         examples = (
             (BBoxWGS84(-3.8, 40.3, -3.6, 40.5), 25830, "ETRS89"),

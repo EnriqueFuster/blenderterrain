@@ -7,8 +7,18 @@ from typing import Any
 
 import bpy
 
-from ..core import TerrainRepresentation, TerrainSettings, read_terrain_metadata
+from ..core import (
+    TerrainRepresentation,
+    TerrainSettings,
+    native_resolution_subdivision_level,
+    read_terrain_metadata,
+)
 from ..errors import UserInputError
+from .terrain_builder import (
+    ensure_smooth_by_angle_modifier,
+    get_smooth_angle,
+    set_smooth_angle,
+)
 
 
 def import_items() -> list[tuple[str, str, str]]:
@@ -56,6 +66,9 @@ def load_import_settings(properties: Any) -> None:
     properties.terrain_subdivision_viewport = metadata.settings.subdivision_viewport
     properties.terrain_subdivision_render = metadata.settings.subdivision_render
     properties.terrain_displacement_enabled = metadata.settings.displacement_enabled
+    properties.terrain_smooth_angle = float(
+        collection.get("blender_terrain_smooth_angle", 0.0)
+    )
 
 
 def apply_global_settings(properties: Any) -> int:
@@ -78,10 +91,12 @@ def apply_global_settings(properties: Any) -> int:
     collection["blender_terrain_subdivision_viewport"] = settings.subdivision_viewport
     collection["blender_terrain_subdivision_render"] = settings.subdivision_render
     collection["blender_terrain_displacement_enabled"] = settings.displacement_enabled
+    smooth_angle = _validated_smooth_angle(properties.terrain_smooth_angle)
+    collection["blender_terrain_smooth_angle"] = smooth_angle
     objects = _terrain_objects(collection)
     for object_ in objects:
         object_.scale.z = settings.vertical_scale
-        subdivision, displacement = _modifiers(object_)
+        subdivision, displacement, smooth = _modifiers(object_)
         elevation_range = float(object_["blender_terrain_elevation_range"])
         displacement.strength = elevation_range * multiplier
         displacement.mid_level = settings.displacement_midlevel
@@ -89,10 +104,12 @@ def apply_global_settings(properties: Any) -> int:
         subdivision.render_levels = settings.subdivision_render
         displacement.show_viewport = settings.displacement_enabled
         displacement.show_render = settings.displacement_enabled
+        _apply_smoothing(smooth, smooth_angle)
         object_["blender_terrain_strength_multiplier"] = multiplier
         object_["blender_terrain_displacement_midlevel"] = settings.displacement_midlevel
         object_["blender_terrain_subdivision_viewport"] = settings.subdivision_viewport
         object_["blender_terrain_subdivision_render"] = settings.subdivision_render
+        object_["blender_terrain_smooth_angle"] = smooth_angle
     return len(objects)
 
 
@@ -109,17 +126,20 @@ def apply_selected_settings(context: bpy.types.Context, properties: Any) -> tupl
         raise UserInputError("Midlevel must be between zero and one")
     viewport = int(properties.selected_subdivision_viewport)
     render = int(properties.selected_subdivision_render)
+    smooth_angle = _validated_smooth_angle(properties.selected_smooth_angle)
     for object_ in selected:
-        subdivision, displacement = _modifiers(object_)
+        subdivision, displacement, smooth = _modifiers(object_)
         elevation_range = float(object_["blender_terrain_elevation_range"])
         displacement.strength = elevation_range * multiplier
         displacement.mid_level = midlevel
         subdivision.levels = viewport
         subdivision.render_levels = render
+        _apply_smoothing(smooth, smooth_angle)
         object_["blender_terrain_strength_multiplier"] = multiplier
         object_["blender_terrain_displacement_midlevel"] = midlevel
         object_["blender_terrain_subdivision_viewport"] = viewport
         object_["blender_terrain_subdivision_render"] = render
+        object_["blender_terrain_smooth_angle"] = smooth_angle
     return len(selected), count_strength_seams(collection)
 
 
@@ -133,18 +153,23 @@ def restore_selected_settings(context: bpy.types.Context, properties: Any) -> in
     metadata = read_terrain_metadata(dict(collection.items()))
     multiplier = float(collection.get("blender_terrain_strength_multiplier", 1.0))
     midlevel = metadata.settings.displacement_midlevel
+    smooth_angle = float(
+        collection.get("blender_terrain_smooth_angle", 0.0)
+    )
     for object_ in selected:
-        subdivision, displacement = _modifiers(object_)
+        subdivision, displacement, smooth = _modifiers(object_)
         displacement.strength = float(object_["blender_terrain_elevation_range"]) * multiplier
         displacement.mid_level = midlevel
         subdivision.levels = metadata.settings.subdivision_viewport
         subdivision.render_levels = metadata.settings.subdivision_render
+        _apply_smoothing(smooth, smooth_angle)
         object_["blender_terrain_strength_multiplier"] = multiplier
         object_["blender_terrain_displacement_midlevel"] = midlevel
         object_["blender_terrain_subdivision_viewport"] = (
             metadata.settings.subdivision_viewport
         )
         object_["blender_terrain_subdivision_render"] = metadata.settings.subdivision_render
+        object_["blender_terrain_smooth_angle"] = smooth_angle
     return len(selected)
 
 
@@ -169,15 +194,60 @@ def sync_selected_settings(
     if source is None:
         properties.selected_object_name = ""
         return False
-    subdivision, displacement = _modifiers(source)
+    subdivision, displacement, smooth = _modifiers(source)
     elevation_range = float(source["blender_terrain_elevation_range"])
     multiplier = displacement.strength / elevation_range if elevation_range else 0.0
     properties.selected_strength_multiplier = multiplier
     properties.selected_displacement_midlevel = displacement.mid_level
     properties.selected_subdivision_viewport = subdivision.levels
     properties.selected_subdivision_render = subdivision.render_levels
+    properties.selected_smooth_angle = get_smooth_angle(smooth)
     properties.selected_object_name = source.name
     return True
+
+
+def has_selected_terrain_objects(context: bpy.types.Context, import_id: str) -> bool:
+    """Return whether the active import contains a selected terrain object."""
+
+    collection = _collection(import_id)
+    return collection is not None and bool(
+        _selected_terrain_objects(context, collection)
+    )
+
+
+def import_native_subdivision_level(import_id: str) -> int:
+    """Return the subdivision level that matches an import's elevation grid."""
+
+    collection = _collection(import_id)
+    if collection is None:
+        return 0
+    reduction_factor = collection.get("blender_terrain_base_mesh_reduction_factor", 1)
+    if not isinstance(reduction_factor, int) or isinstance(reduction_factor, bool):
+        return 0
+    try:
+        return native_resolution_subdivision_level(reduction_factor)
+    except ValueError:
+        return 0
+
+
+def request_selected_settings_sync() -> None:
+    """Schedule selection-to-panel synchronization outside the panel draw cycle."""
+
+    if not bpy.app.timers.is_registered(_sync_selected_settings_on_timer):
+        bpy.app.timers.register(_sync_selected_settings_on_timer, first_interval=0.0)
+
+
+def _sync_selected_settings_on_timer() -> None:
+    scene = getattr(bpy.context, "scene", None)
+    if scene is None or not hasattr(scene, "blender_terrain_roi"):
+        return None
+    properties = scene.blender_terrain_roi
+    sync_selected_settings(bpy.context, properties)
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == "VIEW_3D":
+                area.tag_redraw()
+    return None
 
 
 def select_import_objects(context: bpy.types.Context, import_id: str) -> int:
@@ -251,14 +321,28 @@ def _selected_terrain_objects(
 
 def _modifiers(
     object_: bpy.types.Object,
-) -> tuple[bpy.types.SubsurfModifier, bpy.types.DisplaceModifier]:
+) -> tuple[bpy.types.SubsurfModifier, bpy.types.DisplaceModifier, Any]:
     subdivision = object_.modifiers.get("Terrain Subdivision")
     displacement = object_.modifiers.get("Terrain Displacement")
+    smooth = ensure_smooth_by_angle_modifier(object_)
     if not isinstance(subdivision, bpy.types.SubsurfModifier) or not isinstance(
         displacement, bpy.types.DisplaceModifier
     ):
         raise UserInputError(f"Terrain object has missing modifiers: {object_.name}")
-    return subdivision, displacement
+    return subdivision, displacement, smooth
+
+
+def _validated_smooth_angle(value: float) -> float:
+    angle = float(value)
+    if not math.isfinite(angle) or not 0.0 <= angle <= math.pi:
+        raise UserInputError("Smooth angle must be between 0 and 180 degrees")
+    return angle
+
+
+def _apply_smoothing(modifier: Any, angle: float) -> None:
+    modifier.show_viewport = True
+    modifier.show_render = True
+    set_smooth_angle(modifier, angle)
 
 
 def _share_edge(first: bpy.types.Object, second: bpy.types.Object) -> bool:

@@ -32,12 +32,23 @@ def main() -> None:
         assert all(class_type.is_registered for class_type in classes)
         assert classes[0].bl_idname == repository.name
         panel_ids = {getattr(class_type, "bl_idname", "") for class_type in classes}
-        assert "BLENDERTERRAIN_PT_source" in panel_ids
+        assert "BLENDERTERRAIN_PT_main" in panel_ids
+        assert "BLENDERTERRAIN_PT_source" not in panel_ids
+        assert "BLENDERTERRAIN_PT_data" not in panel_ids
         assert "BLENDERTERRAIN_PT_area" not in panel_ids
         assert "BLENDERTERRAIN_PT_acquisition" not in panel_ids
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
         properties = bpy.context.scene.blender_terrain_roi
         property_rna = type(properties).bl_rna.properties
+        assert properties.bathymetry_mode == "GEBCO"
+        if _cycle == 0:
+            assert properties.show_acquisition_section
+            assert not properties.show_creation_section
+            assert not properties.show_imported_section
+            assert not properties.show_cache_section
+        assert "Output pixel spacing" in property_rna["elevation_resolution"].description
+        assert "Safety budget" in property_rna["resource_profile"].description
+        assert "divided into Blender objects" in property_rna["tiling_mode"].description
         assert property_rna["terrain_subdivision_viewport"].hard_max == 11
         assert property_rna["terrain_subdivision_render"].hard_max == 11
         if _cycle == 1:
@@ -55,13 +66,25 @@ def main() -> None:
         assert properties.is_valid
         assert properties.crs_summary == "EPSG:25830"
         assert properties.product == "MDT02"
+        assert set(json.loads(properties.available_imagery_product_ids_json)) == {
+            "PNOA_MA",
+            "ESA_WORLDCOVER_S2_2021",
+        }
+        spanish_region = extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+            json.loads(properties.roi_geometry_json)
+        )
+        spanish_plan = job_controller._acquisition_plan_from_properties(properties, spanish_region)
+        assert {selection.product_id for selection in spanish_plan.selections.selections} == {
+            "MDT02",
+            "PNOA_MA",
+            "GEBCO_2026",
+        }
         assert properties.selected_resolution == 2.0
         assert properties.area_square_metres > 0.0
         assert properties.sample_count > 0
         assert properties.terrain_tile_count == 6
         assert properties.terrain_tile_summary.startswith("Largest object:")
         assert properties.estimated_memory_mib > 0.0
-        assert "CNIG discovery" in properties.planning_warning
         map_geometry = properties.roi_geometry_json
         properties.roi_input_mode = "MAP_POLYGON"
         properties.roi_geometry_json = map_geometry
@@ -77,18 +100,18 @@ def main() -> None:
         properties.roi_geometry_json = json.dumps(
             {
                 "type": "Polygon",
-                "coordinates": [[
-                    [precise_west, properties.south],
-                    [properties.east, properties.south],
-                    [properties.east, properties.north],
-                    [precise_west, properties.north],
-                    [precise_west, properties.south],
-                ]],
+                "coordinates": [
+                    [
+                        [precise_west, properties.south],
+                        [properties.east, properties.south],
+                        [properties.east, properties.north],
+                        [precise_west, properties.north],
+                        [precise_west, properties.south],
+                    ]
+                ],
             }
         )
-        precision_job = job_controller._job_from_properties(
-            str(uuid4()), str(uuid4()), properties
-        )
+        precision_job = job_controller._job_from_properties(str(uuid4()), str(uuid4()), properties)
         assert precision_job.region is not None
         assert precision_job.bounds == precision_job.region.bounds
         properties.roi_geometry_json = original_geometry
@@ -105,7 +128,47 @@ def main() -> None:
         assert "interrupted" in properties.job_message
         _smoke_terrain_operator(properties, use_imagery=_cycle == 0)
         properties = bpy.context.scene.blender_terrain_roi
-        properties.use_imagery = True
+        properties.product = "COPERNICUS_GLO30_2021"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert properties.selected_resolution == 30.0
+        assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
+        assert properties.discovery_ready
+        assert "Copernicus GLO-30" in properties.discovery_summary
+        assert "GEBCO" in properties.discovery_summary
+        region = extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+            json.loads(properties.roi_geometry_json)
+        )
+        global_plan = job_controller._acquisition_plan_from_properties(properties, region)
+        assert (
+            global_plan.selections.for_kind(
+                extension.blender_terrain.catalog.DatasetKind.BATHYMETRY
+            ).product_id
+            == "GEBCO_2026"
+        )
+        assert not properties.job_active
+        properties.roi_input_mode = "BOUNDING_BOX"
+        properties.west = 2.34
+        properties.south = 48.85
+        properties.east = 2.36
+        properties.north = 48.87
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert json.loads(properties.available_product_ids_json) == [
+            "COPERNICUS_GLO30_2021",
+            "GEDTM30_V11",
+        ]
+        assert properties.product == "COPERNICUS_GLO30_2021"
+        assert json.loads(properties.available_imagery_product_ids_json) == [
+            "ESA_WORLDCOVER_S2_2021"
+        ]
+        assert properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
+        properties.product = "GEDTM30_V11"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert properties.selected_resolution == 30.0
+        assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
+        assert "GEDTM30" in properties.discovery_summary
+        properties.available_product_ids_json = "[]"
+        properties.product = "MDT02"
+        properties.imagery_product = "ESA_WORLDCOVER_S2_2021"
         properties.elevation_source = "LOCAL"
         assert properties.elevation_source == "LOCAL"
         properties.elevation_source = "CNIG"
@@ -120,6 +183,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         array_path = directory / "terrain.npy"
+        marine_mask_path = directory / "marine-mask.npy"
         image_paths = (directory / "pnoa-west.png", directory / "pnoa-east.png")
         elevation = np.array([[1, 2], [3, 4]], dtype=np.float32)
         if use_imagery:
@@ -130,6 +194,10 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             elevation[-1, -1] = 4
             elevation[8, 8] = 10
         np.save(array_path, elevation)
+        if use_imagery:
+            marine_mask = np.zeros(elevation.shape, dtype=np.uint8)
+            marine_mask[:, elevation.shape[1] // 2 :] = 1
+            np.save(marine_mask_path, marine_mask)
         if use_imagery:
             for image_path in image_paths:
                 _write_png(image_path)
@@ -151,6 +219,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                         "product": "MDT02",
                         "elevation_resolution_metres": 10.0,
                         "use_imagery": use_imagery,
+                        "use_bathymetry": use_imagery,
                         "imagery_gsd_metres": 1.0 if use_imagery else None,
                     },
                     "crs": [
@@ -171,8 +240,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                     "provenance": {
                         "source": "Instituto Geográfico Nacional de España (IGN-CNIG)",
                         "data_policy_url": (
-                            "https://centrodedescargas.cnig.es/"
-                            "CentroDescargas/politica-datos"
+                            "https://centrodedescargas.cnig.es/CentroDescargas/politica-datos"
                         ),
                         "license": "CC BY 4.0-compatible IGN-CNIG data terms",
                         "retrieved_at_utc": "2026-08-26T00:00:00+00:00",
@@ -190,6 +258,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                             "rows": elevation.shape[0] - 1,
                             "columns": elevation.shape[1] - 1,
                             "nodata": -9999,
+                            **({"marine_mask_path": str(marine_mask_path)} if use_imagery else {}),
                         }
                     ],
                     "imagery": [
@@ -212,8 +281,10 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                                 "north": 4300010,
                                 "epsg": 25830,
                             },
-                        }
-                    ] if use_imagery else [],
+                        },
+                    ]
+                    if use_imagery
+                    else [],
                 }
             ),
             encoding="utf-8",
@@ -221,7 +292,28 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         properties.delivery_result_path = str(result_path)
         properties.import_id = "12345678-1234-4234-8234-123456789abc"
         properties.full_resolution_mesh = not use_imagery
+        export_root = directory / "exports"
+        assert bpy.ops.blender_terrain.export_prepared_rasters(
+            directory=str(export_root)
+        ) == {"FINISHED"}
+        export_directory = next(export_root.iterdir())
+        expected_tiffs = 4 if use_imagery else 1
+        assert len(tuple(export_directory.glob("*.tif"))) == expected_tiffs
+        assert (export_directory / "provenance.json").is_file()
+        view_spaces = tuple(
+            space
+            for window in bpy.context.window_manager.windows
+            for area in window.screen.areas
+            if area.type == "VIEW_3D"
+            for space in area.spaces
+            if space.type == "VIEW_3D"
+        )
+        for space in view_spaces:
+            space.clip_end = 100.0
+            space.region_3d.view_distance = 250_000.0
         assert bpy.ops.blender_terrain.create_terrain() == {"FINISHED"}
+        assert properties.show_imported_section
+        assert all(math.isclose(space.clip_end, 1.0e12, rel_tol=1e-6) for space in view_spaces)
         terrain = bpy.data.objects["BT_12345678_Terrain_000"]
         assert bpy.context.view_layer.objects.active == terrain
         assert terrain.select_get()
@@ -232,19 +324,29 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert terrain["blender_terrain_representation"] == "DISPLACEMENT"
         assert terrain["blender_terrain_strength_multiplier"] == 1.0
         assert tuple(modifier.type for modifier in terrain.modifiers) == (
+            "NODES",
             "SUBSURF",
             "DISPLACE",
         )
-        assert terrain.modifiers[0].subdivision_type == "SIMPLE"
-        assert terrain.modifiers[0].levels == (0 if properties.full_resolution_mesh else 1)
-        assert terrain.modifiers[1].texture_coords == "UV"
-        assert terrain.modifiers[1].uv_layer == "TerrainUV"
+        smooth = terrain.modifiers[0]
+        subdivision = terrain.modifiers[1]
+        displacement = terrain.modifiers[2]
+        assert subdivision.subdivision_type == "SIMPLE"
+        assert subdivision.levels == (0 if properties.full_resolution_mesh else 1)
+        assert displacement.texture_coords == "UV"
+        assert displacement.uv_layer == "TerrainUV"
+        assert smooth.name == "Terrain Smooth by Angle"
+        assert smooth.node_group.name == "BlenderTerrain Smooth by Angle"
+        smooth_angle_input = next(
+            item.identifier
+            for item in smooth.node_group.interface.items_tree
+            if item.item_type == "SOCKET" and item.in_out == "INPUT" and item.name == "Angle"
+        )
+        smooth_angle = getattr(smooth.properties.inputs, smooth_angle_input)
+        assert math.isclose(smooth_angle.value, 0.0, abs_tol=1e-7)
         assert properties.active_import_id == properties.import_id
         assert properties.active_import_representation == "DISPLACEMENT"
-        assert (
-            properties.active_import_full_resolution_mesh
-            == properties.full_resolution_mesh
-        )
+        assert properties.active_import_full_resolution_mesh == properties.full_resolution_mesh
         if not properties.full_resolution_mesh:
             _assert_progressive_peak(terrain)
         properties.terrain_vertical_scale = 1.5
@@ -253,14 +355,15 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         properties.terrain_subdivision_viewport = 0
         properties.terrain_subdivision_render = 2
         properties.terrain_displacement_enabled = True
+        properties.terrain_smooth_angle = math.radians(45.0)
         assert bpy.ops.blender_terrain.apply_import_settings() == {"FINISHED"}
         assert terrain.scale.z == 1.5
-        assert terrain.modifiers[0].levels == 0
-        assert terrain.modifiers[0].render_levels == 2
+        assert subdivision.levels == 0
+        assert subdivision.render_levels == 2
         expected_range = 9.0 if use_imagery else 3.0
-        assert math.isclose(
-            terrain.modifiers[1].strength, expected_range * 1.1, rel_tol=1e-6
-        )
+        assert math.isclose(displacement.strength, expected_range * 1.1, rel_tol=1e-6)
+        assert smooth.show_viewport
+        assert math.isclose(smooth_angle.value, math.radians(45.0), rel_tol=1e-6)
         assert math.isclose(properties.selected_strength_multiplier, 1.1, rel_tol=1e-6)
         assert math.isclose(properties.selected_displacement_midlevel, 0.2, rel_tol=1e-6)
         assert properties.selected_subdivision_viewport == 0
@@ -269,23 +372,23 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         properties.selected_displacement_midlevel = 0.3
         properties.selected_subdivision_viewport = 1
         properties.selected_subdivision_render = 3
+        properties.selected_smooth_angle = math.radians(60.0)
         assert bpy.ops.blender_terrain.apply_selected_settings() == {"FINISHED"}
         assert terrain["blender_terrain_strength_multiplier"] == 1.25
-        assert math.isclose(
-            terrain.modifiers[1].strength, expected_range * 1.25, rel_tol=1e-6
-        )
-        assert math.isclose(terrain.modifiers[1].mid_level, 0.3, rel_tol=1e-6)
-        assert terrain.modifiers[0].levels == 1
+        assert math.isclose(displacement.strength, expected_range * 1.25, rel_tol=1e-6)
+        assert math.isclose(displacement.mid_level, 0.3, rel_tol=1e-6)
+        assert subdivision.levels == 1
+        assert smooth.show_viewport
+        assert math.isclose(smooth_angle.value, math.radians(60.0), rel_tol=1e-6)
         assert bpy.ops.blender_terrain.restore_selected_settings() == {"FINISHED"}
-        assert math.isclose(
-            terrain["blender_terrain_strength_multiplier"], 1.1, rel_tol=1e-6
-        )
-        assert math.isclose(
-            terrain.modifiers[1].strength, expected_range * 1.1, rel_tol=1e-6
-        )
+        assert math.isclose(terrain["blender_terrain_strength_multiplier"], 1.1, rel_tol=1e-6)
+        assert math.isclose(displacement.strength, expected_range * 1.1, rel_tol=1e-6)
         assert math.isclose(properties.selected_strength_multiplier, 1.1, rel_tol=1e-6)
         assert math.isclose(properties.selected_displacement_midlevel, 0.2, rel_tol=1e-6)
-        assert terrain.modifiers[0].levels == 0
+        assert subdivision.levels == 0
+        assert smooth.show_viewport
+        assert math.isclose(smooth_angle.value, math.radians(45.0), rel_tol=1e-6)
+        assert math.isclose(properties.selected_smooth_angle, math.radians(45.0), rel_tol=1e-6)
         assert bpy.ops.blender_terrain.select_import_objects() == {"FINISHED"}
         _assert_evaluated_elevation(
             terrain,
@@ -301,16 +404,31 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                 for node in terrain.data.materials[0].node_tree.nodes
                 if node.bl_idname == "ShaderNodeTexImage"
             )
-            assert len(image_nodes) == 2
-            assert all(node.image.colorspace_settings.name == "sRGB" for node in image_nodes)
+            assert len(image_nodes) == 3
+            marine_node = terrain.data.materials[0].node_tree.nodes["Marine_Mask"]
+            assert marine_node.image.colorspace_settings.name == "Non-Color"
+            assert marine_node.interpolation == "Closest"
+            assert all(
+                node.image.colorspace_settings.name == "sRGB"
+                for node in image_nodes
+                if node != marine_node
+            )
             mix_nodes = tuple(
                 node
                 for node in terrain.data.materials[0].node_tree.nodes
                 if node.bl_idname == "ShaderNodeMixRGB"
             )
-            assert len(mix_nodes) == 1
-            assert mix_nodes[0].blend_type == "MIX"
-            assert mix_nodes[0].inputs[0].is_linked
+            assert len(mix_nodes) == 2
+            marine_mix = terrain.data.materials[0].node_tree.nodes["Land_Seabed_Mix"]
+            assert marine_mix.inputs[0].is_linked
+            assert all(
+                math.isclose(actual, expected, rel_tol=1e-6)
+                for actual, expected in zip(
+                    marine_mix.inputs[2].default_value,
+                    (0.18, 0.07, 0.025, 1.0),
+                    strict=True,
+                )
+            )
             assert bpy.ops.blender_terrain.pack_imagery() == {"FINISHED"}
             assert all(node.image.packed_file is not None for node in image_nodes)
         collection = bpy.data.collections["BlenderTerrain_12345678"]
@@ -318,22 +436,13 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert collection["blender_terrain_product"] == "MDT02"
         assert collection["blender_terrain_schema_version"] == 2
         assert collection["blender_terrain_representation"] == "DISPLACEMENT"
-        assert (
-            collection["blender_terrain_full_resolution_mesh"]
-            == properties.full_resolution_mesh
-        )
+        assert collection["blender_terrain_full_resolution_mesh"] == properties.full_resolution_mesh
         assert collection["blender_terrain_vertical_scale"] == 1.5
-        assert math.isclose(
-            collection["blender_terrain_strength_multiplier"], 1.1, rel_tol=1e-6
-        )
-        assert math.isclose(
-            collection["blender_terrain_displacement_midlevel"], 0.2, rel_tol=1e-6
-        )
+        assert math.isclose(collection["blender_terrain_strength_multiplier"], 1.1, rel_tol=1e-6)
+        assert math.isclose(collection["blender_terrain_displacement_midlevel"], 0.2, rel_tol=1e-6)
         assert collection["blender_terrain_elevation_minimum"] == 1.0
         assert collection["blender_terrain_elevation_maximum"] == (10.0 if use_imagery else 4.0)
-        assert collection["blender_terrain_source"].startswith(
-            "Instituto Geográfico Nacional"
-        )
+        assert collection["blender_terrain_source"].startswith("Instituto Geográfico Nacional")
         assert any(
             candidate.get("blender_terrain_import_id") == properties.import_id
             for candidate in bpy.data.collections
@@ -349,35 +458,67 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
                 midlevel=0.2,
                 elevation_range=expected_range,
             )
-            assert terrain.modifiers[1].texture.image.packed_file is not None
+            assert terrain.modifiers[2].texture.image.packed_file is not None
             properties = bpy.context.scene.blender_terrain_roi
             assert properties.active_import_id == "12345678-1234-4234-8234-123456789abc"
             collection = bpy.data.collections["BlenderTerrain_12345678"]
-        materials = tuple(
-            material
+            terrain = bpy.data.objects["BT_12345678_Terrain_000"]
+        if use_imagery:
+            adjacent = terrain.copy()
+            adjacent.data = terrain.data.copy()
+            adjacent.name = "BT_12345678_Terrain_Adjacent"
+            collection.objects.link(adjacent)
+        source_objects = tuple(
+            object_
             for object_ in collection.objects
             if isinstance(object_.data, bpy.types.Mesh)
-            for material in object_.data.materials
         )
-        heightmap_textures = tuple(
-            modifier.texture
-            for object_ in collection.objects
+        source_materials = {
+            material.as_pointer()
+            for object_ in source_objects
+            for material in object_.data.materials
+        }
+        materials = tuple({
+            material.as_pointer(): material
+            for object_ in source_objects
+            for material in object_.data.materials
+        }.values())
+        heightmap_textures = tuple({
+            modifier.texture.as_pointer(): modifier.texture
+            for object_ in source_objects
             for modifier in object_.modifiers
             if modifier.type == "DISPLACE"
+        }.values())
+        heightmap_texture_names = {texture.name for texture in heightmap_textures}
+        heightmap_image_names = {texture.image.name for texture in heightmap_textures}
+        source_collection_name = collection.name
+        assert bpy.ops.blender_terrain.bake_and_merge_terrain() == {"FINISHED"}
+        baked = bpy.context.view_layer.objects.active
+        assert baked is not None
+        assert baked.name.startswith("BT_12345678_Baked")
+        assert baked.get("blender_terrain_representation") == "BAKED"
+        assert baked.get("blender_terrain_source_import_id") == properties.import_id
+        assert len(baked.modifiers) == 0
+        assert "TerrainUV" in baked.data.uv_layers
+        assert source_materials.issubset(
+            {material.as_pointer() for material in baked.data.materials}
         )
-        heightmap_images = tuple(texture.image for texture in heightmap_textures)
-        for object_ in tuple(collection.objects):
-            mesh = object_.data if isinstance(object_.data, bpy.types.Mesh) else None
-            bpy.data.objects.remove(object_, do_unlink=True)
-            if mesh is not None:
-                bpy.data.meshes.remove(mesh)
-        bpy.data.collections.remove(collection)
+        assert source_collection_name not in bpy.data.collections
+        assert all(name not in bpy.data.textures for name in heightmap_texture_names)
+        assert all(name not in bpy.data.images for name in heightmap_image_names)
+        baked_collection = baked.users_collection[0]
+        assert baked_collection["blender_terrain_import_id"] == properties.import_id
+        assert baked_collection["blender_terrain_representation"] == "BAKED"
+        assert properties.active_import_representation == "BAKED"
+        if use_imagery:
+            assert len(baked.data.polygons) == 1
+            assert len(baked.data.vertices) == 4
+        baked_mesh = baked.data
+        bpy.data.objects.remove(baked, do_unlink=True)
+        bpy.data.meshes.remove(baked_mesh)
+        bpy.data.collections.remove(baked_collection)
         for material in materials:
             bpy.data.materials.remove(material)
-        for texture in heightmap_textures:
-            bpy.data.textures.remove(texture)
-        for image in heightmap_images:
-            bpy.data.images.remove(image)
         if use_imagery:
             for image_path in image_paths:
                 bpy.data.images.remove(bpy.data.images[image_path.name])
@@ -396,8 +537,7 @@ def _assert_evaluated_elevation(
         np.testing.assert_allclose(
             [vertex.co.z for vertex in evaluated_mesh.vertices],
             [
-                1.0 - midlevel * elevation_range * strength_multiplier
-                + value * strength_multiplier
+                1.0 - midlevel * elevation_range * strength_multiplier + value * strength_multiplier
                 for value in (0.0, 1.0, 2.0, 3.0)
             ],
             atol=1e-5,

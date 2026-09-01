@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "blenderterrain"
-version = "0.3.0"
-description = "Portable research foundation for importing official terrain data into Blender"
+version = "0.4.0"
+description = "Portable geospatial terrain acquisition and Blender import toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
@@ -13,6 +13,7 @@ authors = [{ name = "Enrique Fuster" }]
 dependencies = [
   "numpy>=1.26,<2; python_version < '3.13'",
   "numpy>=2.1,<2.3; python_version >= '3.13'",
+  "zstandard>=0.23,<1",
 ]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
@@ -39,7 +40,7 @@ oracle = [
 include = ["blender_terrain*"]
 
 [tool.setuptools.package-data]
-blender_terrain = ["assets/*.html", "assets/*.js"]
+blender_terrain = ["assets/*.html", "assets/*.js", "catalog/data/*.toml"]
 
 [tool.ruff]
 line-length = 100
@@ -58,6 +59,7 @@ files = [
   "blender_terrain/errors.py",
   "blender_terrain/models.py",
   "blender_terrain/core",
+  "blender_terrain/catalog",
   "blender_terrain/io",
   "blender_terrain/jobs",
   "blender_terrain/providers",

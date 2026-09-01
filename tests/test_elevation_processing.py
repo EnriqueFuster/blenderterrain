@@ -5,14 +5,76 @@ import unittest
 import numpy as np
 
 from blender_terrain.core.crs import CRSInfo
-from blender_terrain.core.elevation_processing import _bilinear_resample, _mask_outside_region
+from blender_terrain.core.elevation_processing import (
+    _bilinear_resample,
+    _mask_outside_region,
+    _sample_sources,
+)
 from blender_terrain.core.grid import GridTile
 from blender_terrain.core.projection import project_wgs84_to_utm
 from blender_terrain.core.roi import PolygonWGS84, RegionOfInterest, closed_ring
+from blender_terrain.io.elevation_window import ElevationWindowReader, write_elevation_window
 from blender_terrain.models import ProjectedBounds
 
 
 class BilinearElevationTests(unittest.TestCase):
+    def test_samples_sources_with_independent_half_pixel_origins(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            left_path = directory / "left.npy"
+            right_path = directory / "right.npy"
+            write_elevation_window(
+                left_path,
+                np.ones((2, 2), dtype=np.float32),
+                ProjectedBounds(0.0, 0.0, 4.0, 4.0, 25830),
+                -9999.0,
+            )
+            write_elevation_window(
+                right_path,
+                np.full((2, 2), 2.0, dtype=np.float32),
+                ProjectedBounds(3.0, 0.0, 7.0, 4.0, 25830),
+                -9999.0,
+            )
+            x, y = np.meshgrid(np.linspace(0.0, 7.0, 8), np.linspace(4.0, 0.0, 5))
+
+            sampled = _sample_sources(
+                (ElevationWindowReader(left_path), ElevationWindowReader(right_path)),
+                ProjectedBounds(0.0, 0.0, 7.0, 4.0, 25830),
+                x,
+                y,
+                "bilinear",
+            )
+
+            self.assertFalse(np.any(sampled.data == sampled.nodata))
+            self.assertGreater(sampled.overlap_valid_pixels, 0)
+
+    def test_uncovered_source_cells_remain_nodata(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "partial.npy"
+            write_elevation_window(
+                path,
+                np.ones((2, 2), dtype=np.float32),
+                ProjectedBounds(0.0, 0.0, 4.0, 4.0, 25830),
+                -9999.0,
+            )
+            x, y = np.meshgrid(np.linspace(0.0, 6.0, 7), np.linspace(4.0, 0.0, 5))
+
+            sampled = _sample_sources(
+                (ElevationWindowReader(path),),
+                ProjectedBounds(0.0, 0.0, 6.0, 4.0, 25830),
+                x,
+                y,
+                "bilinear",
+            )
+
+            self.assertTrue(np.all(sampled.data[:, -2:] == sampled.nodata))
+
     def test_preserves_values_when_source_and_target_centres_match(self) -> None:
         source = np.array([[0.0, 10.0], [20.0, 30.0]], dtype=np.float32)
 

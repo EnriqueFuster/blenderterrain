@@ -1,9 +1,19 @@
 """Portable geographic domain logic."""
 
+from .bathymetry_processing import (
+    ComposedTerrainTile,
+    ProcessedBathymetryTile,
+    compose_terrain_bathymetry,
+    process_gebco_tiles,
+)
 from .crs import CRSInfo, UTMWorkArea, split_bbox_by_utm_zone
 from .delivery import DeliveryResult, TransferProgress, deliver_plan_sources
 from .discovery import DiscoveryResult, discover_sources, select_catalog_items
-from .elevation_processing import ProcessedElevationTile, process_elevation_tiles
+from .elevation_processing import (
+    ProcessedElevationTile,
+    geographic_source_bounds,
+    process_elevation_tiles,
+)
 from .estimates import ROIEstimate, estimate_bbox
 from .grid import (
     DEFAULT_MAX_TILE_CELLS,
@@ -15,6 +25,7 @@ from .grid import (
 )
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
 from .imagery import ImageryTileRequest, plan_imagery_tiles
+from .imagery_processing import ProcessedImageryTile, process_worldcover_imagery
 from .local_elevation import (
     LocalElevationInspection,
     inspect_local_elevation,
@@ -27,8 +38,10 @@ from .mesh_geometry import (
     TerrainMeshGeometry,
     build_displacement_mesh_geometry,
     build_terrain_mesh_geometry,
+    native_resolution_subdivision_level,
 )
 from .planning import RESOURCE_PROFILES, ImageryEstimate, ImportPlan, create_import_plan
+from .prepared_export import PreparedRasterExport, export_prepared_rasters
 from .projection import (
     GeographicPoint,
     ProjectedPoint,
@@ -65,6 +78,7 @@ __all__ = [
     "TERRAIN_SCHEMA_VERSION",
     "BBoxWGS84",
     "CRSInfo",
+    "ComposedTerrainTile",
     "DeliveryResult",
     "DiscoveryResult",
     "ElevationRange",
@@ -77,7 +91,10 @@ __all__ = [
     "LocalElevationInspection",
     "LocalImageryInspection",
     "PolygonWGS84",
+    "PreparedRasterExport",
+    "ProcessedBathymetryTile",
     "ProcessedElevationTile",
+    "ProcessedImageryTile",
     "ProjectedPoint",
     "ROIEstimate",
     "RegionOfInterest",
@@ -97,17 +114,23 @@ __all__ = [
     "calculate_elevation_range",
     "classify_territory_envelope",
     "closed_ring",
+    "compose_terrain_bathymetry",
     "create_import_plan",
     "deliver_plan_sources",
     "discover_sources",
     "estimate_bbox",
+    "export_prepared_rasters",
     "format_bbox",
+    "geographic_source_bounds",
     "inspect_local_elevation",
     "inspect_local_imagery",
+    "native_resolution_subdivision_level",
     "normalize_heightmap",
     "parse_bbox",
     "plan_imagery_tiles",
     "process_elevation_tiles",
+    "process_gebco_tiles",
+    "process_worldcover_imagery",
     "project_utm_to_wgs84",
     "project_wgs84_to_utm",
     "project_work_area_bounds",
