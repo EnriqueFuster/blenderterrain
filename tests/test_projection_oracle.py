@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from blender_terrain.core.crs import split_bbox_by_utm_zone
-from blender_terrain.core.projection import project_wgs84_to_utm
+from blender_terrain.core.crs import LAMBERT93, split_bbox_by_utm_zone
+from blender_terrain.core.projection import project_wgs84, project_wgs84_to_utm
 from blender_terrain.core.roi import BBoxWGS84
 
 try:
@@ -41,6 +41,18 @@ class ProjectionOracleTests(unittest.TestCase):
             with self.subTest(epsg=area.crs.epsg, longitude=longitude):
                 self.assertAlmostEqual(actual.easting, expected_easting, delta=0.01)
                 self.assertAlmostEqual(actual.northing, expected_northing, delta=0.01)
+
+    def test_lambert93_matches_proj_across_supported_extent(self) -> None:
+        assert Transformer is not None
+        transformer = Transformer.from_crs(4326, 2154, always_xy=True)
+        points = ((-4.5, 48.4), (2.35, 48.86), (7.26, 43.7), (9.1, 42.0))
+        for longitude, latitude in points:
+            expected_easting, expected_northing = transformer.transform(longitude, latitude)
+            actual = project_wgs84(longitude, latitude, LAMBERT93)
+
+            with self.subTest(longitude=longitude, latitude=latitude):
+                self.assertAlmostEqual(actual.easting, expected_easting, delta=0.02)
+                self.assertAlmostEqual(actual.northing, expected_northing, delta=0.02)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Forward and inverse projection for the supported northern UTM zones."""
+"""Forward and inverse projection for supported terrain coordinate systems."""
 
 from __future__ import annotations
 
@@ -10,12 +10,17 @@ from numpy.typing import NDArray
 
 from ..errors import UserInputError
 from ..models import ProjectedBounds
-from .crs import CRSInfo, UTMWorkArea
+from .crs import CRSInfo, ProjectedWorkArea
 
 _GRS80_SEMI_MAJOR_AXIS = 6_378_137.0
 _GRS80_INVERSE_FLATTENING = 298.257_222_101
 _UTM_SCALE_FACTOR = 0.9996
 _UTM_FALSE_EASTING = 500_000.0
+_LAMBERT93_LONGITUDE_ORIGIN = math.radians(3.0)
+_LAMBERT93_LATITUDE_ORIGIN = math.radians(46.5)
+_LAMBERT93_STANDARD_PARALLELS = (math.radians(49.0), math.radians(44.0))
+_LAMBERT93_FALSE_EASTING = 700_000.0
+_LAMBERT93_FALSE_NORTHING = 6_600_000.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +47,8 @@ def project_wgs84_to_utm(longitude: float, latitude: float, crs: CRSInfo) -> Pro
         raise UserInputError("Projection coordinates must be finite")
     if not -180.0 <= longitude <= 180.0 or not 0.0 <= latitude <= 84.0:
         raise UserInputError("Supported UTM projection requires northern latitude 0 to 84")
+    if crs.utm_zone is None:
+        raise UserInputError("The selected CRS is not UTM")
     central_meridian = crs.utm_zone * 6.0 - 183.0
     if abs(longitude - central_meridian) > 6.0:
         raise UserInputError("Coordinate is too far from the selected UTM zone")
@@ -122,6 +129,8 @@ def project_utm_arrays_to_wgs84(
         raise UserInputError("Projected coordinate arrays must have the same shape")
     if not np.isfinite(eastings).all() or not np.isfinite(northings).all():
         raise UserInputError("Projection coordinates must be finite")
+    if crs.utm_zone is None:
+        raise UserInputError("The selected CRS is not UTM")
     flattening = 1.0 / _GRS80_INVERSE_FLATTENING
     eccentricity_squared = flattening * (2.0 - flattening)
     second_eccentricity_squared = eccentricity_squared / (1.0 - eccentricity_squared)
@@ -200,18 +209,64 @@ def project_utm_arrays_to_wgs84(
     return central_meridian + np.degrees(longitude), np.degrees(latitude)
 
 
-def project_work_area_bounds(work_area: UTMWorkArea) -> ProjectedBounds:
-    """Envelope a rectangular work area using corners and central-meridian extrema."""
+def project_wgs84(longitude: float, latitude: float, crs: CRSInfo) -> ProjectedPoint:
+    """Project one geographic point using the selected supported CRS."""
+
+    if crs.epsg == 2154:
+        return _project_wgs84_to_lambert93(longitude, latitude)
+    return project_wgs84_to_utm(longitude, latitude, crs)
+
+
+def project_arrays_to_wgs84(
+    eastings: NDArray[np.float64],
+    northings: NDArray[np.float64],
+    crs: CRSInfo,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Invert projected coordinate arrays using the selected supported CRS."""
+
+    if crs.epsg == 2154:
+        return _project_lambert93_arrays_to_wgs84(eastings, northings)
+    return project_utm_arrays_to_wgs84(eastings, northings, crs)
+
+
+def project_to_wgs84(point: ProjectedPoint, crs: CRSInfo) -> GeographicPoint:
+    """Invert one projected point using the selected supported CRS."""
+
+    if point.epsg != crs.epsg:
+        raise UserInputError("Projected point and CRS EPSG do not match")
+    longitude, latitude = project_arrays_to_wgs84(
+        np.asarray([point.easting], dtype=np.float64),
+        np.asarray([point.northing], dtype=np.float64),
+        crs,
+    )
+    return GeographicPoint(float(longitude[0]), float(latitude[0]))
+
+
+def project_work_area_bounds(work_area: ProjectedWorkArea) -> ProjectedBounds:
+    """Envelope a geographic work area in its selected projected CRS."""
 
     bounds = work_area.bounds
     coordinates = list(bounds.polygon_ring()[:-1])
-    central_meridian = work_area.crs.utm_zone * 6.0 - 183.0
-    if bounds.west < central_meridian < bounds.east:
-        coordinates.extend(
-            ((central_meridian, bounds.south), (central_meridian, bounds.north))
-        )
+    if work_area.crs.utm_zone is not None:
+        central_meridian = work_area.crs.utm_zone * 6.0 - 183.0
+        if bounds.west < central_meridian < bounds.east:
+            coordinates.extend(
+                ((central_meridian, bounds.south), (central_meridian, bounds.north))
+            )
+    else:
+        for fraction in np.linspace(0.0, 1.0, 33):
+            longitude = bounds.west + fraction * (bounds.east - bounds.west)
+            latitude = bounds.south + fraction * (bounds.north - bounds.south)
+            coordinates.extend(
+                (
+                    (longitude, bounds.south),
+                    (longitude, bounds.north),
+                    (bounds.west, latitude),
+                    (bounds.east, latitude),
+                )
+            )
     projected = [
-        project_wgs84_to_utm(longitude, latitude, work_area.crs)
+        project_wgs84(longitude, latitude, work_area.crs)
         for longitude, latitude in coordinates
     ]
     return ProjectedBounds(
@@ -220,6 +275,83 @@ def project_work_area_bounds(work_area: UTMWorkArea) -> ProjectedBounds:
         east=max(point.easting for point in projected),
         north=max(point.northing for point in projected),
         epsg=work_area.crs.epsg,
+    )
+
+
+def _project_wgs84_to_lambert93(longitude: float, latitude: float) -> ProjectedPoint:
+    if not math.isfinite(longitude) or not math.isfinite(latitude):
+        raise UserInputError("Projection coordinates must be finite")
+    if not -180.0 <= longitude <= 180.0 or not -90.0 < latitude < 90.0:
+        raise UserInputError("Geographic coordinates are outside the supported range")
+    eccentricity = _grs80_eccentricity()
+    n, factor, rho_origin = _lambert93_constants(eccentricity)
+    latitude_radians = math.radians(latitude)
+    rho = _GRS80_SEMI_MAJOR_AXIS * factor * _isometric_t(latitude_radians, eccentricity) ** n
+    theta = n * (math.radians(longitude) - _LAMBERT93_LONGITUDE_ORIGIN)
+    return ProjectedPoint(
+        _LAMBERT93_FALSE_EASTING + rho * math.sin(theta),
+        _LAMBERT93_FALSE_NORTHING + rho_origin - rho * math.cos(theta),
+        2154,
+    )
+
+
+def _project_lambert93_arrays_to_wgs84(
+    eastings: NDArray[np.float64], northings: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    if eastings.shape != northings.shape:
+        raise UserInputError("Projected coordinate arrays must have the same shape")
+    if not np.isfinite(eastings).all() or not np.isfinite(northings).all():
+        raise UserInputError("Projection coordinates must be finite")
+    eccentricity = _grs80_eccentricity()
+    n, factor, rho_origin = _lambert93_constants(eccentricity)
+    delta_easting = eastings - _LAMBERT93_FALSE_EASTING
+    delta_northing = rho_origin - (northings - _LAMBERT93_FALSE_NORTHING)
+    rho = np.hypot(delta_easting, delta_northing)
+    theta = np.arctan2(delta_easting, delta_northing)
+    t = (rho / (_GRS80_SEMI_MAJOR_AXIS * factor)) ** (1.0 / n)
+    latitude = np.pi / 2.0 - 2.0 * np.arctan(t)
+    for _ in range(8):
+        sine = np.sin(latitude)
+        latitude = np.pi / 2.0 - 2.0 * np.arctan(
+            t * ((1.0 - eccentricity * sine) / (1.0 + eccentricity * sine))
+            ** (eccentricity / 2.0)
+        )
+    longitude = _LAMBERT93_LONGITUDE_ORIGIN + theta / n
+    return np.degrees(longitude), np.degrees(latitude)
+
+
+def _lambert93_constants(eccentricity: float) -> tuple[float, float, float]:
+    parallel_1, parallel_2 = _LAMBERT93_STANDARD_PARALLELS
+    m1 = _meridional_scale(parallel_1, eccentricity)
+    m2 = _meridional_scale(parallel_2, eccentricity)
+    t1 = _isometric_t(parallel_1, eccentricity)
+    t2 = _isometric_t(parallel_2, eccentricity)
+    n = (math.log(m1) - math.log(m2)) / (math.log(t1) - math.log(t2))
+    factor = m1 / (n * t1**n)
+    rho_origin = (
+        _GRS80_SEMI_MAJOR_AXIS
+        * factor
+        * _isometric_t(_LAMBERT93_LATITUDE_ORIGIN, eccentricity) ** n
+    )
+    return n, factor, rho_origin
+
+
+def _grs80_eccentricity() -> float:
+    flattening = 1.0 / _GRS80_INVERSE_FLATTENING
+    return math.sqrt(flattening * (2.0 - flattening))
+
+
+def _meridional_scale(latitude: float, eccentricity: float) -> float:
+    sine = math.sin(latitude)
+    return math.cos(latitude) / math.sqrt(1.0 - eccentricity**2 * sine**2)
+
+
+def _isometric_t(latitude: float, eccentricity: float) -> float:
+    sine = math.sin(latitude)
+    eccentricity_ratio = (1.0 - eccentricity * sine) / (1.0 + eccentricity * sine)
+    return float(
+        math.tan(math.pi / 4.0 - latitude / 2.0)
+        / eccentricity_ratio ** (eccentricity / 2.0)
     )
 
 

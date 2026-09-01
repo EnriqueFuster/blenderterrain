@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from blender_terrain.core import BBoxWGS84, create_import_plan
-from blender_terrain.errors import PlanningLimitExceeded, UserInputError
+from blender_terrain.errors import NoCoverageError, PlanningLimitExceeded, UserInputError
 from blender_terrain.models import DatasetProduct, ProjectedBounds
 
 
@@ -218,6 +218,33 @@ class ImportPlanningTests(unittest.TestCase):
         self.assertIsNotNone(plan.imagery)
         assert plan.imagery is not None
         self.assertGreaterEqual(plan.imagery.gsd_metres, 50.0)
+
+    def test_builds_french_catalog_plan_in_lambert93(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(2.34, 48.85, 2.36, 48.87),
+            "FR_RGE_ALTI_1M",
+            2.0,
+            False,
+            None,
+            native_resolution_override=1.0,
+            working_crs_epsg=2154,
+        )
+
+        self.assertEqual([area.crs.epsg for area in plan.work_areas], [2154])
+        self.assertEqual([grid.bounds.epsg for grid in plan.grids], [2154])
+        self.assertFalse(plan.crosses_utm_zones)
+
+    def test_rejects_lambert93_outside_metropolitan_envelope(self) -> None:
+        with self.assertRaisesRegex(NoCoverageError, "metropolitan France"):
+            create_import_plan(
+                BBoxWGS84(-61.6, 16.1, -61.5, 16.2),
+                "FR_RGE_ALTI_1M",
+                10.0,
+                False,
+                None,
+                native_resolution_override=1.0,
+                working_crs_epsg=2154,
+            )
 
     def test_imagery_cannot_be_requested_finer_than_source(self) -> None:
         with self.assertRaisesRegex(UserInputError, "finer than the source"):

@@ -6,7 +6,7 @@ from .bathymetry_processing import (
     compose_terrain_bathymetry,
     process_gebco_tiles,
 )
-from .crs import CRSInfo, UTMWorkArea, split_bbox_by_utm_zone
+from .crs import CRSInfo, ProjectedWorkArea, UTMWorkArea, split_bbox_by_utm_zone
 from .delivery import DeliveryResult, TransferProgress, deliver_plan_sources
 from .discovery import DiscoveryResult, discover_sources, select_catalog_items
 from .elevation_processing import (
@@ -45,7 +45,10 @@ from .prepared_export import PreparedRasterExport, export_prepared_rasters
 from .projection import (
     GeographicPoint,
     ProjectedPoint,
+    project_arrays_to_wgs84,
+    project_to_wgs84,
     project_utm_to_wgs84,
+    project_wgs84,
     project_wgs84_to_utm,
     project_work_area_bounds,
 )
@@ -96,6 +99,7 @@ __all__ = [
     "ProcessedElevationTile",
     "ProcessedImageryTile",
     "ProjectedPoint",
+    "ProjectedWorkArea",
     "ROIEstimate",
     "RegionOfInterest",
     "TerrainMeshGeometry",
@@ -131,7 +135,10 @@ __all__ = [
     "process_elevation_tiles",
     "process_gebco_tiles",
     "process_worldcover_imagery",
+    "project_arrays_to_wgs84",
+    "project_to_wgs84",
     "project_utm_to_wgs84",
+    "project_wgs84",
     "project_wgs84_to_utm",
     "project_work_area_bounds",
     "projected_texture_transform",

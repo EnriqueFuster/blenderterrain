@@ -16,7 +16,7 @@ from ..models import ProjectedBounds
 from .crs import CRSInfo
 from .imagery import plan_imagery_tiles
 from .planning import ImportPlan
-from .projection import project_utm_arrays_to_wgs84
+from .projection import project_arrays_to_wgs84
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +35,7 @@ def process_worldcover_imagery(
     progress_callback: Callable[[int, int], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
 ) -> tuple[ProcessedImageryTile, ...]:
-    """Nearest-neighbour reproject RGB bands onto the planned UTM texture grids."""
+    """Nearest-neighbour reproject RGB bands onto planned texture grids."""
 
     readers = tuple(ImageryWindowReader(path) for path in source_paths)
     requests = plan_imagery_tiles(plan)
@@ -93,7 +93,7 @@ def _reproject_request(
             (bounds.north - bounds.south) / height
         )
         x, y = np.meshgrid(eastings, northings)
-        longitude, latitude = project_utm_arrays_to_wgs84(x, y, crs)
+        longitude, latitude = project_arrays_to_wgs84(x, y, crs)
         block = output[start:stop]
         block_covered = covered[start:stop]
         for reader in readers:

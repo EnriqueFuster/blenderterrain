@@ -7,7 +7,12 @@ from dataclasses import dataclass
 
 from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
 from ..models import DatasetProduct, ProjectedBounds
-from .crs import UTMWorkArea, split_bbox_by_utm_zone, split_bbox_by_wgs84_utm_zone
+from .crs import (
+    ProjectedWorkArea,
+    split_bbox_by_utm_zone,
+    split_bbox_by_wgs84_utm_zone,
+    work_area_for_crs,
+)
 from .estimates import ROIEstimate, estimate_bbox
 from .grid import (
     DEFAULT_MAX_TILE_CELLS,
@@ -72,7 +77,7 @@ class ImportPlan:
     """A validated offline plan suitable for later provider discovery."""
 
     bounds: BBoxWGS84
-    work_areas: tuple[UTMWorkArea, ...]
+    work_areas: tuple[ProjectedWorkArea, ...]
     product: DatasetProduct | str
     elevation_resolution_metres: float
     elevation: ROIEstimate
@@ -120,7 +125,7 @@ class ImportPlan:
 
     @property
     def elevation_sample_count(self) -> int:
-        """Return the exact cell count after UTM projection and grid alignment."""
+        """Return the exact cell count after projection and grid alignment."""
 
         return sum(grid.sample_count for grid in self.grids)
 
@@ -172,6 +177,7 @@ def create_import_plan(
     projected_bounds_override: tuple[ProjectedBounds, ...] | None = None,
     use_global_utm: bool = False,
     imagery_native_resolution_metres: float = 0.25,
+    working_crs_epsg: int | None = None,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
@@ -188,10 +194,16 @@ def create_import_plan(
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
         raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
+    if working_crs_epsg is not None and use_global_utm:
+        raise UserInputError("An explicit working CRS cannot be combined with global UTM")
     work_areas = (
-        split_bbox_by_wgs84_utm_zone(bounds)
-        if use_global_utm
-        else split_bbox_by_utm_zone(bounds)
+        (work_area_for_crs(bounds, working_crs_epsg),)
+        if working_crs_epsg is not None
+        else (
+            split_bbox_by_wgs84_utm_zone(bounds)
+            if use_global_utm
+            else split_bbox_by_utm_zone(bounds)
+        )
     )
     if projected_bounds_override is not None and {
         projected.epsg for projected in projected_bounds_override
@@ -247,7 +259,7 @@ def _validate_manual_tiles(rows: int | None, columns: int | None) -> None:
 
 def _select_elevation_resolution(
     bounds: BBoxWGS84,
-    work_areas: tuple[UTMWorkArea, ...],
+    work_areas: tuple[ProjectedWorkArea, ...],
     requested: float | None,
     native_resolution: float,
     manual_tile_rows: int | None,

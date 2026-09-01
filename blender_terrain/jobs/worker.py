@@ -545,6 +545,7 @@ def prepare_confirmed_elevation(
         maximum_imagery_pixels=maximum_imagery_pixels,
         native_resolution_override=product.capabilities.native_resolution_m,
         use_global_utm=product.jurisdiction == "global",
+        working_crs_epsg=None if product.wms is None else product.wms.crs_epsg,
     )
     source_roi = (
         geographic_source_bounds(import_plan)
