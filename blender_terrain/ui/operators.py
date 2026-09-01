@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import bpy
 
@@ -28,6 +29,7 @@ from ..io.roi_files import read_roi_file
 from ..io.roi_map_server import ROIMapSession
 from ..models import DatasetProduct
 from . import job_controller
+from .terrain_bake import bake_and_merge_terrain
 from .terrain_builder import (
     collection_for_import,
     create_terrain_objects,
@@ -785,6 +787,42 @@ class BLENDERTERRAIN_OT_select_import_objects(bpy.types.Operator):
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
         self.report({"INFO"}, f"Selected {count} terrain object(s)")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_bake_and_merge_terrain(bpy.types.Operator):
+    """Bake the active terrain import into one object with materials and UVs."""
+
+    bl_idname = "blender_terrain.bake_and_merge_terrain"
+    bl_label = "Bake and Merge Terrain"
+    bl_options: ClassVar[set[str]] = {"REGISTER", "UNDO"}
+    bl_description = (
+        "Apply the evaluated terrain modifiers and merge all tiles into one object; "
+        "the editable source tiles are removed after a successful bake"
+    )
+
+    def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
+        return context.window_manager.invoke_confirm(
+            self,
+            event,
+            title="Bake and Merge Terrain",
+            message=(
+                "Create one non-editable mesh from the current terrain? "
+                "The editable tiles will be removed after a successful bake."
+            ),
+            confirm_text="Bake and Merge",
+            icon="WARNING",
+        )
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        try:
+            result = bake_and_merge_terrain(context, properties.active_import_id)
+        except (BlenderTerrainError, RuntimeError, ValueError) as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        properties.active_import_representation = "BAKED"
+        self.report({"INFO"}, f"Created {result.name}; editable terrain tiles were removed")
         return {"FINISHED"}
 
 

@@ -35,6 +35,7 @@ class PortableImportTests(unittest.TestCase):
             "ui/panels.py",
             "ui/preferences.py",
             "ui/properties.py",
+            "ui/terrain_bake.py",
             "ui/terrain_builder.py",
             "ui/terrain_controls.py",
         }

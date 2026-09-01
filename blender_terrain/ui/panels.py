@@ -350,14 +350,14 @@ def _draw_imported_section(layout: bpy.types.UILayout, context: bpy.types.Contex
     controls.prop(properties, "active_import_id")
     controls.operator("blender_terrain.select_import_objects", icon="RESTRICT_SELECT_OFF")
     if properties.active_import_representation == "BAKED":
-        controls.label(text="Legacy baked terrain: controls unavailable", icon="INFO")
+        controls.label(text="Baked terrain: displacement controls unavailable", icon="INFO")
         return
     editable = controls.column()
     editable.enabled = properties.active_import_representation == "DISPLACEMENT"
     editable.row().prop(properties, "import_settings_tab", expand=True)
     native_level = import_native_subdivision_level(properties.active_import_id)
-    viewport_label = f"Viewport Subdivision (Native: {native_level})"
-    render_label = f"Render Subdivision (Native: {native_level})"
+    viewport_label = f"Viewport Subdivision (Source Grid >= {native_level})"
+    render_label = f"Render Subdivision (Source Grid >= {native_level})"
     if properties.import_settings_tab == "WHOLE":
         editable.prop(properties, "terrain_vertical_scale")
         editable.prop(properties, "terrain_strength_multiplier")
@@ -387,6 +387,8 @@ def _draw_imported_section(layout: bpy.types.UILayout, context: bpy.types.Contex
         row = selected.row(align=True)
         row.operator("blender_terrain.apply_selected_settings")
         row.operator("blender_terrain.restore_selected_settings")
+    editable.separator()
+    editable.operator("blender_terrain.bake_and_merge_terrain", icon="MODIFIER")
 
 
 def _job_state_label(state: str) -> str:

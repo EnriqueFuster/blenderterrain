@@ -454,31 +454,63 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
             properties = bpy.context.scene.blender_terrain_roi
             assert properties.active_import_id == "12345678-1234-4234-8234-123456789abc"
             collection = bpy.data.collections["BlenderTerrain_12345678"]
-        materials = tuple(
-            material
+            terrain = bpy.data.objects["BT_12345678_Terrain_000"]
+        if use_imagery:
+            adjacent = terrain.copy()
+            adjacent.data = terrain.data.copy()
+            adjacent.name = "BT_12345678_Terrain_Adjacent"
+            collection.objects.link(adjacent)
+        source_objects = tuple(
+            object_
             for object_ in collection.objects
             if isinstance(object_.data, bpy.types.Mesh)
-            for material in object_.data.materials
         )
-        heightmap_textures = tuple(
-            modifier.texture
-            for object_ in collection.objects
+        source_materials = {
+            material.as_pointer()
+            for object_ in source_objects
+            for material in object_.data.materials
+        }
+        materials = tuple({
+            material.as_pointer(): material
+            for object_ in source_objects
+            for material in object_.data.materials
+        }.values())
+        heightmap_textures = tuple({
+            modifier.texture.as_pointer(): modifier.texture
+            for object_ in source_objects
             for modifier in object_.modifiers
             if modifier.type == "DISPLACE"
+        }.values())
+        heightmap_texture_names = {texture.name for texture in heightmap_textures}
+        heightmap_image_names = {texture.image.name for texture in heightmap_textures}
+        source_collection_name = collection.name
+        assert bpy.ops.blender_terrain.bake_and_merge_terrain() == {"FINISHED"}
+        baked = bpy.context.view_layer.objects.active
+        assert baked is not None
+        assert baked.name.startswith("BT_12345678_Baked")
+        assert baked.get("blender_terrain_representation") == "BAKED"
+        assert baked.get("blender_terrain_source_import_id") == properties.import_id
+        assert len(baked.modifiers) == 0
+        assert "TerrainUV" in baked.data.uv_layers
+        assert source_materials.issubset(
+            {material.as_pointer() for material in baked.data.materials}
         )
-        heightmap_images = tuple(texture.image for texture in heightmap_textures)
-        for object_ in tuple(collection.objects):
-            mesh = object_.data if isinstance(object_.data, bpy.types.Mesh) else None
-            bpy.data.objects.remove(object_, do_unlink=True)
-            if mesh is not None:
-                bpy.data.meshes.remove(mesh)
-        bpy.data.collections.remove(collection)
+        assert source_collection_name not in bpy.data.collections
+        assert all(name not in bpy.data.textures for name in heightmap_texture_names)
+        assert all(name not in bpy.data.images for name in heightmap_image_names)
+        baked_collection = baked.users_collection[0]
+        assert baked_collection["blender_terrain_import_id"] == properties.import_id
+        assert baked_collection["blender_terrain_representation"] == "BAKED"
+        assert properties.active_import_representation == "BAKED"
+        if use_imagery:
+            assert len(baked.data.polygons) == 1
+            assert len(baked.data.vertices) == 4
+        baked_mesh = baked.data
+        bpy.data.objects.remove(baked, do_unlink=True)
+        bpy.data.meshes.remove(baked_mesh)
+        bpy.data.collections.remove(baked_collection)
         for material in materials:
             bpy.data.materials.remove(material)
-        for texture in heightmap_textures:
-            bpy.data.textures.remove(texture)
-        for image in heightmap_images:
-            bpy.data.images.remove(image)
         if use_imagery:
             for image_path in image_paths:
                 bpy.data.images.remove(bpy.data.images[image_path.name])
