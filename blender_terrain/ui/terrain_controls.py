@@ -7,7 +7,12 @@ from typing import Any
 
 import bpy
 
-from ..core import TerrainRepresentation, TerrainSettings, read_terrain_metadata
+from ..core import (
+    TerrainRepresentation,
+    TerrainSettings,
+    native_resolution_subdivision_level,
+    read_terrain_metadata,
+)
 from ..errors import UserInputError
 from .terrain_builder import (
     ensure_smooth_by_angle_modifier,
@@ -208,6 +213,21 @@ def has_selected_terrain_objects(context: bpy.types.Context, import_id: str) -> 
     return collection is not None and bool(
         _selected_terrain_objects(context, collection)
     )
+
+
+def import_native_subdivision_level(import_id: str) -> int:
+    """Return the subdivision level that matches an import's elevation grid."""
+
+    collection = _collection(import_id)
+    if collection is None:
+        return 0
+    reduction_factor = collection.get("blender_terrain_base_mesh_reduction_factor", 1)
+    if not isinstance(reduction_factor, int) or isinstance(reduction_factor, bool):
+        return 0
+    try:
+        return native_resolution_subdivision_level(reduction_factor)
+    except ValueError:
+        return 0
 
 
 def request_selected_settings_sync() -> None:

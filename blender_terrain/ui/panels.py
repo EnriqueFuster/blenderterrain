@@ -8,6 +8,7 @@ import bpy
 
 from .terrain_controls import (
     has_selected_terrain_objects,
+    import_native_subdivision_level,
     request_selected_settings_sync,
 )
 
@@ -354,12 +355,15 @@ def _draw_imported_section(layout: bpy.types.UILayout, context: bpy.types.Contex
     editable = controls.column()
     editable.enabled = properties.active_import_representation == "DISPLACEMENT"
     editable.row().prop(properties, "import_settings_tab", expand=True)
+    native_level = import_native_subdivision_level(properties.active_import_id)
+    viewport_label = f"Viewport Subdivision (Native: {native_level})"
+    render_label = f"Render Subdivision (Native: {native_level})"
     if properties.import_settings_tab == "WHOLE":
         editable.prop(properties, "terrain_vertical_scale")
         editable.prop(properties, "terrain_strength_multiplier")
         editable.prop(properties, "terrain_displacement_midlevel")
-        editable.prop(properties, "terrain_subdivision_viewport")
-        editable.prop(properties, "terrain_subdivision_render")
+        editable.prop(properties, "terrain_subdivision_viewport", text=viewport_label)
+        editable.prop(properties, "terrain_subdivision_render", text=render_label)
         editable.prop(properties, "terrain_displacement_enabled")
         editable.prop(properties, "terrain_smooth_angle")
         editable.operator("blender_terrain.apply_import_settings")
@@ -377,8 +381,8 @@ def _draw_imported_section(layout: bpy.types.UILayout, context: bpy.types.Contex
         selected.enabled = has_selection
         selected.prop(properties, "selected_strength_multiplier")
         selected.prop(properties, "selected_displacement_midlevel")
-        selected.prop(properties, "selected_subdivision_viewport")
-        selected.prop(properties, "selected_subdivision_render")
+        selected.prop(properties, "selected_subdivision_viewport", text=viewport_label)
+        selected.prop(properties, "selected_subdivision_render", text=render_label)
         selected.prop(properties, "selected_smooth_angle")
         row = selected.row(align=True)
         row.operator("blender_terrain.apply_selected_settings")
@@ -472,4 +476,3 @@ def _format_bytes(byte_count: int) -> str:
             return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
         value /= 1024.0
     raise AssertionError("Unreachable byte unit")
-

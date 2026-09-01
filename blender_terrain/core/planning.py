@@ -78,6 +78,7 @@ class ImportPlan:
     elevation: ROIEstimate
     imagery: ImageryEstimate | None
     grids: tuple[GridSpec, ...]
+    maximum_imagery_pixels: int
     manual_tile_rows: int | None = None
     manual_tile_columns: int | None = None
 
@@ -224,6 +225,7 @@ def create_import_plan(
         elevation=elevation,
         imagery=imagery,
         grids=grids,
+        maximum_imagery_pixels=maximum_imagery_pixels,
         manual_tile_rows=manual_tile_rows,
         manual_tile_columns=manual_tile_columns,
     )

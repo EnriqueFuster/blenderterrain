@@ -16,6 +16,16 @@ PREVIEW_MESH_REDUCTION_FACTOR = 16
 DEFAULT_PREVIEW_SUBDIVISION_LEVEL = 1
 
 
+def native_resolution_subdivision_level(reduction_factor: int) -> int:
+    """Return the first subdivision level that reaches the source sample spacing."""
+
+    if isinstance(reduction_factor, bool) or not isinstance(reduction_factor, int):
+        raise ValueError("Mesh reduction factor must be an integer")
+    if reduction_factor < 1:
+        raise ValueError("Mesh reduction factor must be positive")
+    return math.ceil(math.log2(reduction_factor))
+
+
 @dataclass(frozen=True, slots=True)
 class TerrainMeshGeometry:
     """Local XYZ vertices and counter-clockwise quad indices."""

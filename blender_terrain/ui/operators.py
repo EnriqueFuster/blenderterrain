@@ -387,8 +387,8 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         )
         properties.estimated_texture_gpu_mib = plan.estimated_imagery_decoded_bytes / (1024 * 1024)
         warnings = list(plan.warnings)
-        if properties.resource_profile == "LARGE":
-            warnings.append("Large profile can exhaust system or GPU memory")
+        # if properties.resource_profile == "LARGE":
+        #     warnings.append("Large profile can exhaust system or GPU memory")
         properties.planning_warning = " | ".join(warnings)
         imagery_name = (
             "WorldCover"

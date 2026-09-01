@@ -7,12 +7,18 @@ import numpy as np
 from blender_terrain.core import (
     build_displacement_mesh_geometry,
     build_terrain_mesh_geometry,
+    native_resolution_subdivision_level,
 )
 from blender_terrain.errors import RasterFormatError
 from blender_terrain.models import ProjectedBounds
 
 
 class TerrainMeshGeometryTests(unittest.TestCase):
+    def test_calculates_level_that_recovers_native_sample_spacing(self) -> None:
+        self.assertEqual(native_resolution_subdivision_level(1), 0)
+        self.assertEqual(native_resolution_subdivision_level(16), 4)
+        self.assertEqual(native_resolution_subdivision_level(10), 4)
+
     def test_builds_flat_displacement_grid_with_the_baked_topology(self) -> None:
         elevation = np.array([[100, 110], [120, 130]], dtype=np.float32)
         bounds = ProjectedBounds(500000, 4300000, 500010, 4300010, 25830)

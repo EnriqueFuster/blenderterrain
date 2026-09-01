@@ -38,6 +38,7 @@ from .mesh_geometry import (
     TerrainMeshGeometry,
     build_displacement_mesh_geometry,
     build_terrain_mesh_geometry,
+    native_resolution_subdivision_level,
 )
 from .planning import RESOURCE_PROFILES, ImageryEstimate, ImportPlan, create_import_plan
 from .projection import (
@@ -120,6 +121,7 @@ __all__ = [
     "geographic_source_bounds",
     "inspect_local_elevation",
     "inspect_local_imagery",
+    "native_resolution_subdivision_level",
     "normalize_heightmap",
     "parse_bbox",
     "plan_imagery_tiles",
