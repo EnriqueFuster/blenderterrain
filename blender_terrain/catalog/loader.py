@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from importlib.resources import files
 from typing import Any
 
@@ -18,6 +18,7 @@ from .models import (
     ProductCapabilities,
     ProductRecord,
     SemanticConfidence,
+    WMSContract,
 )
 
 
@@ -69,10 +70,12 @@ def _product(value: object, source: str) -> ProductRecord:
             "license",
         },
         f"product in {source}",
+        {"wms"},
     )
     capabilities = _table(record["capabilities"], f"capabilities in {source}")
     coverage = _table(record["coverage"], f"coverage in {source}")
     license_policy = _table(record["license"], f"license in {source}")
+    wms = _optional_table(record, "wms", source)
     _exact_keys(
         capabilities,
         {
@@ -89,6 +92,20 @@ def _product(value: object, source: str) -> ProductRecord:
         },
         f"capabilities in {source}",
     )
+    if wms is not None:
+        _exact_keys(
+            wms,
+            {
+                "version",
+                "layer",
+                "style",
+                "format",
+                "crs_epsg",
+                "maximum_dimension",
+            },
+            f"wms in {source}",
+            {"sample_dtype", "nodata"},
+        )
     _exact_keys(coverage, {"bounds", "requires_discovery", "limitations"}, f"coverage in {source}")
     _exact_keys(
         license_policy,
@@ -141,6 +158,20 @@ def _product(value: object, source: str) -> ProductRecord:
             attribution_required=_boolean(license_policy, "attribution_required"),
             attribution_text=_string(license_policy, "attribution_text"),
         ),
+        wms=(
+            None
+            if wms is None
+            else WMSContract(
+                version=_string(wms, "version"),
+                layer=_string(wms, "layer"),
+                style=_string_allow_empty(wms, "style"),
+                format=_string(wms, "format"),
+                crs_epsg=_integer(wms, "crs_epsg"),
+                maximum_dimension=_integer(wms, "maximum_dimension"),
+                sample_dtype=_optional_string(wms, "sample_dtype"),
+                nodata=_optional_number(wms, "nodata"),
+            )
+        ),
     )
 
 
@@ -158,9 +189,23 @@ def _table(value: object, label: str) -> Mapping[str, Any]:
     return value
 
 
-def _exact_keys(value: Mapping[str, Any], expected: set[str], label: str) -> None:
+def _optional_table(
+    table: Mapping[str, Any], key: str, source: str
+) -> Mapping[str, Any] | None:
+    value = table.get(key)
+    if value is None:
+        return None
+    return _table(value, f"{key} in {source}")
+
+
+def _exact_keys(
+    value: Mapping[str, Any],
+    expected: set[str],
+    label: str,
+    optional: Collection[str] = (),
+) -> None:
     missing = expected - value.keys()
-    unknown = value.keys() - expected
+    unknown = value.keys() - expected - set(optional)
     if missing or unknown:
         details = []
         if missing:
@@ -177,9 +222,16 @@ def _string(table: Mapping[str, Any], key: str) -> str:
     return value
 
 
-def _optional_string(table: Mapping[str, Any], key: str) -> str | None:
+def _string_allow_empty(table: Mapping[str, Any], key: str) -> str:
     value = table[key]
-    if value == "":
+    if not isinstance(value, str):
+        raise ValueError(f"Catalog field {key} must be a string")
+    return value
+
+
+def _optional_string(table: Mapping[str, Any], key: str) -> str | None:
+    value = table.get(key)
+    if value is None or value == "":
         return None
     if not isinstance(value, str):
         raise ValueError(f"Catalog field {key} must be a string")
@@ -211,6 +263,15 @@ def _integer(table: Mapping[str, Any], key: str) -> int:
 
 def _number(table: Mapping[str, Any], key: str) -> float:
     value = table[key]
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ValueError(f"Catalog field {key} must be a number")
+    return float(value)
+
+
+def _optional_number(table: Mapping[str, Any], key: str) -> float | None:
+    value = table.get(key)
+    if value is None:
+        return None
     if not isinstance(value, int | float) or isinstance(value, bool):
         raise ValueError(f"Catalog field {key} must be a number")
     return float(value)

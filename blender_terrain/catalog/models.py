@@ -116,6 +116,30 @@ class ProductCapabilities:
 
 
 @dataclass(frozen=True, slots=True)
+class WMSContract:
+    """Provider-advertised parameters required to request one WMS product."""
+
+    version: str
+    layer: str
+    style: str
+    format: str
+    crs_epsg: int
+    maximum_dimension: int
+    sample_dtype: str | None = None
+    nodata: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.version != "1.3.0":
+            raise ValueError("Only the verified WMS 1.3.0 contract is supported")
+        if not self.layer or not self.format:
+            raise ValueError("WMS layer and format cannot be empty")
+        if self.crs_epsg <= 0 or self.maximum_dimension <= 0:
+            raise ValueError("WMS CRS and maximum dimension must be positive")
+        if (self.sample_dtype is None) != (self.nodata is None):
+            raise ValueError("WMS sample dtype and NoData must be declared together")
+
+
+@dataclass(frozen=True, slots=True)
 class ProductRecord:
     id: str
     provider_id: str
@@ -131,6 +155,7 @@ class ProductRecord:
     capabilities: ProductCapabilities
     coverage: Coverage
     license: LicensePolicy
+    wms: WMSContract | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.provider_id or not self.name:
@@ -141,6 +166,8 @@ class ProductRecord:
         ):
             if not 0 <= score <= 100:
                 raise ValueError(f"{label} score must be between 0 and 100")
+        if self.wms is not None and self.capabilities.acquisition_mode is not AcquisitionMode.WMS:
+            raise ValueError("Only WMS products can declare a WMS contract")
 
     @property
     def selectable(self) -> bool:

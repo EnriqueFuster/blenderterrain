@@ -19,6 +19,7 @@ from .models import (
     ProductCapabilities,
     ProductRecord,
     SemanticConfidence,
+    WMSContract,
 )
 from .selection import (
     AcquisitionPlan,
@@ -53,6 +54,7 @@ __all__ = [
     "SelectionBundle",
     "SelectionMode",
     "SemanticConfidence",
+    "WMSContract",
     "create_acquisition_plan",
     "discover_candidates",
     "load_bundled_catalog",
