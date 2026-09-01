@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import bpy
+from bpy.props import StringProperty
 
 from ..catalog import DatasetKind, discover_candidates, load_bundled_catalog
 from ..core import (
@@ -16,6 +17,7 @@ from ..core import (
     bbox_from_center_size,
     bounds_fully_covered,
     create_import_plan,
+    export_prepared_rasters,
     format_bbox,
     inspect_local_elevation,
     inspect_local_imagery,
@@ -749,6 +751,52 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
             if viewport_count:
                 clip_summary = f"; Clip End at least {clip_end:g} m"
         self.report({"INFO"}, f"Created {len(objects)} terrain object(s){clip_summary}")
+        return {"FINISHED"}
+
+
+class BLENDERTERRAIN_OT_export_prepared_rasters(bpy.types.Operator):
+    """Export prepared terrain arrays as georeferenced GeoTIFF files."""
+
+    bl_idname = "blender_terrain.export_prepared_rasters"
+    bl_label = "Export Prepared Rasters"
+    bl_description = "Export prepared elevation, marine masks, and imagery as GeoTIFF"
+
+    directory: StringProperty(name="Export Directory", subtype="DIR_PATH")
+
+    def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        if not properties.delivery_ready or not properties.delivery_result_path:
+            self.report({"ERROR"}, "Download and process data before exporting rasters")
+            return {"CANCELLED"}
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context: bpy.types.Context) -> set[str]:
+        properties = context.scene.blender_terrain_roi
+        destination = Path(bpy.path.abspath(self.directory))
+        window_manager = context.window_manager
+
+        def report_progress(progress: float, message: str) -> None:
+            window_manager.progress_update(progress * 100.0)
+            if context.workspace is not None:
+                context.workspace.status_text_set(text=f"{progress:.0%} - {message}")
+
+        window_manager.progress_begin(0.0, 100.0)
+        try:
+            exported = export_prepared_rasters(
+                Path(properties.delivery_result_path), destination, report_progress
+            )
+        except (BlenderTerrainError, OSError, ValueError) as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+        finally:
+            window_manager.progress_end()
+            if context.workspace is not None:
+                context.workspace.status_text_set(text=None)
+        self.report(
+            {"INFO"},
+            f"Exported {len(exported.paths) - 1} GeoTIFF file(s) to {exported.directory}",
+        )
         return {"FINISHED"}
 
 

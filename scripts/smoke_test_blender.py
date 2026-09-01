@@ -292,6 +292,14 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         properties.delivery_result_path = str(result_path)
         properties.import_id = "12345678-1234-4234-8234-123456789abc"
         properties.full_resolution_mesh = not use_imagery
+        export_root = directory / "exports"
+        assert bpy.ops.blender_terrain.export_prepared_rasters(
+            directory=str(export_root)
+        ) == {"FINISHED"}
+        export_directory = next(export_root.iterdir())
+        expected_tiffs = 4 if use_imagery else 1
+        assert len(tuple(export_directory.glob("*.tif"))) == expected_tiffs
+        assert (export_directory / "provenance.json").is_file()
         view_spaces = tuple(
             space
             for window in bpy.context.window_manager.windows

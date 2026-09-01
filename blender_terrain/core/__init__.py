@@ -41,6 +41,7 @@ from .mesh_geometry import (
     native_resolution_subdivision_level,
 )
 from .planning import RESOURCE_PROFILES, ImageryEstimate, ImportPlan, create_import_plan
+from .prepared_export import PreparedRasterExport, export_prepared_rasters
 from .projection import (
     GeographicPoint,
     ProjectedPoint,
@@ -90,6 +91,7 @@ __all__ = [
     "LocalElevationInspection",
     "LocalImageryInspection",
     "PolygonWGS84",
+    "PreparedRasterExport",
     "ProcessedBathymetryTile",
     "ProcessedElevationTile",
     "ProcessedImageryTile",
@@ -117,6 +119,7 @@ __all__ = [
     "deliver_plan_sources",
     "discover_sources",
     "estimate_bbox",
+    "export_prepared_rasters",
     "format_bbox",
     "geographic_source_bounds",
     "inspect_local_elevation",

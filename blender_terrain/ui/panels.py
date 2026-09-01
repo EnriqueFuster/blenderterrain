@@ -323,6 +323,7 @@ def _draw_creation_section(layout: bpy.types.UILayout, context: bpy.types.Contex
         )
     controls.prop(properties, "adjust_viewport_clip_end")
     controls.operator("blender_terrain.create_terrain", icon="MESH_GRID")
+    controls.operator("blender_terrain.export_prepared_rasters", icon="EXPORT")
 
 
 def _draw_cache_section(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:

@@ -377,8 +377,8 @@ class BigTiffFloatTileReader:
             raise RasterFormatError("TIFF sample type is unsupported")
         if self._compression not in {8, 50000}:
             raise RasterFormatError("Only Deflate and Zstandard TIFF compression are supported")
-        if self._samples_per_pixel not in {1, 4}:
-            raise RasterFormatError("Only one-band and four-band TIFF images are supported")
+        if self._samples_per_pixel not in {1, 3, 4}:
+            raise RasterFormatError("Only one-band, RGB, and four-band TIFF images are supported")
         if _single_value_or_default(tags, _PLANAR_CONFIGURATION, 1) != 1:
             raise RasterFormatError("Only interleaved TIFF samples are supported")
         if _single_value(tags, _PREDICTOR) not in {1, 2, 3}:
