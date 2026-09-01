@@ -137,13 +137,9 @@ def start_discovery(context: bpy.types.Context) -> None:
         raise UserInputError("Validate the ROI before discovering sources")
     properties.discovery_ready = False
     if properties.product in _GLOBAL_PRODUCT_IDS:
-        region = RegionOfInterest.from_geojson_geometry(
-            json.loads(properties.roi_geometry_json)
-        )
+        region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
         count = (
-            len(glo30_tiles_for_roi(region.bounds))
-            if properties.product == GLO30_PRODUCT_ID
-            else 2
+            len(glo30_tiles_for_roi(region.bounds)) if properties.product == GLO30_PRODUCT_ID else 2
         )
         properties.discovered_file_count = count
         properties.discovery_summary = (
@@ -151,8 +147,10 @@ def start_discovery(context: bpy.types.Context) -> None:
             if properties.product == GLO30_PRODUCT_ID
             else "GEDTM30 elevation and uncertainty windows required"
         )
-        if properties.use_bathymetry:
+        if properties.bathymetry_mode == "GEBCO":
             properties.discovery_summary += "; GEBCO elevation and quality windows required"
+        if properties.imagery_product != "NONE":
+            properties.discovery_summary += f"; {properties.imagery_product} imagery required"
         properties.discovery_ready = True
         properties.job_state = JobState.COMPLETE.value
         properties.job_progress = 1.0
@@ -199,12 +197,8 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
             plan,
             elevation_limit,
             region,
-            properties.manual_tile_rows
-            if properties.tiling_mode == "MANUAL"
-            else None,
-            properties.manual_tile_columns
-            if properties.tiling_mode == "MANUAL"
-            else None,
+            properties.manual_tile_rows if properties.tiling_mode == "MANUAL" else None,
+            properties.manual_tile_columns if properties.tiling_mode == "MANUAL" else None,
             imagery_limit,
         ),
     )
@@ -217,9 +211,7 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
     )
 
 
-def _acquisition_plan_from_properties(
-    properties: Any, region: RegionOfInterest
-) -> AcquisitionPlan:
+def _acquisition_plan_from_properties(properties: Any, region: RegionOfInterest) -> AcquisitionPlan:
     """Build the confirmed global plan represented by the current UI controls."""
 
     catalog = load_bundled_catalog()
@@ -240,10 +232,8 @@ def _acquisition_plan_from_properties(
             True,
         )
     ]
-    candidate_sets = [
-        discover_candidates(catalog, region.bounds, product.capabilities.kind)
-    ]
-    if properties.use_bathymetry:
+    candidate_sets = [discover_candidates(catalog, region.bounds, product.capabilities.kind)]
+    if properties.bathymetry_mode == "GEBCO":
         bathymetry_product = catalog.product(GEBCO_PRODUCT_ID)
         bathymetry_layer = LayerRequest(DatasetKind.BATHYMETRY, 463.0)
         layers.append(bathymetry_layer)
@@ -256,23 +246,15 @@ def _acquisition_plan_from_properties(
                 True,
             )
         )
-        candidate_sets.append(
-            discover_candidates(catalog, region.bounds, DatasetKind.BATHYMETRY)
-        )
-    if properties.use_imagery:
-        is_global = product.jurisdiction == "global"
-        imagery_product = catalog.product(
-            WORLDCOVER_PRODUCT_ID if is_global else DatasetProduct.PNOA_MA.value
-        )
+        candidate_sets.append(discover_candidates(catalog, region.bounds, DatasetKind.BATHYMETRY))
+    if properties.imagery_product != "NONE":
+        is_global = properties.imagery_product == WORLDCOVER_PRODUCT_ID
+        imagery_product = catalog.product(properties.imagery_product)
         imagery_layer = LayerRequest(
             DatasetKind.IMAGERY,
             properties.selected_imagery_gsd or 10.0
             if is_global
-            else (
-                None
-                if properties.imagery_gsd == "AUTO"
-                else float(properties.imagery_gsd)
-            ),
+            else (None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)),
             "2021" if is_global else None,
         )
         layers.append(imagery_layer)
@@ -286,9 +268,7 @@ def _acquisition_plan_from_properties(
                 "2021" if is_global else None,
             )
         )
-        candidate_sets.append(
-            discover_candidates(catalog, region.bounds, DatasetKind.IMAGERY)
-        )
+        candidate_sets.append(discover_candidates(catalog, region.bounds, DatasetKind.IMAGERY))
     request = AcquisitionRequest(region.bounds, tuple(layers))
     return create_acquisition_plan(
         request,
@@ -371,9 +351,7 @@ def retry_last_job(context: bpy.types.Context) -> None:
         raise UserInputError("Blender online access is disabled in Preferences")
     task_id = str(uuid4())
     job_directory = cache_directory / "jobs" / task_id
-    write_discovery_job(
-        job_directory / "job.json", replace(previous, task_id=task_id)
-    )
+    write_discovery_job(job_directory / "job.json", replace(previous, task_id=task_id))
     properties.import_id = previous.import_id
     _launch_worker(
         context,
@@ -540,9 +518,7 @@ def _poll_active_job() -> float | None:
 def _apply_new_events(active: _ActiveJob, properties: Any) -> bool:
     events_path = active.directory / "events.jsonl"
     try:
-        events, active.event_offset = read_progress_events(
-            events_path, active.event_offset
-        )
+        events, active.event_offset = read_progress_events(events_path, active.event_offset)
     except JobFormatError:
         return False
     changed = False
@@ -576,14 +552,9 @@ def _event_history(serialized: str) -> list[dict[str, object]]:
         elif (
             isinstance(value, dict)
             and isinstance(value.get("message"), str)
-            and (
-                value.get("progress") is None
-                or isinstance(value.get("progress"), (int, float))
-            )
+            and (value.get("progress") is None or isinstance(value.get("progress"), (int, float)))
         ):
-            history.append(
-                {"message": value["message"], "progress": value.get("progress")}
-            )
+            history.append({"message": value["message"], "progress": value.get("progress")})
     return history
 
 
@@ -632,6 +603,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
             ) / (1024 * 1024)
             properties.imagery_available = imagery_count > 0
             properties.delivery_ready = True
+            properties.show_creation_section = True
             properties.delivery_result_path = str(active.directory / "result.json")
             properties.delivery_summary = (
                 f"Prepared {elevation_count} elevation, {bathymetry_count} bathymetry, "
@@ -666,7 +638,12 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
             if estimated_mb is not None
             else ", size unavailable"
         )
-        properties.discovery_summary = f"{count} elevation source file(s){size_text}"
+        parts = [f"{count} elevation source file(s){size_text}"]
+        if properties.bathymetry_mode == "GEBCO":
+            parts.append("GEBCO bathymetry")
+        if properties.imagery_product != "NONE":
+            parts.append(f"{properties.imagery_product} imagery")
+        properties.discovery_summary = "; ".join(parts)
         properties.discovery_ready = True
         properties.job_message = "Source discovery completed"
     else:
@@ -701,9 +678,7 @@ def configured_cache_directory(context: bpy.types.Context) -> Path:
 
 def _job_from_properties(task_id: str, import_id: str, properties: Any) -> DiscoveryJob:
     try:
-        region = RegionOfInterest.from_geojson_geometry(
-            json.loads(properties.roi_geometry_json)
-        )
+        region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
         local_paths = (
             _local_elevation_paths(properties.local_elevation_path)
             if properties.elevation_source == "LOCAL"
@@ -711,8 +686,7 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
         )
         local_imagery = (
             inspect_local_imagery(Path(bpy.path.abspath(properties.local_imagery_path)))
-            if properties.elevation_source == "LOCAL"
-            and properties.use_local_imagery
+            if properties.elevation_source == "LOCAL" and properties.use_local_imagery
             else None
         )
         elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
@@ -727,40 +701,27 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
                 else float(properties.elevation_resolution)
             ),
             use_imagery=(
-                properties.use_imagery
+                properties.imagery_product != "NONE"
                 if properties.elevation_source == "CNIG"
                 else local_imagery is not None
             ),
             imagery_gsd_metres=(
                 None
-                if properties.elevation_source == "LOCAL"
-                or properties.imagery_gsd == "AUTO"
+                if properties.elevation_source == "LOCAL" or properties.imagery_gsd == "AUTO"
                 else float(properties.imagery_gsd)
             ),
             manual_tile_rows=(
-                properties.manual_tile_rows
-                if properties.tiling_mode == "MANUAL"
-                else None
+                properties.manual_tile_rows if properties.tiling_mode == "MANUAL" else None
             ),
             manual_tile_columns=(
-                properties.manual_tile_columns
-                if properties.tiling_mode == "MANUAL"
-                else None
+                properties.manual_tile_columns if properties.tiling_mode == "MANUAL" else None
             ),
             region=region,
             local_elevation_paths=local_paths,
-            local_imagery_path=(
-                None if local_imagery is None else str(local_imagery.path)
-            ),
-            local_imagery_bounds=(
-                None if local_imagery is None else local_imagery.bounds
-            ),
-            local_imagery_width=(
-                None if local_imagery is None else local_imagery.width
-            ),
-            local_imagery_height=(
-                None if local_imagery is None else local_imagery.height
-            ),
+            local_imagery_path=(None if local_imagery is None else str(local_imagery.path)),
+            local_imagery_bounds=(None if local_imagery is None else local_imagery.bounds),
+            local_imagery_width=(None if local_imagery is None else local_imagery.width),
+            local_imagery_height=(None if local_imagery is None else local_imagery.height),
             maximum_elevation_samples=elevation_limit,
             maximum_imagery_pixels=imagery_limit,
         )
@@ -769,10 +730,7 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
 
 
 def _local_elevation_paths(raw_path: str) -> tuple[str, ...]:
-    return tuple(
-        str(path)
-        for path in resolve_local_elevation_paths(bpy.path.abspath(raw_path))
-    )
+    return tuple(str(path) for path in resolve_local_elevation_paths(bpy.path.abspath(raw_path)))
 
 
 def _scene_properties(scene_name: str) -> Any | None:

@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
 
 from ..catalog import DatasetKind, discover_candidates, load_bundled_catalog
 from ..core import (
@@ -161,9 +160,7 @@ class BLENDERTERRAIN_OT_open_roi_map(bpy.types.Operator):
             return {"CANCELLED"}
         shutdown_map_selector()
         try:
-            bounds = BBoxWGS84(
-                properties.west, properties.south, properties.east, properties.north
-            )
+            bounds = BBoxWGS84(properties.west, properties.south, properties.east, properties.north)
             _active_map_session = ROIMapSession(mode, bounds)
             url = _active_map_session.start()
             if bpy.ops.wm.url_open(url=url) != {"FINISHED"}:
@@ -246,9 +243,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             local_inspection = None
             if properties.elevation_source == "LOCAL":
                 raw_path = bpy.path.abspath(properties.local_elevation_path)
-                local_inspection = inspect_local_elevation(
-                    resolve_local_elevation_paths(raw_path)
-                )
+                local_inspection = inspect_local_elevation(resolve_local_elevation_paths(raw_path))
                 bounds = local_inspection.bounds_wgs84
                 _store_bounds(properties, bounds)
                 properties.roi_geometry_json = json.dumps(
@@ -261,9 +256,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     )
                     if any(
                         projected.epsg != local_imagery.bounds.epsg
-                        or not bounds_fully_covered(
-                            projected, (local_imagery.bounds,)
-                        )
+                        or not bounds_fully_covered(projected, (local_imagery.bounds,))
                         for projected in local_inspection.projected_bounds
                     ):
                         raise UserInputError(
@@ -285,8 +278,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             if (
                 properties.elevation_source == "CNIG"
                 and not global_product
-                and _product_availability_status(properties, properties.product)
-                == "NO_COVERAGE"
+                and _product_availability_status(properties, properties.product) == "NO_COVERAGE"
             ):
                 raise UserInputError(
                     "The availability check found no coverage for this product and ROI"
@@ -295,9 +287,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             plan = create_import_plan(
                 bounds=bounds,
                 product=(
-                    properties.product
-                    if global_product
-                    else DatasetProduct(properties.product)
+                    properties.product if global_product else DatasetProduct(properties.product)
                 ),
                 elevation_resolution_metres=(
                     None
@@ -305,27 +295,21 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     else float(properties.elevation_resolution)
                 ),
                 use_imagery=(
-                    properties.use_imagery
+                    properties.imagery_product != "NONE"
                     and properties.elevation_source == "CNIG"
                 ),
                 imagery_gsd_metres=(
                     None
-                    if global_product
+                    if properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
                     else (
-                        None
-                        if properties.imagery_gsd == "AUTO"
-                        else float(properties.imagery_gsd)
+                        None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
                     )
                 ),
                 manual_tile_rows=(
-                    properties.manual_tile_rows
-                    if properties.tiling_mode == "MANUAL"
-                    else None
+                    properties.manual_tile_rows if properties.tiling_mode == "MANUAL" else None
                 ),
                 manual_tile_columns=(
-                    properties.manual_tile_columns
-                    if properties.tiling_mode == "MANUAL"
-                    else None
+                    properties.manual_tile_columns if properties.tiling_mode == "MANUAL" else None
                 ),
                 maximum_elevation_samples=elevation_limit,
                 maximum_imagery_pixels=imagery_limit,
@@ -339,12 +323,14 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     )
                 ),
                 projected_bounds_override=(
-                    None
-                    if local_inspection is None
-                    else local_inspection.projected_bounds
+                    None if local_inspection is None else local_inspection.projected_bounds
                 ),
                 use_global_utm=global_product,
-                imagery_native_resolution_metres=(10.0 if global_product else 0.25),
+                imagery_native_resolution_metres=(
+                    10.0
+                    if properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
+                    else 0.25
+                ),
             )
         except BlenderTerrainError as exc:
             properties.is_valid = False
@@ -374,23 +360,17 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             else "ROI is valid for offline planning"
         )
         if local_inspection is not None:
-            properties.local_native_resolution = (
-                local_inspection.native_resolution_metres
-            )
+            properties.local_native_resolution = local_inspection.native_resolution_metres
             properties.local_elevation_summary = (
                 f"{len(local_inspection.paths)} TIFF file(s), "
                 f"{local_inspection.native_resolution_metres:g} m, "
                 + ", ".join(f"EPSG:{epsg}" for epsg in local_inspection.epsg_codes)
             )
-        properties.crs_summary = ", ".join(
-            f"EPSG:{area.crs.epsg}" for area in plan.work_areas
-        )
+        properties.crs_summary = ", ".join(f"EPSG:{area.crs.epsg}" for area in plan.work_areas)
         properties.area_square_metres = plan.elevation.area_square_metres
         properties.sample_count = plan.elevation_sample_count
         properties.selected_resolution = plan.elevation_resolution_metres
-        properties.selected_imagery_gsd = (
-            0.0 if plan.imagery is None else plan.imagery.gsd_metres
-        )
+        properties.selected_imagery_gsd = 0.0 if plan.imagery is None else plan.imagery.gsd_metres
         properties.terrain_tile_count = plan.terrain_tile_count
         terrain_tiles = tuple(
             tile
@@ -405,18 +385,21 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         properties.estimated_base_vertices = sum(
             (tile.rows + 1) * (tile.columns + 1) for tile in terrain_tiles
         )
-        properties.estimated_texture_gpu_mib = (
-            plan.estimated_imagery_decoded_bytes / (1024 * 1024)
-        )
+        properties.estimated_texture_gpu_mib = plan.estimated_imagery_decoded_bytes / (1024 * 1024)
         warnings = list(plan.warnings)
         if properties.resource_profile == "LARGE":
             warnings.append("Large profile can exhaust system or GPU memory")
         properties.planning_warning = " | ".join(warnings)
+        imagery_name = (
+            "WorldCover"
+            if properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
+            else "PNOA"
+        )
         properties.imagery_summary = (
             "Imagery disabled"
             if plan.imagery is None
             else (
-                f"{'WorldCover' if global_product else 'PNOA'} "
+                f"{imagery_name} "
                 f"{plan.imagery.gsd_metres:g} m: "
                 f"{plan.imagery.pixel_width:,} x {plan.imagery.pixel_height:,} px, "
                 f"{plan.imagery.tile_count} provisional tile(s)"
@@ -437,6 +420,10 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
     }
     if not valid_ids:
         raise UserInputError("No implemented elevation product covers this ROI")
+    imagery_ids = {
+        candidate.product.id
+        for candidate in discover_candidates(catalog, bounds, DatasetKind.IMAGERY).valid
+    }
     current = properties.product
     ordered_ids = [
         product_id
@@ -458,6 +445,17 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
     try:
         properties.available_product_ids_json = json.dumps(ordered_ids)
         properties.product = current if current in valid_ids else ordered_ids[0]
+        properties.available_imagery_product_ids_json = json.dumps(sorted(imagery_ids))
+        if properties.imagery_product not in imagery_ids | {"NONE"}:
+            properties.imagery_product = (
+                "PNOA_MA"
+                if "PNOA_MA" in imagery_ids
+                else (
+                    "ESA_WORLDCOVER_S2_2021"
+                    if "ESA_WORLDCOVER_S2_2021" in imagery_ids
+                    else "NONE"
+                )
+            )
     finally:
         properties.internal_update = False
 
@@ -562,9 +560,7 @@ class BLENDERTERRAIN_OT_paste_bbox(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def _bounds_from_properties(
-    properties: object, *, store_derived: bool = False
-) -> BBoxWGS84:
+def _bounds_from_properties(properties: object, *, store_derived: bool = False) -> BBoxWGS84:
     if properties.roi_input_mode == "FILE":
         path = Path(bpy.path.abspath(properties.roi_file_path))
         layer_name = (
@@ -602,9 +598,7 @@ def _bounds_from_properties(
                 separators=(",", ":"),
             )
         return bounds
-    bounds = BBoxWGS84(
-        properties.west, properties.south, properties.east, properties.north
-    )
+    bounds = BBoxWGS84(properties.west, properties.south, properties.east, properties.north)
     if store_derived:
         properties.roi_geometry_json = json.dumps(
             RegionOfInterest.from_bbox(bounds).to_geojson_geometry(),
@@ -629,7 +623,10 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
 
     bl_idname = "blender_terrain.discover_sources"
     bl_label = "Discover Sources"
-    bl_description = "Find the official CNIG elevation files needed for this area"
+    bl_description = (
+        "Check product coverage, source availability and estimated size without "
+        "downloading the complete datasets"
+    )
 
     def execute(self, context: bpy.types.Context) -> set[str]:
         properties = context.scene.blender_terrain_roi
@@ -707,8 +704,7 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
                 event,
                 title="Duplicate Terrain Import",
                 message=(
-                    "This terrain already exists in the scene. "
-                    "Create another independent copy?"
+                    "This terrain already exists in the scene. Create another independent copy?"
                 ),
                 confirm_text="Create Copy",
                 icon="QUESTION",
@@ -742,10 +738,9 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
             if context.workspace is not None:
                 context.workspace.status_text_set(text=None)
         properties.terrain_created = True
+        properties.show_imported_section = True
         properties.active_import_id = properties.import_id
-        properties.imagery_packed = (
-            properties.pack_imagery and properties.imagery_available
-        )
+        properties.imagery_packed = properties.pack_imagery and properties.imagery_available
         clip_summary = ""
         if properties.adjust_viewport_clip_end:
             viewport_count, clip_end = _adjust_viewport_clip_end(context, objects)
@@ -758,22 +753,11 @@ class BLENDERTERRAIN_OT_create_terrain(bpy.types.Operator):
 def _adjust_viewport_clip_end(
     context: bpy.types.Context, objects: tuple[bpy.types.Object, ...]
 ) -> tuple[int, float]:
-    """Increase every open 3D viewport clipping distance to fit the terrain."""
+    """Set every open 3D viewport to a large fixed clipping distance."""
 
-    world_corners = [
-        object_.matrix_world @ Vector(corner)
-        for object_ in objects
-        for corner in object_.bound_box
-    ]
-    if not world_corners:
+    if not objects:
         return 0, 0.0
-    extents = tuple(
-        max(corner[axis] for corner in world_corners)
-        - min(corner[axis] for corner in world_corners)
-        for axis in range(3)
-    )
-    diagonal = sum(value * value for value in extents) ** 0.5
-    maximum_target = 0.0
+    target = 1.0e12
     updated = 0
     for window in context.window_manager.windows:
         for area in window.screen.areas:
@@ -781,21 +765,9 @@ def _adjust_viewport_clip_end(
                 continue
             for space in area.spaces:
                 if space.type == "VIEW_3D":
-                    viewer = space.region_3d.view_matrix.inverted().translation
-                    farthest_corner = max(
-                        (corner - viewer).length for corner in world_corners
-                    )
-                    margin = max(100.0, diagonal * 0.25)
-                    required_distance = max(
-                        2.0 * diagonal,
-                        farthest_corner + margin,
-                        space.region_3d.view_distance + diagonal + margin,
-                    )
-                    target = max(1_000.0, 2.0 * required_distance)
-                    space.clip_end = max(space.clip_end, target)
-                    maximum_target = max(maximum_target, target)
+                    space.clip_end = target
                     updated += 1
-    return updated, maximum_target
+    return updated, target
 
 
 class BLENDERTERRAIN_OT_select_import_objects(bpy.types.Operator):

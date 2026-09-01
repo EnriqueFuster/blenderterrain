@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,10 @@ from ..core import (
 )
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
+
+SMOOTH_BY_ANGLE_MODIFIER_NAME = "Terrain Smooth by Angle"
+SMOOTH_BY_ANGLE_NODE_GROUP_NAME = "BlenderTerrain Smooth by Angle"
+DEFAULT_SMOOTH_ANGLE = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +129,7 @@ def create_terrain_objects(
     collection["blender_terrain_subdivision_viewport"] = initial_subdivision
     collection["blender_terrain_subdivision_render"] = initial_subdivision
     collection["blender_terrain_displacement_enabled"] = True
+    collection["blender_terrain_smooth_angle"] = DEFAULT_SMOOTH_ANGLE
     collection["blender_terrain_full_resolution_mesh"] = full_resolution_mesh
     collection["blender_terrain_base_mesh_reduction_factor"] = (
         1 if full_resolution_mesh else PREVIEW_MESH_REDUCTION_FACTOR
@@ -188,6 +194,7 @@ def create_terrain_objects(
             )
             object_["blender_terrain_strength_multiplier"] = 1.0
             object_["blender_terrain_displacement_midlevel"] = 0.0
+            object_["blender_terrain_smooth_angle"] = DEFAULT_SMOOTH_ANGLE
             object_["blender_terrain_full_resolution_mesh"] = full_resolution_mesh
             object_["blender_terrain_heightmap_rows"] = elevation.shape[0]
             object_["blender_terrain_heightmap_columns"] = elevation.shape[1]
@@ -211,6 +218,7 @@ def create_terrain_objects(
             texture.extension = "EXTEND"
             heightmap_images.append(image)
             heightmap_textures.append(texture)
+            ensure_smooth_by_angle_modifier(object_)
             subdivision = object_.modifiers.new("Terrain Subdivision", "SUBSURF")
             subdivision.subdivision_type = "SIMPLE"
             subdivision.levels = initial_subdivision
@@ -268,6 +276,98 @@ def create_terrain_objects(
         progress_callback, 1.0, f"Created {len(objects)} terrain object(s)"
     )
     return tuple(objects)
+
+
+def smooth_angle_socket_identifier(node_group: bpy.types.NodeTree) -> str:
+    """Return the modifier input identifier for the smoothing angle."""
+
+    for item in node_group.interface.items_tree:
+        if item.item_type == "SOCKET" and item.in_out == "INPUT" and item.name == "Angle":
+            return item.identifier
+    raise RasterFormatError("Smooth by Angle node group has no Angle input")
+
+
+def ensure_smooth_by_angle_modifier(object_: bpy.types.Object) -> Any:
+    """Return the terrain smoothing modifier, creating it for older imports."""
+
+    modifier = object_.modifiers.get(SMOOTH_BY_ANGLE_MODIFIER_NAME)
+    if modifier is None:
+        modifier = object_.modifiers.new(SMOOTH_BY_ANGLE_MODIFIER_NAME, "NODES")
+        modifier.node_group = _smooth_by_angle_node_group()
+        angle = float(
+            object_.get("blender_terrain_smooth_angle", DEFAULT_SMOOTH_ANGLE)
+        )
+        set_smooth_angle(modifier, angle)
+    if modifier.type != "NODES" or modifier.node_group is None:
+        raise RasterFormatError("Terrain Smooth by Angle modifier is invalid")
+    return modifier
+
+
+def get_smooth_angle(modifier: Any) -> float:
+    """Read the smoothing angle across supported Blender modifier APIs."""
+
+    identifier = smooth_angle_socket_identifier(modifier.node_group)
+    inputs = getattr(getattr(modifier, "properties", None), "inputs", None)
+    socket = getattr(inputs, identifier, None)
+    if socket is not None:
+        return float(socket.value)
+    return float(modifier[identifier])
+
+
+def set_smooth_angle(modifier: Any, angle: float) -> None:
+    """Set the smoothing angle across supported Blender modifier APIs."""
+
+    identifier = smooth_angle_socket_identifier(modifier.node_group)
+    inputs = getattr(getattr(modifier, "properties", None), "inputs", None)
+    socket = getattr(inputs, identifier, None)
+    if socket is not None:
+        socket.value = angle
+    else:
+        modifier[identifier] = angle
+
+
+def _smooth_by_angle_node_group() -> bpy.types.GeometryNodeTree:
+    existing = bpy.data.node_groups.get(SMOOTH_BY_ANGLE_NODE_GROUP_NAME)
+    if isinstance(existing, bpy.types.GeometryNodeTree):
+        return existing
+
+    group = bpy.data.node_groups.new(
+        SMOOTH_BY_ANGLE_NODE_GROUP_NAME, "GeometryNodeTree"
+    )
+    geometry_in = group.interface.new_socket(
+        name="Geometry", in_out="INPUT", socket_type="NodeSocketGeometry"
+    )
+    angle = group.interface.new_socket(
+        name="Angle", in_out="INPUT", socket_type="NodeSocketFloat"
+    )
+    angle.default_value = DEFAULT_SMOOTH_ANGLE
+    angle.min_value = 0.0
+    angle.max_value = math.pi
+    angle.subtype = "ANGLE"
+    geometry_out = group.interface.new_socket(
+        name="Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry"
+    )
+
+    input_node = group.nodes.new("NodeGroupInput")
+    output_node = group.nodes.new("NodeGroupOutput")
+    smooth_faces = group.nodes.new("GeometryNodeSetShadeSmooth")
+    smooth_faces.domain = "FACE"
+    smooth_faces.inputs["Shade Smooth"].default_value = True
+    sharp_edges = group.nodes.new("GeometryNodeSetShadeSmooth")
+    sharp_edges.domain = "EDGE"
+    sharp_edges.inputs["Shade Smooth"].default_value = False
+    edge_angle = group.nodes.new("GeometryNodeInputMeshEdgeAngle")
+    compare = group.nodes.new("FunctionNodeCompare")
+    compare.data_type = "FLOAT"
+    compare.operation = "GREATER_THAN"
+
+    group.links.new(input_node.outputs[geometry_in.identifier], smooth_faces.inputs[0])
+    group.links.new(smooth_faces.outputs[0], sharp_edges.inputs[0])
+    group.links.new(edge_angle.outputs["Unsigned Angle"], compare.inputs["A"])
+    group.links.new(input_node.outputs[angle.identifier], compare.inputs["B"])
+    group.links.new(compare.outputs["Result"], sharp_edges.inputs["Selection"])
+    group.links.new(sharp_edges.outputs[0], output_node.inputs[geometry_out.identifier])
+    return group
 
 
 def _report_build_progress(

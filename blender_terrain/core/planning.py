@@ -154,7 +154,6 @@ class ImportPlan:
             warnings.append("ROI crosses UTM zones and will create sibling terrain groups")
             if self.manual_tile_rows is not None:
                 warnings.append("Manual terrain rows and columns apply separately to each CRS")
-        warnings.append("Exact data coverage is confirmed during provider discovery")
         return tuple(warnings)
 
 
