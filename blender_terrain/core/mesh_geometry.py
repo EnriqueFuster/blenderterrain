@@ -66,7 +66,19 @@ def build_terrain_mesh_geometry(
         & valid[1:, 1:]
         & valid[:-1, 1:]
     )
-    return TerrainMeshGeometry(vertices, faces[valid_faces].reshape(-1, 4))
+    valid_faces_array = faces[valid_faces].reshape(-1, 4)
+    if not valid_faces_array.size:
+        return TerrainMeshGeometry(
+            np.empty((0, 3), dtype=np.float32),
+            valid_faces_array,
+        )
+    used_vertices = np.unique(valid_faces_array)
+    remap = np.full(len(vertices), -1, dtype=np.int32)
+    remap[used_vertices] = np.arange(len(used_vertices), dtype=np.int32)
+    return TerrainMeshGeometry(
+        vertices[used_vertices],
+        remap[valid_faces_array],
+    )
 
 
 def build_displacement_mesh_geometry(

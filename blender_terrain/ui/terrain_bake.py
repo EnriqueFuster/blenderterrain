@@ -130,6 +130,9 @@ def _weld_coincident_vertices(object_: bpy.types.Object, tolerance: float) -> No
     try:
         editable.from_mesh(mesh)
         bmesh.ops.remove_doubles(editable, verts=editable.verts, dist=tolerance)
+        loose_vertices = [vertex for vertex in editable.verts if not vertex.link_edges]
+        if loose_vertices:
+            bmesh.ops.delete(editable, geom=loose_vertices, context="VERTS")
         editable.to_mesh(mesh)
         mesh.update()
     finally:

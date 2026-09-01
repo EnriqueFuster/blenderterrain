@@ -85,7 +85,22 @@ class TerrainMeshGeometryTests(unittest.TestCase):
         )
 
         self.assertEqual(geometry.faces.shape, (0, 4))
-        self.assertEqual(geometry.vertices[1, 2], 0.0)
+        self.assertEqual(geometry.vertices.shape, (0, 3))
+
+    def test_removes_vertices_not_referenced_by_valid_faces(self) -> None:
+        elevation = np.array(
+            [[-9999, 11, 12], [20, 21, 22], [30, 31, 32]], dtype=np.float32
+        )
+
+        geometry = build_terrain_mesh_geometry(
+            elevation, ProjectedBounds(100, 200, 104, 204, 25830), -9999.0
+        )
+
+        self.assertEqual(geometry.vertices.shape, (8, 3))
+        self.assertEqual(geometry.faces.shape, (3, 4))
+        np.testing.assert_array_equal(
+            np.unique(geometry.faces), np.arange(len(geometry.vertices))
+        )
 
 
 if __name__ == "__main__":

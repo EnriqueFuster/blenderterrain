@@ -181,6 +181,10 @@ def create_terrain_objects(
                 geometry.vertices,
                 geometry.faces,
                 uv_shape=elevation.shape,
+                uv_extent=(
+                    bounds.east - bounds.west,
+                    bounds.north - bounds.south,
+                ),
             )
             object_ = bpy.data.objects.new(f"BT_{short_id}_Terrain_{index:03d}", mesh)
             origin_x, origin_y = origins[bounds.epsg]
@@ -423,6 +427,7 @@ def _create_mesh(
     vertices: Any,
     faces: Any,
     uv_shape: tuple[int, int] | None = None,
+    uv_extent: tuple[float, float] | None = None,
 ) -> bpy.types.Mesh:
     mesh = bpy.data.meshes.new(name)
     mesh.vertices.add(len(vertices))
@@ -434,8 +439,9 @@ def _create_mesh(
     mesh.polygons.foreach_set("loop_total", np.full(len(faces), 4, dtype=np.int32))
     mesh.update(calc_edges=True)
     if uv_shape is not None:
-        width = float(vertices[:, 0].max())
-        height = float(vertices[:, 1].max())
+        if uv_extent is None:
+            raise RasterFormatError("Terrain mesh UV extent is missing")
+        width, height = uv_extent
         if width <= 0.0 or height <= 0.0:
             raise RasterFormatError("Terrain mesh cannot create UVs for empty bounds")
         rows, columns = uv_shape
