@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
 from ..io.bigtiff_tiles import open_float_tile_reader
+from ..io.bil32 import Bil32WindowReader
 from ..io.elevation_mosaic import ElevationReader
 from ..io.elevation_window import ElevationWindowReader
 from ..models import ProjectedBounds
@@ -102,8 +103,12 @@ def process_elevation_tiles(
     if sampling not in {"bilinear", "nearest"}:
         raise ValueError("Elevation sampling must be bilinear or nearest")
     readers = tuple(
-        ElevationWindowReader(path)
-        if path.suffix.lower() == ".npy"
+        (
+            ElevationWindowReader(path)
+            if path.suffix.lower() == ".npy"
+            else Bil32WindowReader(path)
+        )
+        if path.suffix.lower() in {".npy", ".bil"}
         else open_float_tile_reader(path)
         for path in source_paths
     )

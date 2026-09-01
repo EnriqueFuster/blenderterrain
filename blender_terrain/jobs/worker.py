@@ -525,14 +525,6 @@ def prepare_confirmed_elevation(
     imagery_request = (
         None if imagery_selection is None else plan.request.layer(DatasetKind.IMAGERY)
     )
-    elevation_plan = AcquisitionPlan(
-        AcquisitionRequest(
-            plan.request.roi,
-            (layer_request,),
-            plan.request.license_profile,
-        ),
-        SelectionBundle((selection,)),
-    )
     import_plan = create_import_plan(
         plan.request.roi,
         product.id,
@@ -546,6 +538,19 @@ def prepare_confirmed_elevation(
         native_resolution_override=product.capabilities.native_resolution_m,
         use_global_utm=product.jurisdiction == "global",
         working_crs_epsg=None if product.wms is None else product.wms.crs_epsg,
+    )
+    resolved_request = LayerRequest(
+        layer_request.kind,
+        import_plan.elevation_resolution_metres,
+        layer_request.temporal_policy,
+    )
+    elevation_plan = AcquisitionPlan(
+        AcquisitionRequest(
+            plan.request.roi,
+            (resolved_request,),
+            plan.request.license_profile,
+        ),
+        SelectionBundle((selection,)),
     )
     source_roi = (
         geographic_source_bounds(import_plan)

@@ -9,6 +9,7 @@ from .cnig_acquisition import CnigElevationAcquirer
 from .copernicus_dem import CopernicusGlo30Acquirer
 from .gebco import GebcoAcquirer
 from .gedtm30 import Gedtm30Acquirer
+from .geopf_wms import GeopfWMSAcquirer
 from .worldcover import WorldCoverAcquirer
 
 
@@ -22,6 +23,7 @@ def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcqui
         "openlandmap": Gedtm30Acquirer,
         "esa_worldcover": WorldCoverAcquirer,
         "gebco": GebcoAcquirer,
+        "ign_france": GeopfWMSAcquirer,
     }
     return {
         provider_id: factories[provider_id]()

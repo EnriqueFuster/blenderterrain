@@ -67,7 +67,7 @@ def probe_products() -> dict[str, Any]:
         sample = (
             _bil_summary(body, content_type)
             if contract.sample_dtype is not None
-            else _jpeg_summary(body, content_type)
+            else _png_summary(body, content_type)
         )
         results[product.id] = {
             "layer": contract.layer,
@@ -132,13 +132,13 @@ def _bil_summary(body: bytes, content_type: str) -> dict[str, Any]:
     }
 
 
-def _jpeg_summary(body: bytes, content_type: str) -> dict[str, Any]:
+def _png_summary(body: bytes, content_type: str) -> dict[str, Any]:
     if (
-        content_type != "image/jpeg"
-        or not body.startswith(b"\xff\xd8")
-        or not body.endswith(b"\xff\xd9")
+        content_type != "image/png"
+        or not body.startswith(b"\x89PNG\r\n\x1a\n")
+        or b"IEND" not in body[-16:]
     ):
-        raise RuntimeError("French imagery response is not a complete JPEG")
+        raise RuntimeError("French imagery response is not a complete PNG")
     return {
         "content_type": content_type,
         "bytes": len(body),

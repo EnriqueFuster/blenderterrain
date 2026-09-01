@@ -90,7 +90,7 @@ def test_french_products_declare_executable_wms_contracts() -> None:
     assert mns.wms.layer == "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES.MNS"
     assert ortho.wms is not None
     assert ortho.wms.layer == "HR.ORTHOIMAGERY.ORTHOPHOTOS"
-    assert ortho.wms.format == "image/jpeg"
+    assert ortho.wms.format == "image/png"
     assert ortho.wms.sample_dtype is None
     assert {product.wms.crs_epsg for product in (rge_alti, mns, ortho) if product.wms} == {
         2154
