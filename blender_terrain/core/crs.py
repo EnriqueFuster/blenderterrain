@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from ..errors import NoCoverageError, UserInputError
 from .roi import BBoxWGS84
-from .territory import TerritoryGroup, classify_territory_envelope
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,16 +39,6 @@ _SUPPORTED_CRS = {
 LAMBERT93 = CRSInfo(2154, "RGF93 v1 / Lambert-93", "RGF93 v1", None)
 _FRANCE_METROPOLITAN_ENVELOPE = BBoxWGS84(-5.5, 41.0, 10.0, 51.5)
 
-# Western longitude is inclusive; eastern longitude is exclusive except for the
-# final boundary. Territory validation is deliberately a separate concern.
-_ZONE_LONGITUDE_RANGES = {
-    28: (-18.0, -12.0),
-    29: (-12.0, -6.0),
-    30: (-6.0, 0.0),
-    31: (0.0, 6.0),
-}
-
-
 def crs_from_epsg(epsg: int) -> CRSInfo:
     """Return a supported projected CRS by canonical EPSG code."""
 
@@ -71,22 +60,11 @@ def work_area_for_crs(bounds: BBoxWGS84, epsg: int) -> ProjectedWorkArea:
 
 
 def split_bbox_by_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
-    """Select the datum family and split bounds at supported UTM meridians."""
+    """Call the former Spanish UTM planner retained for compatibility."""
 
-    territory = classify_territory_envelope(bounds)
-    supported_zones = (28,) if territory is TerritoryGroup.CANARY_ISLANDS else (29, 30, 31)
-    work_areas: list[UTMWorkArea] = []
-    for zone in supported_zones:
-        zone_west, zone_east = _ZONE_LONGITUDE_RANGES[zone]
-        part_west = max(bounds.west, zone_west)
-        part_east = min(bounds.east, zone_east)
-        if part_east <= part_west:
-            continue
-        part = BBoxWGS84(part_west, bounds.south, part_east, bounds.north)
-        work_areas.append(UTMWorkArea(part, _SUPPORTED_CRS[zone]))
-    if not work_areas:
-        raise NoCoverageError("ROI does not intersect a supported Spanish UTM zone")
-    return tuple(work_areas)
+    from ..providers.spain_crs import split_spain_bbox_by_utm_zone
+
+    return split_spain_bbox_by_utm_zone(bounds)
 
 
 def split_bbox_by_wgs84_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:

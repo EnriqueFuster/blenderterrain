@@ -4,8 +4,14 @@ import unittest
 
 from blender_terrain.core import BBoxWGS84
 from blender_terrain.core.crs import split_bbox_by_utm_zone
-from blender_terrain.core.territory import TerritoryGroup, classify_territory_envelope
+from blender_terrain.core.territory import (
+    classify_territory_envelope as legacy_classify_territory,
+)
 from blender_terrain.errors import NoCoverageError
+from blender_terrain.providers.spain_crs import (
+    TerritoryGroup,
+    classify_territory_envelope,
+)
 
 
 class TerritoryEnvelopeTests(unittest.TestCase):
@@ -33,6 +39,13 @@ class TerritoryEnvelopeTests(unittest.TestCase):
     def test_rejects_roi_spanning_datum_families(self) -> None:
         with self.assertRaises(NoCoverageError):
             classify_territory_envelope(BBoxWGS84(-17.0, 28.0, -3.0, 40.0))
+
+    def test_legacy_core_classifier_remains_compatible(self) -> None:
+        bounds = BBoxWGS84(-3.8, 40.3, -3.6, 40.5)
+
+        self.assertEqual(
+            legacy_classify_territory(bounds), classify_territory_envelope(bounds)
+        )
 
 
 if __name__ == "__main__":

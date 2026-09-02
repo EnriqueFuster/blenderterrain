@@ -1,4 +1,4 @@
-"""Projected texture transforms for PNOA imagery tiles."""
+"""Projected texture transforms for provider-independent imagery tiles."""
 
 from __future__ import annotations
 
