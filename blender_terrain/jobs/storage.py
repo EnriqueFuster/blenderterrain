@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from ..errors import JobFormatError
 from .acquisition_job import AcquisitionJob
-from .models import DiscoveryJob, ProgressEvent
+from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
 
 CANCELLATION_FILENAME = "cancel.request"
 
@@ -59,9 +60,7 @@ def append_progress_event(path: Path, event: ProgressEvent) -> None:
         os.fsync(stream.fileno())
 
 
-def read_progress_events(
-    path: Path, offset: int = 0
-) -> tuple[tuple[ProgressEvent, ...], int]:
+def read_progress_events(path: Path, offset: int = 0) -> tuple[tuple[ProgressEvent, ...], int]:
     """Read only complete progress records appended after a byte offset."""
 
     if offset < 0:
@@ -94,6 +93,22 @@ def write_result(path: Path, payload: dict[str, Any]) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_atomic(path, payload, overwrite=False)
+
+
+def finish_job_error(
+    result_path: Path,
+    emit: Callable[[JobState, float, str], None],
+    state: JobState,
+    message: str,
+) -> JobState:
+    """Persist and report one terminal worker error."""
+
+    write_result(
+        result_path,
+        {"schema_version": RESULT_SCHEMA_VERSION, "state": state.value, "error": message},
+    )
+    emit(state, 1.0, message)
+    return state
 
 
 def request_cancellation(job_directory: Path) -> None:

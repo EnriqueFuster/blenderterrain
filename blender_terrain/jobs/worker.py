@@ -50,32 +50,33 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
-from ..io.bigtiff_tiles import open_float_tile_reader
 from ..io.elevation_output import write_elevation_array, write_quality_array
 from ..io.png_validation import validate_png
 from ..models import CatalogItem, DatasetProduct, ProjectedBounds
 from ..providers.cnig_delivery import ElevationDownloader, deliver_plan_sources
-from ..providers.cnig_discovery import (
-    CatalogDiscoveryProvider,
-    DiscoveryResult,
-    discover_sources,
-)
+from ..providers.cnig_discovery import discover_sources
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_planning import plan_pnoa_tiles
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from ..providers.registry import build_raster_acquirers
-from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
+from .legacy_discovery import (
+    create_legacy_import_plan,
+    discover_local_sources,
+)
+from .legacy_discovery import (
+    run_availability_job as run_availability_job,
+)
+from .legacy_discovery import (
+    run_discovery_job as run_discovery_job,
+)
+from .models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
 from .storage import (
     append_progress_event,
+    finish_job_error,
     is_cancellation_requested,
     read_acquisition_job,
     read_discovery_job,
     write_result,
-)
-
-ProviderFactory = Callable[[], CatalogDiscoveryProvider]
-ELEVATION_PRODUCTS = tuple(
-    product for product in DatasetProduct if product is not DatasetProduct.PNOA_MA
 )
 
 
@@ -135,13 +136,9 @@ def run_confirmed_acquisition_job(
             ("elevation_process", 2.0),
         ]
         if has_bathymetry:
-            stage_weights.extend(
-                (("bathymetry_download", 1.0), ("bathymetry_process", 2.0))
-            )
+            stage_weights.extend((("bathymetry_download", 1.0), ("bathymetry_process", 2.0)))
         if has_imagery:
-            stage_weights.extend(
-                (("imagery_download", 3.0), ("imagery_process", 2.0))
-            )
+            stage_weights.extend((("imagery_download", 3.0), ("imagery_process", 2.0)))
         stage_weights.append(("output", 1.0))
         total_weight = sum(weight for _name, weight in stage_weights)
         stage_ranges: dict[str, tuple[float, float]] = {}
@@ -161,9 +158,7 @@ def run_confirmed_acquisition_job(
                 if progress.expected_bytes
                 else float(progress.cached or progress.written_bytes > 0)
             )
-            fraction = (
-                progress.file_index + min(1.0, file_fraction)
-            ) / max(1, progress.file_count)
+            fraction = (progress.file_index + min(1.0, file_fraction)) / max(1, progress.file_count)
             stage = {
                 DatasetKind.BATHYMETRY.value: "bathymetry_download",
                 DatasetKind.IMAGERY.value: "imagery_download",
@@ -298,9 +293,7 @@ def run_confirmed_acquisition_job(
             if selection.kind in {DatasetKind.DTM, DatasetKind.DSM}
         )
         product = catalog.product(elevation_selection.product_id)
-        imagery_product = (
-            None if imagery is None else catalog.product(imagery.acquired.product_id)
-        )
+        imagery_product = None if imagery is None else catalog.product(imagery.acquired.product_id)
         bathymetry_product = (
             None if bathymetry is None else catalog.product(bathymetry.acquired.product_id)
         )
@@ -345,9 +338,7 @@ def run_confirmed_acquisition_job(
                 "request": {
                     "bounds_wgs84": asdict(job.plan.request.roi),
                     "roi_geometry_wgs84": (
-                        None
-                        if job.region is None
-                        else job.region.to_geojson_geometry()
+                        None if job.region is None else job.region.to_geojson_geometry()
                     ),
                     "product": product.id,
                     "elevation_resolution_metres": (
@@ -370,13 +361,9 @@ def run_confirmed_acquisition_job(
                         "product_id": layer.product_id,
                         "kind": layer.kind.value,
                         "license": catalog.product(layer.product_id).license.identifier,
-                        "attribution": (
-                            catalog.product(layer.product_id).license.attribution_text
-                        ),
+                        "attribution": (catalog.product(layer.product_id).license.attribution_text),
                         "paths": [str(path) for path in layer.paths],
-                        "auxiliary_paths": [
-                            str(path) for path in layer.auxiliary_paths
-                        ],
+                        "auxiliary_paths": [str(path) for path in layer.auxiliary_paths],
                     }
                     for layer in source_layers
                 ],
@@ -437,9 +424,9 @@ def run_confirmed_acquisition_job(
         )
         return final_state
     except JobCancelled as exc:
-        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
+        return finish_job_error(result_path, emit, JobState.CANCELLED, str(exc))
     except ProviderUnavailableError as exc:
-        return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
+        return finish_job_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
     except (
         DownloadIntegrityError,
         JobFormatError,
@@ -447,7 +434,7 @@ def run_confirmed_acquisition_job(
         UserInputError,
         ValueError,
     ) as exc:
-        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+        return finish_job_error(result_path, emit, JobState.INVALID_DATA, str(exc))
 
 
 def _uncertainty_summary(acquired: AcquiredRasterLayer) -> dict[str, object] | None:
@@ -476,9 +463,7 @@ def acquire_confirmed_sources(
 ) -> tuple[AcquiredRasterLayer, ...]:
     """Execute the exact per-layer providers confirmed before worker startup."""
 
-    provider_ids = tuple(
-        selection.provider_id for selection in plan.selections.selections
-    )
+    provider_ids = tuple(selection.provider_id for selection in plan.selections.selections)
     return acquire_plan_layers(
         plan,
         acquirer_factory(provider_ids),
@@ -524,9 +509,7 @@ def prepare_confirmed_elevation(
         raise UserInputError("Selected elevation product does not match the catalog")
     layer_request = plan.request.layer(selection.kind)
     imagery_selection = plan.selections.for_kind(DatasetKind.IMAGERY)
-    imagery_request = (
-        None if imagery_selection is None else plan.request.layer(DatasetKind.IMAGERY)
-    )
+    imagery_request = None if imagery_selection is None else plan.request.layer(DatasetKind.IMAGERY)
     import_plan = create_import_plan(
         plan.request.roi,
         product.id,
@@ -554,11 +537,7 @@ def prepare_confirmed_elevation(
         ),
         SelectionBundle((selection,)),
     )
-    source_roi = (
-        geographic_source_bounds(import_plan)
-        if product.jurisdiction == "global"
-        else None
-    )
+    source_roi = geographic_source_bounds(import_plan) if product.jurisdiction == "global" else None
     try:
         acquired = acquire_confirmed_sources(
             elevation_plan,
@@ -572,6 +551,7 @@ def prepare_confirmed_elevation(
         if plan.selections.for_kind(DatasetKind.BATHYMETRY) is None:
             raise
         return PreparedElevation(None, import_plan, _empty_elevation_tiles(import_plan))
+
     def report_processing(completed: int, total: int) -> None:
         if cancellation_requested():
             raise JobCancelled("Elevation processing was cancelled")
@@ -750,6 +730,7 @@ def _prepare_pnoa_imagery(
                     )
                 )
         else:
+
             def report_download(
                 written: int,
                 expected: int | None,
@@ -788,9 +769,7 @@ def _prepare_pnoa_imagery(
         cached_count,
     )
     tiles = tuple(
-        ProcessedImageryTile(
-            path, tile.bounds, tile.width, tile.height, tile.gsd_metres
-        )
+        ProcessedImageryTile(path, tile.bounds, tile.width, tile.height, tile.gsd_metres)
         for path, tile in zip(paths, requests, strict=True)
     )
     return PreparedImagery(acquired, tiles)
@@ -880,157 +859,6 @@ class ElevationProcessor(Protocol):
     ) -> tuple[ProcessedElevationTile, ...]: ...
 
 
-def run_discovery_job(
-    job_path: Path,
-    provider_factory: ProviderFactory = CNIGPortalClient,
-) -> JobState:
-    """Run discovery and persist a terminal result for every expected failure."""
-
-    events_path = job_path.with_name("events.jsonl")
-    result_path = job_path.with_name("result.json")
-    sequence = 0
-
-    def emit(state: JobState, progress: float, message: str) -> None:
-        nonlocal sequence
-        append_progress_event(
-            events_path,
-            ProgressEvent(sequence, state, progress, message),
-        )
-        sequence += 1
-
-    def check_cancelled() -> None:
-        if is_cancellation_requested(job_path.parent):
-            raise JobCancelled("Source discovery was cancelled")
-
-    try:
-        emit(JobState.VALIDATING, 0.05, "Validating discovery job")
-        check_cancelled()
-        job = read_discovery_job(job_path)
-        plan = _create_plan(job)
-        local_imagery = (
-            inspect_local_imagery(Path(job.local_imagery_path))
-            if job.local_imagery_path is not None
-            else None
-        )
-        if local_imagery is not None and (
-            local_imagery.bounds != job.local_imagery_bounds
-            or local_imagery.width != job.local_imagery_width
-            or local_imagery.height != job.local_imagery_height
-        ):
-            raise JobFormatError("Local imagery changed after the job was created")
-        check_cancelled()
-        if job.local_elevation_paths:
-            emit(JobState.DISCOVERING, 0.25, "Validating local elevation sources")
-            discovery = _local_discovery(job)
-        else:
-            emit(JobState.DISCOVERING, 0.25, "Discovering CNIG elevation sources")
-            discovery = discover_sources(plan, provider_factory())
-        check_cancelled()
-        payload = {
-            "schema_version": RESULT_SCHEMA_VERSION,
-            "task_id": job.task_id,
-            "import_id": job.import_id,
-            "state": JobState.COMPLETE.value,
-            "advertised_items": discovery.advertised_items,
-            "ignored_items": discovery.ignored_items,
-            "estimated_download_mb": discovery.estimated_download_mb,
-            "items": [asdict(item) for item in discovery.items],
-        }
-        write_result(result_path, payload)
-        emit(JobState.COMPLETE, 1.0, f"Found {len(discovery.items)} source file(s)")
-        return JobState.COMPLETE
-    except JobCancelled as exc:
-        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
-    except NoCoverageError as exc:
-        return _finish_error(result_path, emit, JobState.NO_COVERAGE, str(exc))
-    except CatalogContractChanged as exc:
-        return _finish_error(result_path, emit, JobState.PROVIDER_CHANGED, str(exc))
-    except ProviderUnavailableError as exc:
-        return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
-    except (JobFormatError, RasterFormatError, UserInputError) as exc:
-        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
-
-
-def run_availability_job(
-    job_path: Path,
-    provider_factory: ProviderFactory = CNIGPortalClient,
-) -> JobState:
-    """Check every elevation product for one ROI without downloading data."""
-
-    events_path = job_path.with_name("events.jsonl")
-    result_path = job_path.with_name("result.json")
-    sequence = 0
-
-    def emit(state: JobState, progress: float, message: str) -> None:
-        nonlocal sequence
-        append_progress_event(events_path, ProgressEvent(sequence, state, progress, message))
-        sequence += 1
-
-    def check_cancelled() -> None:
-        if is_cancellation_requested(job_path.parent):
-            raise JobCancelled("Product availability check was cancelled")
-
-    try:
-        emit(JobState.VALIDATING, 0.02, "Validating product availability request")
-        job = read_discovery_job(job_path)
-        provider = provider_factory()
-        availability: list[dict[str, object]] = []
-        warnings: list[str] = []
-        for index, product in enumerate(ELEVATION_PRODUCTS):
-            check_cancelled()
-            emit(
-                JobState.DISCOVERING,
-                0.05 + 0.9 * index / len(ELEVATION_PRODUCTS),
-                f"Checking {product.value} ({index + 1}/{len(ELEVATION_PRODUCTS)})",
-            )
-            product_job = DiscoveryJob(
-                task_id=job.task_id,
-                import_id=job.import_id,
-                bounds=job.bounds,
-                product=product,
-                elevation_resolution_metres=None,
-                use_imagery=False,
-                imagery_gsd_metres=None,
-                region=job.region,
-            )
-            try:
-                discovery = discover_sources(_create_plan(product_job), provider)
-                availability.append(
-                    {
-                        "product": product.value,
-                        "status": "AVAILABLE",
-                        "file_count": len(discovery.items),
-                    }
-                )
-            except NoCoverageError:
-                availability.append(
-                    {"product": product.value, "status": "NO_COVERAGE", "file_count": 0}
-                )
-            except (CatalogContractChanged, ProviderUnavailableError) as exc:
-                availability.append(
-                    {"product": product.value, "status": "UNKNOWN", "file_count": 0}
-                )
-                warnings.append(f"{product.value}: {exc}")
-        terminal = JobState.COMPLETE_WITH_WARNINGS if warnings else JobState.COMPLETE
-        write_result(
-            result_path,
-            {
-                "schema_version": RESULT_SCHEMA_VERSION,
-                "task_id": job.task_id,
-                "import_id": job.import_id,
-                "state": terminal.value,
-                "availability": availability,
-                "warnings": warnings,
-            },
-        )
-        emit(terminal, 1.0, "Product availability check completed")
-        return terminal
-    except JobCancelled as exc:
-        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
-    except (JobFormatError, UserInputError) as exc:
-        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
-
-
 def run_delivery_job(
     job_path: Path,
     cnig_factory: Callable[[], CNIGPortalClient] = CNIGPortalClient,
@@ -1057,7 +885,7 @@ def run_delivery_job(
     try:
         emit(JobState.VALIDATING, 0.02, "Validating data delivery job")
         job = read_discovery_job(job_path)
-        plan = _create_plan(job)
+        plan = create_legacy_import_plan(job)
         local_imagery = (
             inspect_local_imagery(Path(job.local_imagery_path))
             if job.local_imagery_path is not None
@@ -1075,7 +903,7 @@ def run_delivery_job(
             local_paths = tuple(Path(path) for path in job.local_elevation_paths)
             elevation_client: ElevationDownloader = _LocalElevationClient(local_paths)
             emit(JobState.DISCOVERING, 0.05, "Confirming local elevation sources")
-            discovery = _local_discovery(job)
+            discovery = discover_local_sources(job)
         else:
             portal = cnig_factory()
             elevation_client = portal
@@ -1092,18 +920,11 @@ def run_delivery_job(
             if cancelled():
                 raise JobCancelled("Data delivery was cancelled")
             now = monotonic()
-            complete = (
-                transfer.cached
-                or (
-                    transfer.expected_bytes is not None
-                    and transfer.written_bytes >= transfer.expected_bytes
-                )
+            complete = transfer.cached or (
+                transfer.expected_bytes is not None
+                and transfer.written_bytes >= transfer.expected_bytes
             )
-            if (
-                last_transfer_event_time
-                and not complete
-                and now - last_transfer_event_time < 0.25
-            ):
+            if last_transfer_event_time and not complete and now - last_transfer_event_time < 0.25:
                 return
             last_transfer_event_time = now
             offset = transfer.file_index
@@ -1112,9 +933,7 @@ def run_delivery_job(
                 offset += len(discovery.items)
                 state = JobState.DOWNLOADING_IMAGERY
             fraction = (
-                transfer.written_bytes / transfer.expected_bytes
-                if transfer.expected_bytes
-                else 0.0
+                transfer.written_bytes / transfer.expected_bytes if transfer.expected_bytes else 0.0
             )
             progress = 0.1 + 0.85 * min(1.0, (offset + fraction) / max(1, file_count))
             message = _transfer_message(transfer)
@@ -1151,6 +970,7 @@ def run_delivery_job(
             report_processing,
             region=job.region,
         )
+
         def report_written(completed: int, total: int) -> None:
             emit(
                 JobState.PROCESSING_ELEVATION,
@@ -1191,9 +1011,7 @@ def run_delivery_job(
                     "height": request.height,
                     "gsd_metres": request.gsd_metres,
                 }
-                for path, request in zip(
-                    delivered.imagery_paths, imagery_requests, strict=False
-                )
+                for path, request in zip(delivered.imagery_paths, imagery_requests, strict=False)
             ]
         )
         payload = {
@@ -1213,7 +1031,9 @@ def run_delivery_job(
                 "imagery_gsd_metres": (
                     local_imagery.gsd_metres
                     if local_imagery is not None
-                    else None if plan.imagery is None else plan.imagery.gsd_metres
+                    else None
+                    if plan.imagery is None
+                    else plan.imagery.gsd_metres
                 ),
                 "manual_tile_rows": plan.manual_tile_rows,
                 "manual_tile_columns": plan.manual_tile_columns,
@@ -1242,12 +1062,8 @@ def run_delivery_job(
                 ),
                 "license": "CC BY 4.0-compatible IGN-CNIG data terms",
                 "retrieved_at_utc": datetime.now(UTC).isoformat(),
-                "pnoa_wms_url": (
-                    WMS_URL if job.use_imagery and local_imagery is None else None
-                ),
-                "pnoa_layer": (
-                    PNOA_LAYER if job.use_imagery and local_imagery is None else None
-                ),
+                "pnoa_wms_url": (WMS_URL if job.use_imagery and local_imagery is None else None),
+                "pnoa_layer": (PNOA_LAYER if job.use_imagery and local_imagery is None else None),
             },
             "elevation_paths": [str(path) for path in delivered.elevation_paths],
             "imagery_paths": result_imagery_paths,
@@ -1278,13 +1094,13 @@ def run_delivery_job(
         )
         return terminal_state
     except JobCancelled as exc:
-        return _finish_error(result_path, emit, JobState.CANCELLED, str(exc))
+        return finish_job_error(result_path, emit, JobState.CANCELLED, str(exc))
     except NoCoverageError as exc:
-        return _finish_error(result_path, emit, JobState.NO_COVERAGE, str(exc))
+        return finish_job_error(result_path, emit, JobState.NO_COVERAGE, str(exc))
     except CatalogContractChanged as exc:
-        return _finish_error(result_path, emit, JobState.PROVIDER_CHANGED, str(exc))
+        return finish_job_error(result_path, emit, JobState.PROVIDER_CHANGED, str(exc))
     except ProviderUnavailableError as exc:
-        return _finish_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
+        return finish_job_error(result_path, emit, JobState.NETWORK_ERROR, str(exc))
     except (
         DownloadAuthorizationRequired,
         DownloadIntegrityError,
@@ -1293,7 +1109,7 @@ def run_delivery_job(
         UserInputError,
         ValueError,
     ) as exc:
-        return _finish_error(result_path, emit, JobState.INVALID_DATA, str(exc))
+        return finish_job_error(result_path, emit, JobState.INVALID_DATA, str(exc))
 
 
 def _transfer_message(transfer: TransferProgress) -> str:
@@ -1408,69 +1224,3 @@ def _write_composed_tiles(
             }
         )
     return payload
-
-
-def _create_plan(job: DiscoveryJob) -> ImportPlan:
-    local_native_resolution = None
-    local_projected_bounds = None
-    if job.local_elevation_paths:
-        from ..core.local_elevation import inspect_local_elevation
-
-        inspection = inspect_local_elevation(
-            tuple(Path(path) for path in job.local_elevation_paths)
-        )
-        local_native_resolution = inspection.native_resolution_metres
-        local_projected_bounds = inspection.projected_bounds
-    return create_import_plan(
-        job.bounds,
-        job.product,
-        job.elevation_resolution_metres,
-        job.use_imagery and job.local_imagery_path is None,
-        job.imagery_gsd_metres,
-        job.manual_tile_rows,
-        job.manual_tile_columns,
-        job.maximum_elevation_samples,
-        job.maximum_imagery_pixels,
-        native_resolution_override=local_native_resolution,
-        projected_bounds_override=local_projected_bounds,
-    )
-
-
-def _local_discovery(job: DiscoveryJob) -> DiscoveryResult:
-    """Validate local files and represent them as traceable discovery items."""
-
-    paths = tuple(Path(value) for value in job.local_elevation_paths)
-    if not paths:
-        raise UserInputError("No local elevation rasters were provided")
-    if len({path.name.casefold() for path in paths}) != len(paths):
-        raise UserInputError("Local elevation raster filenames must be unique")
-    items: list[CatalogItem] = []
-    for index, path in enumerate(paths):
-        if not path.is_file():
-            raise UserInputError(f"Local elevation raster does not exist: {path}")
-        open_float_tile_reader(path)
-        size_mb = path.stat().st_size / 1_000_000
-        items.append(
-            CatalogItem(
-                job.product,
-                path.name,
-                "LOCAL_COG",
-                f"local-{index}",
-                size_mb=size_mb,
-            )
-        )
-    return DiscoveryResult(tuple(items), len(items), 0)
-
-
-def _finish_error(
-    result_path: Path,
-    emit: Callable[[JobState, float, str], None],
-    state: JobState,
-    message: str,
-) -> JobState:
-    write_result(
-        result_path,
-        {"schema_version": RESULT_SCHEMA_VERSION, "state": state.value, "error": message},
-    )
-    emit(state, 1.0, message)
-    return state
