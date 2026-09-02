@@ -70,6 +70,7 @@ from .legacy_discovery import (
     run_discovery_job as run_discovery_job,
 )
 from .models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
+from .output import transfer_message, write_processed_tiles
 from .storage import (
     append_progress_event,
     finish_job_error,
@@ -171,7 +172,7 @@ def run_confirmed_acquisition_job(
             emit(
                 state,
                 stage_progress(stage, fraction),
-                _transfer_message(progress),
+                transfer_message(progress),
             )
 
         def processing(completed: int, total: int) -> None:
@@ -261,13 +262,13 @@ def run_confirmed_acquisition_job(
         )
         terrain_source_payload: list[dict[str, object]] | None = None
         if bathymetry is None:
-            processed_payload = _write_processed_tiles(
+            processed_payload = write_processed_tiles(
                 prepared.tiles,
                 processed_directory,
                 cancelled,
             )
         else:
-            terrain_source_payload = _write_processed_tiles(
+            terrain_source_payload = write_processed_tiles(
                 prepared.tiles,
                 processed_directory / "terrain_source",
                 cancelled,
@@ -936,7 +937,7 @@ def run_delivery_job(
                 transfer.written_bytes / transfer.expected_bytes if transfer.expected_bytes else 0.0
             )
             progress = 0.1 + 0.85 * min(1.0, (offset + fraction) / max(1, file_count))
-            message = _transfer_message(transfer)
+            message = transfer_message(transfer)
             emit(state, progress, message)
 
         delivered = deliver_plan_sources(
@@ -978,7 +979,7 @@ def run_delivery_job(
                 f"Writing terrain tile {completed} of {total}",
             )
 
-        processed_payload = _write_processed_tiles(
+        processed_payload = write_processed_tiles(
             processed_tiles,
             processed_directory,
             cancelled,
@@ -1110,60 +1111,6 @@ def run_delivery_job(
         ValueError,
     ) as exc:
         return finish_job_error(result_path, emit, JobState.INVALID_DATA, str(exc))
-
-
-def _transfer_message(transfer: TransferProgress) -> str:
-    kind = {
-        "elevation": "elevation",
-        "imagery": "imagery",
-        "dtm": "DTM",
-        "dsm": "DSM",
-        "bathymetry": "GEBCO bathymetry",
-    }.get(transfer.kind, transfer.kind)
-    position = f"{transfer.file_index + 1}/{transfer.file_count}"
-    if transfer.cached:
-        return f"Using cached {kind} {position}: {transfer.filename}"
-    written_mib = transfer.written_bytes / 1_048_576
-    if transfer.expected_bytes:
-        expected_mib = transfer.expected_bytes / 1_048_576
-        percentage = min(100.0, transfer.written_bytes / transfer.expected_bytes * 100.0)
-        size = f"{written_mib:.1f}/{expected_mib:.1f} MiB, {percentage:.0f}%"
-    else:
-        size = f"{written_mib:.1f} MiB"
-    return f"Downloading {kind} {position}: {transfer.filename} ({size})"
-
-
-def _write_processed_tiles(
-    tiles: tuple[ProcessedElevationTile, ...],
-    directory: Path,
-    cancellation_requested: Callable[[], bool],
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> list[dict[str, object]]:
-    payload: list[dict[str, object]] = []
-    for processed in tiles:
-        if cancellation_requested():
-            raise JobCancelled("Elevation output writing was cancelled")
-        filename = (
-            f"elevation_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
-            f"r{processed.tile.row}_c{processed.tile.column}.npy"
-        )
-        output_path = directory / filename
-        write_elevation_array(output_path, processed.data)
-        payload.append(
-            {
-                "path": str(output_path),
-                "bounds": asdict(processed.tile.bounds),
-                "rows": processed.tile.rows,
-                "columns": processed.tile.columns,
-                "nodata": processed.nodata,
-                "overlap_valid_pixels": processed.overlap_valid_pixels,
-                "conflicting_valid_pixels": processed.conflicting_valid_pixels,
-                "maximum_overlap_difference": processed.maximum_overlap_difference,
-            }
-        )
-        if progress_callback is not None:
-            progress_callback(len(payload), len(tiles))
-    return payload
 
 
 def _write_processed_bathymetry(
