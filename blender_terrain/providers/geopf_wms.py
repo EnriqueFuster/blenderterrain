@@ -413,6 +413,19 @@ class GeopfWMSAcquirer:
             path, cached = client.download_bil(
                 window, target, report, cancellation_requested
             )
+            if cached and progress_callback is not None:
+                size = path.stat().st_size
+                progress_callback(
+                    TransferProgress(
+                        selection.kind.value,
+                        index,
+                        len(windows),
+                        f"WMS block {index + 1}/{len(windows)}",
+                        size,
+                        size,
+                        cached=True,
+                    )
+                )
             paths.append(path)
             auxiliary.append(path.with_suffix(path.suffix + ".json"))
             cached_count += int(cached)
@@ -473,6 +486,19 @@ class GeopfWMSAcquirer:
                 report,
                 cancellation_requested,
             )
+            if cached and progress_callback is not None:
+                size = path.stat().st_size
+                progress_callback(
+                    TransferProgress(
+                        DatasetKind.IMAGERY.value,
+                        index,
+                        len(tiles),
+                        f"WMS block {index + 1}/{len(tiles)}",
+                        size,
+                        size,
+                        cached=True,
+                    )
+                )
             paths.append(path)
             auxiliary.append(path.with_suffix(path.suffix + ".json"))
             cached_count += int(cached)
