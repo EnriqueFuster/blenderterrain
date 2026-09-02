@@ -367,7 +367,6 @@ def _draw_imported_section(layout: bpy.types.UILayout, context: bpy.types.Contex
         editable.prop(properties, "terrain_displacement_midlevel")
         editable.prop(properties, "terrain_subdivision_viewport", text=viewport_label)
         editable.prop(properties, "terrain_subdivision_render", text=render_label)
-        editable.prop(properties, "terrain_displacement_enabled")
         editable.prop(properties, "terrain_smooth_angle")
         editable.operator("blender_terrain.apply_import_settings")
     else:

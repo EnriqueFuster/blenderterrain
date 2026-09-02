@@ -70,6 +70,8 @@ def main() -> None:
             "PNOA_MA",
             "ESA_WORLDCOVER_S2_2021",
         }
+        properties.imagery_product = "PNOA_MA"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         spanish_region = extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
             json.loads(properties.roi_geometry_json)
         )
@@ -158,12 +160,29 @@ def main() -> None:
             "COPERNICUS_GLO30_2021",
             "GEDTM30_V11",
         ]
-        assert properties.product == "FR_RGE_ALTI_1M"
+        assert properties.product == "COPERNICUS_GLO30_2021"
         assert json.loads(properties.available_imagery_product_ids_json) == [
             "ESA_WORLDCOVER_S2_2021",
             "FR_BD_ORTHO",
         ]
         assert properties.imagery_product == "FR_BD_ORTHO"
+        properties.product = "FR_RGE_ALTI_1M"
+        properties.imagery_product = "FR_BD_ORTHO"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert properties.crs_summary == "EPSG:2154"
+        assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
+        assert "RGE ALTI" in properties.discovery_summary
+        french_plan = job_controller._acquisition_plan_from_properties(
+            properties,
+            extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+                json.loads(properties.roi_geometry_json)
+            ),
+        )
+        assert {selection.product_id for selection in french_plan.selections.selections} == {
+            "FR_RGE_ALTI_1M",
+            "FR_BD_ORTHO",
+            "GEBCO_2026",
+        }
         properties.product = "GEDTM30_V11"
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         assert properties.selected_resolution == 30.0
