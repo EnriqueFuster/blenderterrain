@@ -21,7 +21,6 @@ from ..catalog.selection import (
 )
 from ..core import (
     BBoxWGS84,
-    ComposedTerrainTile,
     ImportPlan,
     ProcessedBathymetryTile,
     ProcessedElevationTile,
@@ -45,7 +44,6 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
-from ..io.elevation_output import write_elevation_array, write_quality_array
 from ..io.png_validation import validate_png
 from ..models import DatasetProduct, ProjectedBounds
 from ..providers.pnoa_planning import plan_pnoa_tiles
@@ -54,7 +52,12 @@ from ..providers.registry import build_raster_acquirers
 from .legacy_delivery import ElevationProcessor
 from .legacy_delivery import run_delivery_job as run_delivery_job
 from .models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
-from .output import transfer_message, write_processed_tiles
+from .output import (
+    transfer_message,
+    write_composed_tiles,
+    write_processed_bathymetry,
+    write_processed_tiles,
+)
 from .storage import (
     append_progress_event,
     finish_job_error,
@@ -256,12 +259,12 @@ def run_confirmed_acquisition_job(
                 processed_directory / "terrain_source",
                 cancelled,
             )
-            processed_payload = _write_composed_tiles(
+            processed_payload = write_composed_tiles(
                 compose_terrain_bathymetry(prepared.tiles, bathymetry.tiles),
                 processed_directory,
                 cancelled,
             )
-        bathymetry_payload = _write_processed_bathymetry(
+        bathymetry_payload = write_processed_bathymetry(
             () if bathymetry is None else bathymetry.tiles,
             processed_directory / "bathymetry",
             cancelled,
@@ -808,63 +811,3 @@ def prepare_confirmed_bathymetry(
         region,
     )
     return PreparedBathymetry(acquired, tiles)
-
-
-def _write_processed_bathymetry(
-    tiles: tuple[ProcessedBathymetryTile, ...],
-    directory: Path,
-    cancellation_requested: Callable[[], bool],
-) -> list[dict[str, object]]:
-    payload: list[dict[str, object]] = []
-    for processed in tiles:
-        if cancellation_requested():
-            raise JobCancelled("Bathymetry output writing was cancelled")
-        stem = (
-            f"bathymetry_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
-            f"r{processed.tile.row}_c{processed.tile.column}"
-        )
-        elevation_path = directory / f"{stem}.npy"
-        tid_path = directory / f"{stem}_tid.npy"
-        write_elevation_array(elevation_path, processed.elevation)
-        write_quality_array(tid_path, processed.tid)
-        payload.append(
-            {
-                "path": str(elevation_path),
-                "tid_path": str(tid_path),
-                "bounds": asdict(processed.tile.bounds),
-                "rows": processed.tile.rows,
-                "columns": processed.tile.columns,
-                "nodata": processed.nodata,
-            }
-        )
-    return payload
-
-
-def _write_composed_tiles(
-    tiles: tuple[ComposedTerrainTile, ...],
-    directory: Path,
-    cancellation_requested: Callable[[], bool],
-) -> list[dict[str, object]]:
-    payload: list[dict[str, object]] = []
-    for processed in tiles:
-        if cancellation_requested():
-            raise JobCancelled("Composed terrain output writing was cancelled")
-        stem = (
-            f"elevation_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
-            f"r{processed.tile.row}_c{processed.tile.column}"
-        )
-        elevation_path = directory / f"{stem}.npy"
-        mask_path = directory / f"{stem}_marine_mask.npy"
-        write_elevation_array(elevation_path, processed.elevation)
-        write_quality_array(mask_path, processed.marine_mask)
-        payload.append(
-            {
-                "path": str(elevation_path),
-                "marine_mask_path": str(mask_path),
-                "bounds": asdict(processed.tile.bounds),
-                "rows": processed.tile.rows,
-                "columns": processed.tile.columns,
-                "nodata": processed.nodata,
-            }
-        )
-    return payload

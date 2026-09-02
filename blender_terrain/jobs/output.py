@@ -6,9 +6,14 @@ from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
-from ..core import ProcessedElevationTile, TransferProgress
+from ..core import (
+    ComposedTerrainTile,
+    ProcessedBathymetryTile,
+    ProcessedElevationTile,
+    TransferProgress,
+)
 from ..errors import JobCancelled
-from ..io.elevation_output import write_elevation_array
+from ..io.elevation_output import write_elevation_array, write_quality_array
 
 
 def transfer_message(transfer: TransferProgress) -> str:
@@ -66,4 +71,68 @@ def write_processed_tiles(
         )
         if progress_callback is not None:
             progress_callback(len(payload), len(tiles))
+    return payload
+
+
+def write_processed_bathymetry(
+    tiles: tuple[ProcessedBathymetryTile, ...],
+    directory: Path,
+    cancellation_requested: Callable[[], bool],
+) -> list[dict[str, object]]:
+    """Persist prepared bathymetry and quality arrays."""
+
+    payload: list[dict[str, object]] = []
+    for processed in tiles:
+        if cancellation_requested():
+            raise JobCancelled("Bathymetry output writing was cancelled")
+        stem = (
+            f"bathymetry_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
+            f"r{processed.tile.row}_c{processed.tile.column}"
+        )
+        elevation_path = directory / f"{stem}.npy"
+        tid_path = directory / f"{stem}_tid.npy"
+        write_elevation_array(elevation_path, processed.elevation)
+        write_quality_array(tid_path, processed.tid)
+        payload.append(
+            {
+                "path": str(elevation_path),
+                "tid_path": str(tid_path),
+                "bounds": asdict(processed.tile.bounds),
+                "rows": processed.tile.rows,
+                "columns": processed.tile.columns,
+                "nodata": processed.nodata,
+            }
+        )
+    return payload
+
+
+def write_composed_tiles(
+    tiles: tuple[ComposedTerrainTile, ...],
+    directory: Path,
+    cancellation_requested: Callable[[], bool],
+) -> list[dict[str, object]]:
+    """Persist terrain combined with bathymetry and its marine mask."""
+
+    payload: list[dict[str, object]] = []
+    for processed in tiles:
+        if cancellation_requested():
+            raise JobCancelled("Composed terrain output writing was cancelled")
+        stem = (
+            f"elevation_epsg{processed.tile.bounds.epsg}_z{processed.zone_index}_"
+            f"r{processed.tile.row}_c{processed.tile.column}"
+        )
+        elevation_path = directory / f"{stem}.npy"
+        mask_path = directory / f"{stem}_marine_mask.npy"
+        write_elevation_array(elevation_path, processed.elevation)
+        write_quality_array(mask_path, processed.marine_mask)
+        payload.append(
+            {
+                "path": str(elevation_path),
+                "marine_mask_path": str(mask_path),
+                "bounds": asdict(processed.tile.bounds),
+                "rows": processed.tile.rows,
+                "columns": processed.tile.columns,
+                "nodata": processed.nodata,
+            }
+        )
     return payload
