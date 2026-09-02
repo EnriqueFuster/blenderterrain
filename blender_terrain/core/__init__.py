@@ -24,7 +24,7 @@ from .grid import (
     tile_grid_manual,
 )
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
-from .imagery import ImageryTileRequest, plan_imagery_tiles
+from .imagery import ImageryTileRequest, plan_imagery_tiles, plan_texture_tiles
 from .imagery_processing import ProcessedImageryTile, process_worldcover_imagery
 from .local_elevation import (
     LocalElevationInspection,
@@ -132,6 +132,7 @@ __all__ = [
     "normalize_heightmap",
     "parse_bbox",
     "plan_imagery_tiles",
+    "plan_texture_tiles",
     "process_elevation_tiles",
     "process_gebco_tiles",
     "process_worldcover_imagery",

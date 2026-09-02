@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Protocol
 
 from ..core.delivery import DeliveryResult, TransferProgress
-from ..core.imagery import ImageryTileRequest, plan_imagery_tiles
+from ..core.imagery import ImageryTileRequest
 from ..core.planning import ImportPlan
 from ..errors import BlenderTerrainError, JobCancelled
 from ..io.png_validation import validate_png
 from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, ProjectedBounds
+from .pnoa_planning import plan_pnoa_tiles
 
 
 class ElevationDownloader(Protocol):
@@ -57,7 +58,7 @@ def deliver_plan_sources(
     """Download or validate sources required by a legacy Spanish import plan."""
 
     elevation_directory = cache_directory / "elevation"
-    imagery_requests = plan_imagery_tiles(plan)
+    imagery_requests = plan_pnoa_tiles(plan)
     imagery_directory = cache_directory / "imagery" / _imagery_cache_key(imagery_requests)
     elevation_paths: list[Path] = list(local_elevation_paths)
     imagery_paths: list[Path] = []

@@ -34,7 +34,6 @@ from ..core import (
     create_import_plan,
     geographic_source_bounds,
     inspect_local_imagery,
-    plan_imagery_tiles,
     process_elevation_tiles,
     process_gebco_tiles,
     process_worldcover_imagery,
@@ -62,6 +61,7 @@ from ..providers.cnig_discovery import (
     discover_sources,
 )
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
+from ..providers.pnoa_planning import plan_pnoa_tiles
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from ..providers.registry import build_raster_acquirers
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
@@ -723,7 +723,7 @@ def _prepare_pnoa_imagery(
 
     if request.kind is not DatasetKind.IMAGERY:
         raise UserInputError("PNOA requires an imagery layer request")
-    requests = plan_imagery_tiles(import_plan)
+    requests = plan_pnoa_tiles(import_plan)
     output_directory.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
     cached_count = 0
@@ -1082,7 +1082,7 @@ def run_delivery_job(
             emit(JobState.DISCOVERING, 0.05, "Confirming current CNIG elevation sources")
             discovery = discover_sources(plan, portal)
         discovery_finished_at = monotonic()
-        imagery_requests = plan_imagery_tiles(plan)
+        imagery_requests = plan_pnoa_tiles(plan)
         imagery_count = len(imagery_requests)
         file_count = len(discovery.items) + imagery_count
         last_transfer_event_time = 0.0

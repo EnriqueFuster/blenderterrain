@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from blender_terrain.core import BBoxWGS84, create_import_plan, plan_imagery_tiles
+from blender_terrain.core import (
+    BBoxWGS84,
+    create_import_plan,
+    plan_imagery_tiles,
+    plan_texture_tiles,
+)
 from blender_terrain.models import DatasetProduct
 
 
@@ -43,6 +48,21 @@ class ImageryTilePlanningTests(unittest.TestCase):
 
         self.assertEqual({request.bounds.epsg for request in requests}, {25830, 25831})
         self.assertEqual({request.zone_index for request in requests}, {0, 1})
+
+    def test_uses_provider_prefix_without_changing_the_texture_grid(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+            DatasetProduct.MDT02,
+            10.0,
+            True,
+            2.0,
+        )
+
+        generic = plan_texture_tiles(plan, "worldcover")
+        legacy = plan_imagery_tiles(plan)
+
+        self.assertEqual([tile.bounds for tile in generic], [tile.bounds for tile in legacy])
+        self.assertTrue(all(tile.filename.startswith("worldcover_") for tile in generic))
 
     def test_returns_no_requests_when_imagery_is_disabled(self) -> None:
         plan = create_import_plan(
