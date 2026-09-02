@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 
 from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
-from ..models import DatasetProduct, ProjectedBounds
+from ..models import ProjectedBounds
 from .crs import (
     ProjectedWorkArea,
     split_bbox_by_utm_zone,
@@ -26,16 +26,6 @@ from .projection import project_work_area_bounds
 from .roi import BBoxWGS84
 
 ELEVATION_RESOLUTIONS = (0.5, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0, 200.0)
-PRODUCT_NATIVE_RESOLUTION = {
-    DatasetProduct.MDT50CM: 0.5,
-    DatasetProduct.MDT02: 2.0,
-    DatasetProduct.MDT05: 5.0,
-    DatasetProduct.MDT25: 25.0,
-    DatasetProduct.MDT200: 200.0,
-    DatasetProduct.MDS50CM: 0.5,
-    DatasetProduct.MDS02: 2.0,
-    DatasetProduct.MDS05: 5.0,
-}
 IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
 MAX_ELEVATION_SAMPLES = 16_777_216
 PLANNING_WMS_TILE_DIMENSION = 4_096
@@ -78,7 +68,7 @@ class ImportPlan:
 
     bounds: BBoxWGS84
     work_areas: tuple[ProjectedWorkArea, ...]
-    product: DatasetProduct | str
+    product: str
     elevation_resolution_metres: float
     elevation: ROIEstimate
     imagery: ImageryEstimate | None
@@ -165,7 +155,7 @@ class ImportPlan:
 
 def create_import_plan(
     bounds: BBoxWGS84,
-    product: DatasetProduct | str,
+    product: str,
     elevation_resolution_metres: float | None,
     use_imagery: bool,
     imagery_gsd_metres: float | None,
@@ -184,11 +174,13 @@ def create_import_plan(
     if maximum_elevation_samples <= 0 or maximum_imagery_pixels <= 0:
         raise UserInputError("Resource limits must be positive")
     if native_resolution_override is None:
-        if not isinstance(product, DatasetProduct) or product not in PRODUCT_NATIVE_RESOLUTION:
+        from ..providers.cnig_products import legacy_native_resolution
+
+        native_resolution = legacy_native_resolution(product)
+        if native_resolution is None:
             raise UserInputError(
                 "A catalog product requires an explicit native elevation resolution"
             )
-        native_resolution = PRODUCT_NATIVE_RESOLUTION[product]
     else:
         native_resolution = native_resolution_override
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
