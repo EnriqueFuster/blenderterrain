@@ -63,12 +63,6 @@ from .legacy_discovery import (
     create_legacy_import_plan,
     discover_local_sources,
 )
-from .legacy_discovery import (
-    run_availability_job as run_availability_job,
-)
-from .legacy_discovery import (
-    run_discovery_job as run_discovery_job,
-)
 from .models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
 from .output import transfer_message, write_processed_tiles
 from .storage import (

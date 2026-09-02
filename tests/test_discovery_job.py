@@ -11,6 +11,10 @@ import numpy as np
 from blender_terrain.core import BBoxWGS84, ProcessedElevationTile
 from blender_terrain.core.grid import tile_grid
 from blender_terrain.errors import CatalogContractChanged, ProviderUnavailableError
+from blender_terrain.jobs.legacy_discovery import (
+    run_availability_job,
+    run_discovery_job,
+)
 from blender_terrain.jobs.models import DiscoveryJob, JobState
 from blender_terrain.jobs.storage import (
     is_cancellation_requested,
@@ -18,11 +22,7 @@ from blender_terrain.jobs.storage import (
     request_cancellation,
     write_discovery_job,
 )
-from blender_terrain.jobs.worker import (
-    run_availability_job,
-    run_delivery_job,
-    run_discovery_job,
-)
+from blender_terrain.jobs.worker import run_delivery_job
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProjectedBounds
 
 
