@@ -37,6 +37,20 @@ _PRODUCT_ITEMS = (
         0,
         10,
     ),
+    (
+        "FR_RGE_ALTI_1M",
+        "DTM (RGE ALTI 1 m, France)",
+        "Official French derived terrain model",
+        0,
+        11,
+    ),
+    (
+        "FR_MNS_CORREL_50CM",
+        "DSM (MNS-Correl 50 cm, France)",
+        "Official French surface model with heterogeneous coverage",
+        0,
+        12,
+    ),
 )
 
 
@@ -62,6 +76,7 @@ def _imagery_product_items(
         available = set()
     items = (
         ("PNOA_MA", "PNOA Maximum Actuality", "Official Spanish aerial orthophotography"),
+        ("FR_BD_ORTHO", "BD ORTHO", "Official French aerial orthophotography"),
         ("ESA_WORLDCOVER_S2_2021", "ESA WorldCover 2021", "Global static 10 m imagery"),
     )
     _IMAGERY_ITEMS_CACHE[:] = [
@@ -374,7 +389,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
                     f"{value} m",
                     f"Resample elevation to one value every {value} metres",
                 )
-                for value in (0.5, 2, 5, 10, 20, 25, 50, 100, 200)
+                for value in (0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200)
             ),
         ),
         default="AUTO",

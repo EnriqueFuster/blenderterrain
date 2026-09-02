@@ -58,7 +58,7 @@ from ..errors import (
 from ..io.bigtiff_tiles import open_float_tile_reader
 from ..io.elevation_output import write_elevation_array, write_quality_array
 from ..io.png_validation import validate_png
-from ..models import CatalogItem, DatasetProduct
+from ..models import CatalogItem, DatasetProduct, ProjectedBounds
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from ..providers.registry import build_raster_acquirers
@@ -643,7 +643,7 @@ def prepare_confirmed_imagery(
             cancellation_requested,
             pnoa_factory(),
         )
-    if product.id != "ESA_WORLDCOVER_S2_2021":
+    if product.id not in {"ESA_WORLDCOVER_S2_2021", "FR_BD_ORTHO"}:
         raise UserInputError("Selected imagery product is not supported by this worker")
     imagery_plan = AcquisitionPlan(
         AcquisitionRequest(plan.request.roi, (request,), plan.request.license_profile),
@@ -657,6 +657,8 @@ def prepare_confirmed_imagery(
         acquirer_factory,
         geographic_source_bounds(import_plan),
     )[0]
+    if product.id == "FR_BD_ORTHO":
+        return PreparedImagery(acquired, _projected_wms_imagery_tiles(acquired))
     tiles = process_worldcover_imagery(
         acquired.paths,
         import_plan,
@@ -665,6 +667,44 @@ def prepare_confirmed_imagery(
         cancellation_requested,
     )
     return PreparedImagery(acquired, tiles)
+
+
+def _projected_wms_imagery_tiles(
+    acquired: AcquiredRasterLayer,
+) -> tuple[ProcessedImageryTile, ...]:
+    """Read georeferencing written beside already-projected WMS images."""
+
+    sidecars = {path.with_suffix("").name: path for path in acquired.auxiliary_paths}
+    outputs: list[ProcessedImageryTile] = []
+    for path in acquired.paths:
+        sidecar = sidecars.get(path.name)
+        if sidecar is None:
+            raise RasterFormatError("Projected WMS imagery provenance is missing")
+        try:
+            payload = json.loads(sidecar.read_text(encoding="utf-8"))
+            bbox = payload["bbox"]
+            width = int(payload["width"])
+            height = int(payload["height"])
+            bounds = ProjectedBounds(
+                float(bbox[0]),
+                float(bbox[1]),
+                float(bbox[2]),
+                float(bbox[3]),
+                int(payload["crs_epsg"]),
+            )
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RasterFormatError("Projected WMS imagery provenance is invalid") from exc
+        validate_png(path, width, height)
+        outputs.append(
+            ProcessedImageryTile(
+                path,
+                bounds,
+                width,
+                height,
+                (bounds.east - bounds.west) / width,
+            )
+        )
+    return tuple(outputs)
 
 
 def _prepare_pnoa_imagery(

@@ -47,8 +47,6 @@ from ..providers.gebco import PRODUCT_ID as GEBCO_PRODUCT_ID
 from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
 from ..providers.worldcover import PRODUCT_ID as WORLDCOVER_PRODUCT_ID
 
-_GLOBAL_PRODUCT_IDS = {GLO30_PRODUCT_ID, GEDTM30_PRODUCT_ID}
-
 _POLL_INTERVAL_SECONDS = 0.25
 _TERMINAL_STATES = {
     JobState.COMPLETE.value,
@@ -136,17 +134,23 @@ def start_discovery(context: bpy.types.Context) -> None:
     if not properties.is_valid:
         raise UserInputError("Validate the ROI before discovering sources")
     properties.discovery_ready = False
-    if properties.product in _GLOBAL_PRODUCT_IDS:
+    product = load_bundled_catalog().product(properties.product)
+    if product.provider_id != "ign_cnig":
         region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
         count = (
-            len(glo30_tiles_for_roi(region.bounds)) if properties.product == GLO30_PRODUCT_ID else 2
+            len(glo30_tiles_for_roi(region.bounds))
+            if properties.product == GLO30_PRODUCT_ID
+            else 0
         )
         properties.discovered_file_count = count
-        properties.discovery_summary = (
-            f"{count} Copernicus GLO-30 tile(s) required"
-            if properties.product == GLO30_PRODUCT_ID
-            else "GEDTM30 elevation and uncertainty windows required"
-        )
+        if properties.product == GLO30_PRODUCT_ID:
+            properties.discovery_summary = f"{count} Copernicus GLO-30 tile(s) required"
+        elif properties.product == GEDTM30_PRODUCT_ID:
+            properties.discovery_summary = "GEDTM30 elevation and uncertainty windows required"
+        else:
+            properties.discovery_summary = (
+                f"{product.name} WMS windows required; valid pixels are confirmed during download"
+            )
         if properties.bathymetry_mode == "GEBCO":
             properties.discovery_summary += "; GEBCO elevation and quality windows required"
         if properties.imagery_product != "NONE":
@@ -154,7 +158,7 @@ def start_discovery(context: bpy.types.Context) -> None:
         properties.discovery_ready = True
         properties.job_state = JobState.COMPLETE.value
         properties.job_progress = 1.0
-        properties.job_message = "Global DSM sources resolved from the confirmed ROI"
+        properties.job_message = "Selected raster sources resolved from the confirmed ROI"
         return
     _start_worker(context, properties, "discovery", "Starting background source discovery")
 
@@ -252,9 +256,8 @@ def _acquisition_plan_from_properties(properties: Any, region: RegionOfInterest)
         imagery_product = catalog.product(properties.imagery_product)
         imagery_layer = LayerRequest(
             DatasetKind.IMAGERY,
-            properties.selected_imagery_gsd or 10.0
-            if is_global
-            else (None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)),
+            properties.selected_imagery_gsd
+            or imagery_product.capabilities.native_resolution_m,
             "2021" if is_global else None,
         )
         layers.append(imagery_layer)

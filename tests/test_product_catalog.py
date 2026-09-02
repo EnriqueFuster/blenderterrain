@@ -71,7 +71,7 @@ def test_researched_products_are_not_selectable() -> None:
         if product.implementation_status is ImplementationStatus.RESEARCHED
     )
 
-    assert {product.jurisdiction for product in researched} == {"FR", "CH"}
+    assert {product.jurisdiction for product in researched} == {"CH"}
     assert researched
     assert not any(product.selectable for product in researched)
 
@@ -99,6 +99,7 @@ def test_french_products_declare_executable_wms_contracts() -> None:
         product.wms is not None and product.wms.maximum_dimension == 4096
         for product in (rge_alti, mns, ortho)
     )
+    assert all(product.selectable for product in (rge_alti, mns, ortho))
 
 
 def test_selectable_products_have_commercial_safe_license_metadata() -> None:

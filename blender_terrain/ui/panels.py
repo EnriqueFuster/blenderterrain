@@ -142,11 +142,13 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         products_loaded = properties.available_product_ids_json != "[]"
         if products_loaded:
             layout.prop(properties, "product")
-        global_product = properties.product in {
+        cnig_product = properties.product not in {
             "COPERNICUS_GLO30_2021",
             "GEDTM30_V11",
+            "FR_RGE_ALTI_1M",
+            "FR_MNS_CORREL_50CM",
         }
-        if products_loaded and not global_product:
+        if products_loaded and cnig_product:
             layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
         if properties.product_availability_summary:
             availability_box = layout.box()
@@ -169,7 +171,7 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         _draw_elevation_output_settings(layout, properties)
     else:
         layout.prop(properties, "imagery_product")
-        if properties.imagery_product == "PNOA_MA":
+        if properties.imagery_product in {"PNOA_MA", "FR_BD_ORTHO"}:
             layout.prop(properties, "imagery_gsd", text="Resolution")
     if properties.is_valid:
         details = layout.box()
@@ -406,6 +408,8 @@ def _elevation_product_label(product_id: str) -> str:
     return {
         "COPERNICUS_GLO30_2021": "Copernicus GLO-30 DSM",
         "GEDTM30_V11": "GEDTM30 v1.1 modelled DTM",
+        "FR_RGE_ALTI_1M": "RGE ALTI 1 m DTM",
+        "FR_MNS_CORREL_50CM": "MNS-Correl 50 cm DSM",
     }.get(product_id, product_id)
 
 

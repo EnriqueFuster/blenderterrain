@@ -582,3 +582,76 @@ def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
     assert prepared.acquired.product_id == "PNOA_MA"
     assert len(prepared.tiles) == import_plan.imagery.tile_count
     assert all(tile.path.is_file() for tile in prepared.tiles)
+
+
+def test_worker_uses_projected_bd_ortho_without_reprojection(tmp_path: Path) -> None:
+    catalog = load_bundled_catalog()
+    roi = BBoxWGS84(2.34, 48.85, 2.36, 48.87)
+    request = AcquisitionRequest(roi, (LayerRequest(DatasetKind.IMAGERY, 5.0),))
+    selection = ProductSelection(
+        "ign_france",
+        "FR_BD_ORTHO",
+        DatasetKind.IMAGERY,
+        SelectionMode.MANUAL,
+        True,
+    )
+    plan = create_acquisition_plan(
+        request,
+        SelectionBundle((selection,)),
+        (discover_candidates(catalog, roi, DatasetKind.IMAGERY),),
+    )
+    import_plan = create_import_plan(
+        roi,
+        "FR_RGE_ALTI_1M",
+        10.0,
+        True,
+        5.0,
+        native_resolution_override=1.0,
+        working_crs_epsg=2154,
+    )
+
+    class FakeGeopfAcquirer:
+        def acquire(
+            self,
+            selection,
+            request,
+            roi,
+            cache_directory,
+            progress_callback=None,
+            cancellation_requested=lambda: False,
+        ):
+            path = cache_directory / "ortho.png"
+            write_rgb_png(path, np.zeros((3, 4, 3), dtype=np.uint8))
+            sidecar = path.with_suffix(".png.json")
+            sidecar.write_text(
+                json.dumps(
+                    {
+                        "bbox": [650_000.0, 6_860_000.0, 650_020.0, 6_860_015.0],
+                        "width": 4,
+                        "height": 3,
+                        "crs_epsg": 2154,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return AcquiredRasterLayer(
+                "ign_france",
+                "FR_BD_ORTHO",
+                DatasetKind.IMAGERY,
+                (path,),
+                auxiliary_paths=(sidecar,),
+            )
+
+    prepared = prepare_confirmed_imagery(
+        plan,
+        catalog,
+        import_plan,
+        tmp_path,
+        tmp_path / "processed",
+        acquirer_factory=lambda provider_ids: {"ign_france": FakeGeopfAcquirer()},
+    )
+
+    assert prepared is not None
+    assert prepared.tiles[0].path == tmp_path / "ortho.png"
+    assert prepared.tiles[0].bounds.epsg == 2154
+    assert prepared.tiles[0].gsd_metres == 5.0

@@ -153,14 +153,17 @@ def main() -> None:
         properties.north = 48.87
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         assert json.loads(properties.available_product_ids_json) == [
+            "FR_RGE_ALTI_1M",
+            "FR_MNS_CORREL_50CM",
             "COPERNICUS_GLO30_2021",
             "GEDTM30_V11",
         ]
-        assert properties.product == "COPERNICUS_GLO30_2021"
+        assert properties.product == "FR_RGE_ALTI_1M"
         assert json.loads(properties.available_imagery_product_ids_json) == [
-            "ESA_WORLDCOVER_S2_2021"
+            "ESA_WORLDCOVER_S2_2021",
+            "FR_BD_ORTHO",
         ]
-        assert properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
+        assert properties.imagery_product == "FR_BD_ORTHO"
         properties.product = "GEDTM30_V11"
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         assert properties.selected_resolution == 30.0
