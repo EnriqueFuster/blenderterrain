@@ -33,7 +33,6 @@ from ..core import (
     compose_terrain_bathymetry,
     create_import_plan,
     deliver_plan_sources,
-    discover_sources,
     geographic_source_bounds,
     inspect_local_imagery,
     plan_imagery_tiles,
@@ -43,7 +42,6 @@ from ..core import (
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
 from ..core.delivery import ElevationDownloader
-from ..core.discovery import CatalogDiscoveryProvider, DiscoveryResult
 from ..errors import (
     CatalogContractChanged,
     DownloadAuthorizationRequired,
@@ -59,6 +57,11 @@ from ..io.bigtiff_tiles import open_float_tile_reader
 from ..io.elevation_output import write_elevation_array, write_quality_array
 from ..io.png_validation import validate_png
 from ..models import CatalogItem, DatasetProduct, ProjectedBounds
+from ..providers.cnig_discovery import (
+    CatalogDiscoveryProvider,
+    DiscoveryResult,
+    discover_sources,
+)
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from ..providers.registry import build_raster_acquirers

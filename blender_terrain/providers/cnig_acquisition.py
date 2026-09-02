@@ -10,12 +10,12 @@ from ..catalog.models import DatasetKind
 from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
-from ..core.discovery import discover_sources
 from ..core.planning import create_import_plan
 from ..core.roi import BBoxWGS84
 from ..errors import JobCancelled
 from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, CatalogPage, DatasetProduct
+from .cnig_discovery import discover_sources
 from .cnig_portal import CNIGPortalClient
 
 

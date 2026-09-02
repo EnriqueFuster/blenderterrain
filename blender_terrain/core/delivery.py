@@ -13,7 +13,6 @@ from ..errors import BlenderTerrainError, JobCancelled
 from ..io.png_validation import validate_png
 from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, ProjectedBounds
-from .discovery import DiscoveryResult
 from .imagery import ImageryTileRequest, plan_imagery_tiles
 from .planning import ImportPlan
 
@@ -52,6 +51,13 @@ class ElevationDownloader(Protocol):
     ) -> Path: ...
 
 
+class DiscoveredElevationSources(Protocol):
+    """Minimum source-selection data required by delivery."""
+
+    @property
+    def items(self) -> tuple[CatalogItem, ...]: ...
+
+
 class ImageryDownloader(Protocol):
     def download_png(
         self,
@@ -66,7 +72,7 @@ class ImageryDownloader(Protocol):
 
 def deliver_plan_sources(
     plan: ImportPlan,
-    discovery: DiscoveryResult,
+    discovery: DiscoveredElevationSources,
     cache_directory: Path,
     elevation_client: ElevationDownloader,
     imagery_client: ImageryDownloader,
