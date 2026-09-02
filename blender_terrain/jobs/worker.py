@@ -8,7 +8,6 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
-from typing import Protocol
 
 import numpy as np
 
@@ -52,13 +51,14 @@ from ..errors import (
 )
 from ..io.elevation_output import write_elevation_array, write_quality_array
 from ..io.png_validation import validate_png
-from ..models import CatalogItem, DatasetProduct, ProjectedBounds
+from ..models import DatasetProduct, ProjectedBounds
 from ..providers.cnig_delivery import ElevationDownloader, deliver_plan_sources
 from ..providers.cnig_discovery import discover_sources
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_planning import plan_pnoa_tiles
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
 from ..providers.registry import build_raster_acquirers
+from .legacy_delivery import ElevationProcessor, LocalElevationClient
 from .legacy_discovery import (
     create_legacy_import_plan,
     discover_local_sources,
@@ -827,39 +827,6 @@ def prepare_confirmed_bathymetry(
     return PreparedBathymetry(acquired, tiles)
 
 
-class _LocalElevationClient:
-    """Expose already-local sources through the delivery downloader contract."""
-
-    def __init__(self, paths: tuple[Path, ...]) -> None:
-        self._paths = {path.name: path for path in paths}
-
-    def download_item(
-        self,
-        item: CatalogItem,
-        cache_directory: Path,
-        maximum_bytes: int = 1_073_741_824,
-        progress_callback: Callable[[int, int | None], None] | None = None,
-    ) -> Path:
-        path = self._paths[item.filename]
-        size = path.stat().st_size
-        if progress_callback is not None:
-            progress_callback(size, size)
-        return path
-
-
-class ElevationProcessor(Protocol):
-    """Callable contract for the replaceable elevation processing stage."""
-
-    def __call__(
-        self,
-        source_paths: tuple[Path, ...],
-        plan: ImportPlan,
-        progress_callback: Callable[[int, int], None] | None = None,
-        maximum_source_window_pixels: int = 4_194_304,
-        region: RegionOfInterest | None = None,
-    ) -> tuple[ProcessedElevationTile, ...]: ...
-
-
 def run_delivery_job(
     job_path: Path,
     cnig_factory: Callable[[], CNIGPortalClient] = CNIGPortalClient,
@@ -902,7 +869,7 @@ def run_delivery_job(
             raise JobCancelled("Data delivery was cancelled")
         if job.local_elevation_paths:
             local_paths = tuple(Path(path) for path in job.local_elevation_paths)
-            elevation_client: ElevationDownloader = _LocalElevationClient(local_paths)
+            elevation_client: ElevationDownloader = LocalElevationClient(local_paths)
             emit(JobState.DISCOVERING, 0.05, "Confirming local elevation sources")
             discovery = discover_local_sources(job)
         else:
