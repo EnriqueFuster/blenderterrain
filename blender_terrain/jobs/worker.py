@@ -32,7 +32,6 @@ from ..core import (
     TransferProgress,
     compose_terrain_bathymetry,
     create_import_plan,
-    deliver_plan_sources,
     geographic_source_bounds,
     inspect_local_imagery,
     plan_imagery_tiles,
@@ -41,7 +40,6 @@ from ..core import (
     process_worldcover_imagery,
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
-from ..core.delivery import ElevationDownloader
 from ..errors import (
     CatalogContractChanged,
     DownloadAuthorizationRequired,
@@ -57,6 +55,7 @@ from ..io.bigtiff_tiles import open_float_tile_reader
 from ..io.elevation_output import write_elevation_array, write_quality_array
 from ..io.png_validation import validate_png
 from ..models import CatalogItem, DatasetProduct, ProjectedBounds
+from ..providers.cnig_delivery import ElevationDownloader, deliver_plan_sources
 from ..providers.cnig_discovery import (
     CatalogDiscoveryProvider,
     DiscoveryResult,

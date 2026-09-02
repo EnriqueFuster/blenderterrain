@@ -10,10 +10,13 @@ from blender_terrain.core import (
     DiscoveryResult,
     TransferProgress,
     create_import_plan,
-    deliver_plan_sources,
+)
+from blender_terrain.core import (
+    deliver_plan_sources as legacy_deliver_plan_sources,
 )
 from blender_terrain.errors import JobCancelled, ProviderUnavailableError
 from blender_terrain.models import CatalogItem, DatasetProduct, ProjectedBounds
+from blender_terrain.providers.cnig_delivery import deliver_plan_sources
 
 
 class FakeElevationClient:
@@ -58,7 +61,7 @@ class DeliveryTests(unittest.TestCase):
         )
         events: list[TransferProgress] = []
         with TemporaryDirectory() as temporary:
-            result = deliver_plan_sources(
+            result = legacy_deliver_plan_sources(
                 plan, discovery, Path(temporary), FakeElevationClient(),
                 FakeImageryClient(), events.append,
             )
