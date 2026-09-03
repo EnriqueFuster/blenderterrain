@@ -98,10 +98,10 @@ def recover_interrupted_jobs() -> int:
         properties.job_state = JobState.INVALID_DATA.value
         properties.job_progress = 1.0
         properties.job_message = "Previous background task was interrupted; retry when ready"
-        if mode == "discovery":
+        if mode in {"cnig_discovery", "local_discovery"}:
             properties.discovery_ready = False
             properties.discovery_summary = ""
-        elif mode == "availability":
+        elif mode == "cnig_availability":
             properties.product_availability_json = "[]"
             properties.product_availability_summary = ""
         else:
@@ -168,7 +168,7 @@ def start_discovery(context: bpy.types.Context) -> None:
         properties.job_progress = 1.0
         properties.job_message = "Selected raster sources resolved from the confirmed ROI"
         return
-    _start_worker(context, properties, "discovery", "Starting background source discovery")
+    _start_worker(context, properties, "cnig_discovery", "Starting CNIG source discovery")
 
 
 def start_delivery(context: bpy.types.Context) -> None:
@@ -299,7 +299,7 @@ def start_availability(context: bpy.types.Context) -> None:
     _start_worker(
         context,
         properties,
-        "availability",
+        "cnig_availability",
         "Starting product availability check",
     )
 
@@ -337,9 +337,8 @@ def retry_last_job(context: bpy.types.Context) -> None:
         raise UserInputError("The previous job is no longer available in the cache") from exc
     mode = properties.last_job_mode
     if mode not in {
-        "discovery",
-        "availability",
-        "delivery",
+        "cnig_discovery",
+        "cnig_availability",
         "acquisition",
         "local_discovery",
         "local_delivery",
@@ -382,8 +381,8 @@ def retry_last_job(context: bpy.types.Context) -> None:
 
 def _job_requires_network(job: DiscoveryJob, mode: str) -> bool:
     return (
-        mode == "availability"
-        or mode == "discovery"
+        mode == "cnig_availability"
+        or mode == "cnig_discovery"
         or not job.local_elevation_paths
         or (job.use_imagery and job.local_imagery_path is None)
     )
@@ -411,8 +410,7 @@ def _launch_worker(
         "--",
         str(job_path),
     ]
-    if mode != "discovery":
-        command.append(mode)
+    command.append(mode)
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_path = job_directory / "worker.log"
     try:
@@ -443,7 +441,7 @@ def _launch_worker(
     properties.job_event_history = json.dumps([{"message": message, "progress": 0.0}])
     properties.last_job_path = str(job_path)
     properties.last_job_mode = mode
-    if mode == "discovery":
+    if mode in {"cnig_discovery", "local_discovery"}:
         properties.discovery_summary = ""
     if not bpy.app.timers.is_registered(_poll_active_job):
         bpy.app.timers.register(_poll_active_job, first_interval=_POLL_INTERVAL_SECONDS)
@@ -593,7 +591,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
     properties.job_state = state
     properties.job_progress = 1.0
     if state in {JobState.COMPLETE.value, JobState.COMPLETE_WITH_WARNINGS.value}:
-        if active.mode == "availability":
+        if active.mode == "cnig_availability":
             availability = result.get("availability", [])
             if not isinstance(availability, list):
                 availability = []
@@ -611,7 +609,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
                 str(warnings[0]) if warnings else "Product availability check completed"
             )
             return
-        if active.mode in {"delivery", "acquisition", "local_delivery"}:
+        if active.mode in {"acquisition", "local_delivery"}:
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
             bathymetry_count = len(result.get("bathymetry", []))
@@ -666,10 +664,10 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         properties.discovery_ready = True
         properties.job_message = "Source discovery completed"
     else:
-        if active.mode in {"discovery", "local_discovery"}:
+        if active.mode in {"cnig_discovery", "local_discovery"}:
             properties.discovery_summary = ""
             properties.discovery_ready = False
-        elif active.mode == "availability":
+        elif active.mode == "cnig_availability":
             properties.product_availability_json = "[]"
             properties.product_availability_summary = ""
         else:

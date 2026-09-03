@@ -1,7 +1,7 @@
 """Portable background-job protocol and execution."""
 
 from .acquisition_job import AcquisitionJob
-from .legacy_discovery import run_discovery_job
+from .cnig import run_cnig_discovery_job as run_discovery_job
 from .models import DiscoveryJob, JobState, ProgressEvent
 from .terrain import (
     PreparedElevation,
