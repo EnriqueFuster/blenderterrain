@@ -237,6 +237,7 @@ def create_local_import_plan(job: DiscoveryJob) -> ImportPlan:
         job.maximum_imagery_pixels,
         native_resolution_override=inspection.native_resolution_metres,
         projected_bounds_override=inspection.projected_bounds,
+        working_crs_epsg=inspection.projected_bounds[0].epsg,
     )
 
 

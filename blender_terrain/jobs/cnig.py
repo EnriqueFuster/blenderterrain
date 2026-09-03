@@ -20,6 +20,7 @@ from ..errors import (
 from ..models import DatasetProduct
 from ..providers.cnig_discovery import CatalogDiscoveryProvider, discover_sources
 from ..providers.cnig_portal import CNIGPortalClient
+from ..providers.spain_crs import split_spain_bbox_by_utm_zone
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
 from .storage import (
     append_progress_event,
@@ -192,4 +193,5 @@ def create_cnig_import_plan(job: DiscoveryJob) -> ImportPlan:
         job.maximum_elevation_samples,
         job.maximum_imagery_pixels,
         native_resolution_override=native_resolution,
+        work_areas_override=split_spain_bbox_by_utm_zone(job.bounds),
     )

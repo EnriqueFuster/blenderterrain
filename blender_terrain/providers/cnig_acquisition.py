@@ -18,6 +18,7 @@ from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, CatalogPage, DatasetProduct
 from .cnig_discovery import discover_sources
 from .cnig_portal import CNIGPortalClient
+from .spain_crs import split_spain_bbox_by_utm_zone
 
 
 class _CnigClient(Protocol):
@@ -74,6 +75,7 @@ class CnigElevationAcquirer:
                 .product(selection.product_id)
                 .capabilities.native_resolution_m
             ),
+            work_areas_override=split_spain_bbox_by_utm_zone(roi),
         )
         discovery = discover_sources(plan, self.client)
         target = cache_directory / selection.provider_id / selection.product_id

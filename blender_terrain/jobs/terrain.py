@@ -31,6 +31,7 @@ from ..core import (
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
 from ..errors import JobCancelled, NoCoverageError, RasterFormatError, UserInputError
 from ..providers.registry import build_raster_acquirers
+from ..providers.spain_crs import split_spain_bbox_by_utm_zone
 
 
 class ElevationProcessor(Protocol):
@@ -133,6 +134,11 @@ def prepare_confirmed_elevation(
         native_resolution_override=product.capabilities.native_resolution_m,
         use_global_utm=product.jurisdiction == "global",
         working_crs_epsg=None if product.wms is None else product.wms.crs_epsg,
+        work_areas_override=(
+            split_spain_bbox_by_utm_zone(plan.request.roi)
+            if product.provider_id == "ign_cnig"
+            else None
+        ),
     )
     resolved_request = LayerRequest(
         layer_request.kind,

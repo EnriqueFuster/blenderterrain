@@ -168,6 +168,7 @@ def create_import_plan(
     use_global_utm: bool = False,
     imagery_native_resolution_metres: float = 0.25,
     working_crs_epsg: int | None = None,
+    work_areas_override: tuple[ProjectedWorkArea, ...] | None = None,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
@@ -179,17 +180,26 @@ def create_import_plan(
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
         raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
-    if working_crs_epsg is not None and use_global_utm:
-        raise UserInputError("An explicit working CRS cannot be combined with global UTM")
+    projection_options = sum(
+        (working_crs_epsg is not None, use_global_utm, work_areas_override is not None)
+    )
+    if projection_options > 1:
+        raise UserInputError("Only one working-area strategy may be provided")
     work_areas = (
-        (work_area_for_crs(bounds, working_crs_epsg),)
-        if working_crs_epsg is not None
+        work_areas_override
+        if work_areas_override is not None
         else (
-            split_bbox_by_wgs84_utm_zone(bounds)
-            if use_global_utm
-            else split_bbox_by_utm_zone(bounds)
+            (work_area_for_crs(bounds, working_crs_epsg),)
+            if working_crs_epsg is not None
+            else (
+                split_bbox_by_wgs84_utm_zone(bounds)
+                if use_global_utm
+                else split_bbox_by_utm_zone(bounds)
+            )
         )
     )
+    if not work_areas:
+        raise UserInputError("The working-area strategy returned no areas")
     if projected_bounds_override is not None and {
         projected.epsg for projected in projected_bounds_override
     } != {area.crs.epsg for area in work_areas}:

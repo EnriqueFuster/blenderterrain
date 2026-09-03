@@ -30,6 +30,7 @@ from ..errors import BlenderTerrainError, UserInputError
 from ..io.roi_files import read_roi_file
 from ..io.roi_map_server import ROIMapSession
 from ..models import DatasetProduct
+from ..providers.spain_crs import split_spain_bbox_by_utm_zone
 from . import job_controller
 from .terrain_bake import bake_and_merge_terrain
 from .terrain_builder import (
@@ -327,7 +328,15 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 ),
                 use_global_utm=catalog_product.jurisdiction == "global",
                 working_crs_epsg=(
-                    None if catalog_product.wms is None else catalog_product.wms.crs_epsg
+                    local_inspection.projected_bounds[0].epsg
+                    if local_inspection is not None
+                    else (None if catalog_product.wms is None else catalog_product.wms.crs_epsg)
+                ),
+                work_areas_override=(
+                    split_spain_bbox_by_utm_zone(bounds)
+                    if local_inspection is None
+                    and catalog_product.provider_id == "ign_cnig"
+                    else None
                 ),
                 imagery_native_resolution_metres=(
                     0.25
