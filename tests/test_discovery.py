@@ -9,6 +9,7 @@ from blender_terrain.core import (
 from blender_terrain.errors import CatalogContractChanged, NoCoverageError
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
 from blender_terrain.providers.cnig_discovery import discover_sources, select_catalog_items
+from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 
 def item(
@@ -28,6 +29,9 @@ class DiscoverySelectionTests(unittest.TestCase):
             False,
             None,
             native_resolution_override=2.0,
+            work_areas_override=split_spain_bbox_by_utm_zone(
+                BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
+            ),
         )
 
     def test_selects_only_matching_native_zone_and_product(self) -> None:

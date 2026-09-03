@@ -6,7 +6,7 @@ from .bathymetry_processing import (
     compose_terrain_bathymetry,
     process_gebco_tiles,
 )
-from .crs import CRSInfo, ProjectedWorkArea, UTMWorkArea, split_bbox_by_utm_zone
+from .crs import CRSInfo, ProjectedWorkArea, UTMWorkArea
 from .delivery import TransferProgress
 from .elevation_processing import (
     ProcessedElevationTile,
@@ -137,7 +137,6 @@ __all__ = [
     "projected_texture_transform",
     "read_terrain_metadata",
     "resolve_local_elevation_paths",
-    "split_bbox_by_utm_zone",
     "subdivision_risk_message",
     "tile_grid",
     "tile_grid_manual",

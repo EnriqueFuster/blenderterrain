@@ -1,4 +1,4 @@
-"""Select CNIG catalog files required by a legacy import plan."""
+"""Select CNIG catalog files required by an import plan."""
 
 from __future__ import annotations
 

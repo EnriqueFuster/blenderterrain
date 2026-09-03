@@ -6,12 +6,15 @@ from blender_terrain.core import BBoxWGS84
 from blender_terrain.core import create_import_plan as _create_import_plan
 from blender_terrain.errors import NoCoverageError, PlanningLimitExceeded, UserInputError
 from blender_terrain.models import DatasetProduct, ProjectedBounds
+from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 
 def create_import_plan(*args: object, **kwargs: object):
     """Build plans for the 2 m CNIG fixture used by most tests in this module."""
 
     kwargs.setdefault("native_resolution_override", 2.0)
+    if not kwargs.get("use_global_utm") and kwargs.get("working_crs_epsg") is None:
+        kwargs.setdefault("work_areas_override", split_spain_bbox_by_utm_zone(args[0]))
     return _create_import_plan(*args, **kwargs)  # type: ignore[arg-type]
 
 

@@ -153,7 +153,7 @@ def test_processes_geographic_glo30_source_on_projected_terrain_grid(
     processed = process_elevation_tiles((path,), plan)
 
     assert len(processed) == 1
-    assert processed[0].tile.bounds.epsg == 25830
+    assert processed[0].tile.bounds.epsg == 32630
     assert np.all(processed[0].data != processed[0].nodata)
     assert float(processed[0].data.min()) >= 0.0
     assert float(processed[0].data.max()) <= 15.0

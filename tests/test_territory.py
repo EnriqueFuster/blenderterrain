@@ -3,11 +3,13 @@ from __future__ import annotations
 import unittest
 
 from blender_terrain.core import BBoxWGS84
-from blender_terrain.core.crs import split_bbox_by_utm_zone
 from blender_terrain.errors import NoCoverageError
 from blender_terrain.providers.spain_crs import (
     TerritoryGroup,
     classify_territory_envelope,
+)
+from blender_terrain.providers.spain_crs import (
+    split_spain_bbox_by_utm_zone as split_bbox_by_utm_zone,
 )
 
 

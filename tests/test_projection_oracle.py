@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from blender_terrain.core.crs import LAMBERT93, split_bbox_by_utm_zone
+from blender_terrain.core.crs import LAMBERT93
 from blender_terrain.core.projection import project_wgs84, project_wgs84_to_utm
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.providers.spain_crs import (
+    split_spain_bbox_by_utm_zone as split_bbox_by_utm_zone,
+)
 
 try:
     from pyproj import Transformer

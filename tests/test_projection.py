@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from blender_terrain.core.crs import LAMBERT93, split_bbox_by_utm_zone, work_area_for_crs
+from blender_terrain.core.crs import LAMBERT93, work_area_for_crs
 from blender_terrain.core.projection import (
     project_arrays_to_wgs84,
     project_to_wgs84,
@@ -15,6 +15,9 @@ from blender_terrain.core.projection import (
     project_work_area_bounds,
 )
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.providers.spain_crs import (
+    split_spain_bbox_by_utm_zone as split_bbox_by_utm_zone,
+)
 
 
 class UTMProjectionTests(unittest.TestCase):

@@ -27,6 +27,7 @@ from blender_terrain.jobs.storage import (
     write_discovery_job,
 )
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProjectedBounds
+from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 
 class FakeProvider:
@@ -292,6 +293,7 @@ class DeliveryWorkerTests(unittest.TestCase):
                 False,
                 None,
                 native_resolution_override=2.0,
+                work_areas_override=split_spain_bbox_by_utm_zone(local_job.bounds),
             )
 
             with (

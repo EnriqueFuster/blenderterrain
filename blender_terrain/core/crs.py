@@ -26,7 +26,6 @@ class ProjectedWorkArea:
     crs: CRSInfo
 
 
-# Compatibility name retained for callers written against the Spanish baseline.
 UTMWorkArea = ProjectedWorkArea
 
 
@@ -57,14 +56,6 @@ def work_area_for_crs(bounds: BBoxWGS84, epsg: int) -> ProjectedWorkArea:
     if epsg == LAMBERT93.epsg and not _contains(_FRANCE_METROPOLITAN_ENVELOPE, bounds):
         raise NoCoverageError("EPSG:2154 processing is limited to metropolitan France and Corsica")
     return ProjectedWorkArea(bounds, crs)
-
-
-def split_bbox_by_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
-    """Call the former Spanish UTM planner retained for compatibility."""
-
-    from ..providers.spain_crs import split_spain_bbox_by_utm_zone
-
-    return split_spain_bbox_by_utm_zone(bounds)
 
 
 def split_bbox_by_wgs84_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:

@@ -9,7 +9,6 @@ from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
 from ..models import ProjectedBounds
 from .crs import (
     ProjectedWorkArea,
-    split_bbox_by_utm_zone,
     split_bbox_by_wgs84_utm_zone,
     work_area_for_crs,
 )
@@ -191,11 +190,7 @@ def create_import_plan(
         else (
             (work_area_for_crs(bounds, working_crs_epsg),)
             if working_crs_epsg is not None
-            else (
-                split_bbox_by_wgs84_utm_zone(bounds)
-                if use_global_utm
-                else split_bbox_by_utm_zone(bounds)
-            )
+            else split_bbox_by_wgs84_utm_zone(bounds)
         )
     )
     if not work_areas:

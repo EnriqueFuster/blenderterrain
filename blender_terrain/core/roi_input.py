@@ -6,7 +6,7 @@ import math
 import re
 
 from ..errors import UserInputError
-from .crs import UTMWorkArea, split_bbox_by_utm_zone
+from .crs import ProjectedWorkArea, split_bbox_by_wgs84_utm_zone
 from .projection import (
     ProjectedPoint,
     project_utm_to_wgs84,
@@ -33,7 +33,7 @@ def bbox_from_center_size(
         longitude + epsilon,
         latitude + epsilon,
     )
-    work_areas = split_bbox_by_utm_zone(probe)
+    work_areas = split_bbox_by_wgs84_utm_zone(probe)
     crs = work_areas[-1].crs
     center = project_wgs84_to_utm(longitude, latitude, crs)
     half_width = width_metres / 2.0
@@ -52,7 +52,7 @@ def bbox_from_center_size(
         max(point.latitude for point in corners),
     )
     for _iteration in range(8):
-        projected = project_work_area_bounds(UTMWorkArea(bounds, crs))
+        projected = project_work_area_bounds(ProjectedWorkArea(bounds, crs))
         longitude_scale = width_metres / (projected.east - projected.west)
         latitude_scale = height_metres / (projected.north - projected.south)
         bounds = BBoxWGS84(
@@ -61,7 +61,7 @@ def bbox_from_center_size(
             longitude + (bounds.east - longitude) * longitude_scale,
             latitude + (bounds.north - latitude) * latitude_scale,
         )
-    split_bbox_by_utm_zone(bounds)
+    split_bbox_by_wgs84_utm_zone(bounds)
     return bounds
 
 

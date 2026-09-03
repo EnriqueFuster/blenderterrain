@@ -38,6 +38,7 @@ from blender_terrain.jobs.worker import (
     run_confirmed_acquisition_job,
 )
 from blender_terrain.models import DatasetProduct, ProjectedBounds
+from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 
 class Acquirer:
@@ -551,6 +552,7 @@ def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
         True,
         5.0,
         native_resolution_override=2.0,
+        work_areas_override=split_spain_bbox_by_utm_zone(roi),
     )
 
     class FakePnoaClient:
