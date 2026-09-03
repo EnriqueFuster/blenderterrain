@@ -134,6 +134,14 @@ def start_discovery(context: bpy.types.Context) -> None:
     if not properties.is_valid:
         raise UserInputError("Validate the ROI before discovering sources")
     properties.discovery_ready = False
+    if properties.elevation_source == "LOCAL":
+        _start_worker(
+            context,
+            properties,
+            "local_discovery",
+            "Starting local raster validation",
+        )
+        return
     product = load_bundled_catalog().product(properties.product)
     if product.provider_id != "ign_cnig":
         region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
@@ -328,7 +336,13 @@ def retry_last_job(context: bpy.types.Context) -> None:
     except (OSError, ValueError) as exc:
         raise UserInputError("The previous job is no longer available in the cache") from exc
     mode = properties.last_job_mode
-    if mode not in {"discovery", "availability", "delivery", "acquisition"}:
+    if mode not in {
+        "discovery",
+        "availability",
+        "delivery",
+        "acquisition",
+        "local_discovery",
+    }:
         raise UserInputError("The previous job mode cannot be retried")
     if mode == "acquisition":
         previous_acquisition = read_acquisition_job(resolved_previous)
@@ -368,6 +382,7 @@ def retry_last_job(context: bpy.types.Context) -> None:
 def _job_requires_network(job: DiscoveryJob, mode: str) -> bool:
     return (
         mode == "availability"
+        or mode == "discovery"
         or not job.local_elevation_paths
         or (job.use_imagery and job.local_imagery_path is None)
     )
@@ -650,7 +665,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         properties.discovery_ready = True
         properties.job_message = "Source discovery completed"
     else:
-        if active.mode == "discovery":
+        if active.mode in {"discovery", "local_discovery"}:
             properties.discovery_summary = ""
             properties.discovery_ready = False
         elif active.mode == "availability":

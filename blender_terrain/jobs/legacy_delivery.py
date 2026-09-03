@@ -30,7 +30,8 @@ from ..providers.cnig_discovery import discover_sources
 from ..providers.cnig_portal import BASE_URL, CNIGPortalClient
 from ..providers.pnoa_planning import plan_pnoa_tiles
 from ..providers.pnoa_wms import PNOA_LAYER, WMS_URL, PNOAWMSClient
-from .legacy_discovery import create_legacy_import_plan, discover_local_sources
+from .legacy_discovery import create_legacy_import_plan
+from .local import discover_local_sources
 from .models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
 from .output import transfer_message, write_processed_tiles
 from .storage import (

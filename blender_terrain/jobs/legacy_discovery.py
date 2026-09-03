@@ -16,14 +16,13 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
-from ..io.bigtiff_tiles import open_float_tile_reader
-from ..models import CatalogItem, DatasetProduct
+from ..models import DatasetProduct
 from ..providers.cnig_discovery import (
     CatalogDiscoveryProvider,
-    DiscoveryResult,
     discover_sources,
 )
 from ..providers.cnig_portal import CNIGPortalClient
+from .local import create_local_import_plan, discover_local_sources
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
 from .storage import (
     append_progress_event,
@@ -192,16 +191,8 @@ def run_availability_job(
 def create_legacy_import_plan(job: DiscoveryJob) -> ImportPlan:
     """Build a plan from the job format used by the Spanish baseline."""
 
-    local_native_resolution = None
-    local_projected_bounds = None
     if job.local_elevation_paths:
-        from ..core.local_elevation import inspect_local_elevation
-
-        inspection = inspect_local_elevation(
-            tuple(Path(path) for path in job.local_elevation_paths)
-        )
-        local_native_resolution = inspection.native_resolution_metres
-        local_projected_bounds = inspection.projected_bounds
+        return create_local_import_plan(job)
     return create_import_plan(
         job.bounds,
         job.product,
@@ -212,31 +203,4 @@ def create_legacy_import_plan(job: DiscoveryJob) -> ImportPlan:
         job.manual_tile_columns,
         job.maximum_elevation_samples,
         job.maximum_imagery_pixels,
-        native_resolution_override=local_native_resolution,
-        projected_bounds_override=local_projected_bounds,
     )
-
-
-def discover_local_sources(job: DiscoveryJob) -> DiscoveryResult:
-    """Validate local files and expose them through the legacy source contract."""
-
-    paths = tuple(Path(value) for value in job.local_elevation_paths)
-    if not paths:
-        raise UserInputError("No local elevation rasters were provided")
-    if len({path.name.casefold() for path in paths}) != len(paths):
-        raise UserInputError("Local elevation raster filenames must be unique")
-    items: list[CatalogItem] = []
-    for index, path in enumerate(paths):
-        if not path.is_file():
-            raise UserInputError(f"Local elevation raster does not exist: {path}")
-        open_float_tile_reader(path)
-        items.append(
-            CatalogItem(
-                job.product,
-                path.name,
-                "LOCAL_COG",
-                f"local-{index}",
-                size_mb=path.stat().st_size / 1_000_000,
-            )
-        )
-    return DiscoveryResult(tuple(items), len(items), 0)
