@@ -550,6 +550,7 @@ def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
         10.0,
         True,
         5.0,
+        native_resolution_override=2.0,
     )
 
     class FakePnoaClient:

@@ -4,11 +4,18 @@ import unittest
 
 from blender_terrain.core import (
     BBoxWGS84,
-    create_import_plan,
     plan_imagery_tiles,
     plan_texture_tiles,
 )
+from blender_terrain.core import create_import_plan as _create_import_plan
 from blender_terrain.models import DatasetProduct
+
+
+def create_import_plan(*args: object, **kwargs: object):
+    """Build plans for the 2 m CNIG fixture used in these imagery tests."""
+
+    kwargs.setdefault("native_resolution_override", 2.0)
+    return _create_import_plan(*args, **kwargs)  # type: ignore[arg-type]
 
 
 class ImageryTilePlanningTests(unittest.TestCase):

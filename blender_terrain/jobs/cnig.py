@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
+from ..catalog import load_bundled_catalog
 from ..core import ImportPlan, create_import_plan
 from ..errors import (
     CatalogContractChanged,
@@ -175,6 +176,11 @@ def create_cnig_import_plan(job: DiscoveryJob) -> ImportPlan:
 
     if job.local_elevation_paths:
         raise JobFormatError("CNIG planning cannot use local elevation paths")
+    native_resolution = (
+        load_bundled_catalog()
+        .product(job.product.value)
+        .capabilities.native_resolution_m
+    )
     return create_import_plan(
         job.bounds,
         job.product,
@@ -185,4 +191,5 @@ def create_cnig_import_plan(job: DiscoveryJob) -> ImportPlan:
         job.manual_tile_columns,
         job.maximum_elevation_samples,
         job.maximum_imagery_pixels,
+        native_resolution_override=native_resolution,
     )

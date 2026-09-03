@@ -27,6 +27,7 @@ class DiscoverySelectionTests(unittest.TestCase):
             10.0,
             False,
             None,
+            native_resolution_override=2.0,
         )
 
     def test_selects_only_matching_native_zone_and_product(self) -> None:

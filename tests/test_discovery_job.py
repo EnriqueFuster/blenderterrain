@@ -291,6 +291,7 @@ class DeliveryWorkerTests(unittest.TestCase):
                 local_job.elevation_resolution_metres,
                 False,
                 None,
+                native_resolution_override=2.0,
             )
 
             with (

@@ -2,35 +2,53 @@ from __future__ import annotations
 
 import unittest
 
-from blender_terrain.core import BBoxWGS84, create_import_plan
+from blender_terrain.core import BBoxWGS84
+from blender_terrain.core import create_import_plan as _create_import_plan
 from blender_terrain.errors import NoCoverageError, PlanningLimitExceeded, UserInputError
 from blender_terrain.models import DatasetProduct, ProjectedBounds
-from blender_terrain.providers.cnig_products import cnig_native_resolution
+
+
+def create_import_plan(*args: object, **kwargs: object):
+    """Build plans for the 2 m CNIG fixture used by most tests in this module."""
+
+    kwargs.setdefault("native_resolution_override", 2.0)
+    return _create_import_plan(*args, **kwargs)  # type: ignore[arg-type]
 
 
 class ImportPlanningTests(unittest.TestCase):
-    def test_cnig_resolution_metadata_is_owned_by_the_provider(self) -> None:
-        self.assertEqual(cnig_native_resolution(DatasetProduct.MDT02), 2.0)
-        self.assertIsNone(cnig_native_resolution(DatasetProduct.PNOA_MA))
-
     def test_auto_respects_each_products_native_resolution(self) -> None:
         bounds = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
 
         self.assertEqual(
             create_import_plan(
-                bounds, DatasetProduct.MDT50CM, None, False, None
+                bounds,
+                DatasetProduct.MDT50CM,
+                None,
+                False,
+                None,
+                native_resolution_override=0.5,
             ).elevation_resolution_metres,
             0.5,
         )
         self.assertEqual(
             create_import_plan(
-                bounds, DatasetProduct.MDT25, None, False, None
+                bounds,
+                DatasetProduct.MDT25,
+                None,
+                False,
+                None,
+                native_resolution_override=25.0,
             ).elevation_resolution_metres,
             25.0,
         )
         self.assertEqual(
             create_import_plan(
-                bounds, DatasetProduct.MDT200, None, False, None
+                bounds,
+                DatasetProduct.MDT200,
+                None,
+                False,
+                None,
+                native_resolution_override=200.0,
             ).elevation_resolution_metres,
             200.0,
         )
@@ -108,11 +126,11 @@ class ImportPlanningTests(unittest.TestCase):
                 None,
             )
 
-    def test_rejects_non_elevation_product(self) -> None:
-        with self.assertRaises(UserInputError):
-            create_import_plan(
+    def test_requires_native_resolution_from_the_data_source(self) -> None:
+        with self.assertRaisesRegex(UserInputError, "Native elevation resolution"):
+            _create_import_plan(
                 BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
-                DatasetProduct.PNOA_MA,
+                "ANY_ELEVATION_PRODUCT",
                 10.0,
                 False,
                 None,

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
+from ..catalog import load_bundled_catalog
 from ..catalog.models import DatasetKind
 from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
@@ -68,6 +69,11 @@ class CnigElevationAcquirer:
             request.target_resolution_m,
             False,
             None,
+            native_resolution_override=(
+                load_bundled_catalog()
+                .product(selection.product_id)
+                .capabilities.native_resolution_m
+            ),
         )
         discovery = discover_sources(plan, self.client)
         target = cache_directory / selection.provider_id / selection.product_id

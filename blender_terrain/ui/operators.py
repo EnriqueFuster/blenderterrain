@@ -318,13 +318,9 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 maximum_elevation_samples=elevation_limit,
                 maximum_imagery_pixels=imagery_limit,
                 native_resolution_override=(
-                    catalog_product.capabilities.native_resolution_m
-                    if portable_product
-                    else (
-                        None
-                        if local_inspection is None
-                        else local_inspection.native_resolution_metres
-                    )
+                    local_inspection.native_resolution_metres
+                    if local_inspection is not None
+                    else catalog_product.capabilities.native_resolution_m
                 ),
                 projected_bounds_override=(
                     None if local_inspection is None else local_inspection.projected_bounds

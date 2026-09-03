@@ -174,15 +174,8 @@ def create_import_plan(
     if maximum_elevation_samples <= 0 or maximum_imagery_pixels <= 0:
         raise UserInputError("Resource limits must be positive")
     if native_resolution_override is None:
-        from ..providers.cnig_products import cnig_native_resolution
-
-        native_resolution = cnig_native_resolution(product)
-        if native_resolution is None:
-            raise UserInputError(
-                "A catalog product requires an explicit native elevation resolution"
-            )
-    else:
-        native_resolution = native_resolution_override
+        raise UserInputError("Native elevation resolution must be provided by the data source")
+    native_resolution = native_resolution_override
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
         raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
