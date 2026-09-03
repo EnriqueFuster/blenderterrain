@@ -2,8 +2,22 @@ from __future__ import annotations
 
 import unittest
 
-from blender_terrain.core import BBoxWGS84, create_import_plan, plan_imagery_tiles
+from blender_terrain.core import (
+    BBoxWGS84,
+    plan_imagery_tiles,
+    plan_texture_tiles,
+)
+from blender_terrain.core import create_import_plan as _create_import_plan
 from blender_terrain.models import DatasetProduct
+from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
+
+
+def create_import_plan(*args: object, **kwargs: object):
+    """Build plans for the 2 m CNIG fixture used in these imagery tests."""
+
+    kwargs.setdefault("native_resolution_override", 2.0)
+    kwargs.setdefault("work_areas_override", split_spain_bbox_by_utm_zone(args[0]))
+    return _create_import_plan(*args, **kwargs)  # type: ignore[arg-type]
 
 
 class ImageryTilePlanningTests(unittest.TestCase):
@@ -43,6 +57,21 @@ class ImageryTilePlanningTests(unittest.TestCase):
 
         self.assertEqual({request.bounds.epsg for request in requests}, {25830, 25831})
         self.assertEqual({request.zone_index for request in requests}, {0, 1})
+
+    def test_uses_provider_prefix_without_changing_the_texture_grid(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
+            DatasetProduct.MDT02,
+            10.0,
+            True,
+            2.0,
+        )
+
+        generic = plan_texture_tiles(plan, "worldcover")
+        legacy = plan_imagery_tiles(plan)
+
+        self.assertEqual([tile.bounds for tile in generic], [tile.bounds for tile in legacy])
+        self.assertTrue(all(tile.filename.startswith("worldcover_") for tile in generic))
 
     def test_returns_no_requests_when_imagery_is_disabled(self) -> None:
         plan = create_import_plan(

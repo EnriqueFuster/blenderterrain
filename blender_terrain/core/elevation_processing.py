@@ -13,13 +13,14 @@ from numpy.typing import NDArray
 
 from ..errors import RasterFormatError
 from ..io.bigtiff_tiles import open_float_tile_reader
+from ..io.bil32 import Bil32WindowReader
 from ..io.elevation_mosaic import ElevationReader
 from ..io.elevation_window import ElevationWindowReader
 from ..models import ProjectedBounds
 from .crs import CRSInfo
 from .grid import GridTile
 from .planning import ImportPlan
-from .projection import project_utm_arrays_to_wgs84, project_wgs84_to_utm
+from .projection import project_arrays_to_wgs84, project_wgs84
 from .roi import BBoxWGS84, PolygonWGS84, RegionOfInterest
 
 DEFAULT_MAX_SOURCE_WINDOW_PIXELS = 4_194_304
@@ -50,7 +51,7 @@ def geographic_source_bounds(plan: ImportPlan) -> BBoxWGS84:
                 vertical,
             )
         )
-        longitude, latitude = project_utm_arrays_to_wgs84(
+        longitude, latitude = project_arrays_to_wgs84(
             eastings, northings, work_area.crs
         )
         longitude_parts.append(longitude)
@@ -102,8 +103,12 @@ def process_elevation_tiles(
     if sampling not in {"bilinear", "nearest"}:
         raise ValueError("Elevation sampling must be bilinear or nearest")
     readers = tuple(
-        ElevationWindowReader(path)
-        if path.suffix.lower() == ".npy"
+        (
+            ElevationWindowReader(path)
+            if path.suffix.lower() == ".npy"
+            else Bil32WindowReader(path)
+        )
+        if path.suffix.lower() in {".npy", ".bil"}
         else open_float_tile_reader(path)
         for path in source_paths
     )
@@ -241,7 +246,7 @@ def _resample_geographic_tile(
             east = west + block_columns * target_resolution
             target_x = np.linspace(west, east, block_columns + 1, dtype=np.float64)
             eastings, northings = np.meshgrid(target_x, target_y)
-            longitude, latitude = project_utm_arrays_to_wgs84(eastings, northings, crs)
+            longitude, latitude = project_arrays_to_wgs84(eastings, northings, crs)
             requested = ProjectedBounds(
                 float(longitude.min()),
                 float(latitude.min()),
@@ -383,7 +388,7 @@ def _project_polygon(
     def project_ring(ring: tuple[tuple[float, float], ...]) -> NDArray[np.float64]:
         coordinates = []
         for longitude, latitude in ring:
-            point = project_wgs84_to_utm(longitude, latitude, crs)
+            point = project_wgs84(longitude, latitude, crs)
             coordinates.append((point.easting, point.northing))
         return np.asarray(coordinates, dtype=np.float64)
 

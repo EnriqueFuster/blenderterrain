@@ -3,9 +3,12 @@ from __future__ import annotations
 import math
 import unittest
 
-from blender_terrain.core.crs import split_bbox_by_utm_zone, split_bbox_by_wgs84_utm_zone
+from blender_terrain.core.crs import split_bbox_by_wgs84_utm_zone
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import NoCoverageError, UserInputError
+from blender_terrain.providers.spain_crs import (
+    split_spain_bbox_by_utm_zone as split_bbox_by_utm_zone,
+)
 
 
 class BBoxWGS84Tests(unittest.TestCase):

@@ -39,6 +39,19 @@ class WMSCapabilitiesTests(unittest.TestCase):
         with self.assertRaisesRegex(ProviderContractChanged, "PNG"):
             parse_wms_capabilities(xml, "OI.OrthoimageCoverage")
 
+    def test_accepts_french_bil_layer_and_format(self) -> None:
+        xml = CAPABILITIES.replace(
+            b"OI.OrthoimageCoverage", b"ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES"
+        ).replace(b"image/png", b"image/x-bil;bits=32")
+
+        capabilities = parse_wms_capabilities(
+            xml,
+            "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES",
+            "image/x-bil;bits=32",
+        )
+
+        self.assertIn("image/x-bil;bits=32", capabilities.formats)
+
 
 class WMSMapRequestTests(unittest.TestCase):
     def setUp(self) -> None:

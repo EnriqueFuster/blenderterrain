@@ -30,6 +30,7 @@ from ..errors import BlenderTerrainError, UserInputError
 from ..io.roi_files import read_roi_file
 from ..io.roi_map_server import ROIMapSession
 from ..models import DatasetProduct
+from ..providers.spain_crs import split_spain_bbox_by_utm_zone
 from . import job_controller
 from .terrain_bake import bake_and_merge_terrain
 from .terrain_builder import (
@@ -275,13 +276,11 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 bounds = _bounds_from_properties(properties, store_derived=True)
             if properties.elevation_source == "CNIG":
                 _refresh_available_products(properties, bounds)
-            global_product = properties.product in {
-                "COPERNICUS_GLO30_2021",
-                "GEDTM30_V11",
-            }
+            catalog_product = load_bundled_catalog().product(properties.product)
+            portable_product = catalog_product.provider_id != "ign_cnig"
             if (
                 properties.elevation_source == "CNIG"
-                and not global_product
+                and not portable_product
                 and _product_availability_status(properties, properties.product) == "NO_COVERAGE"
             ):
                 raise UserInputError(
@@ -291,7 +290,9 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             plan = create_import_plan(
                 bounds=bounds,
                 product=(
-                    properties.product if global_product else DatasetProduct(properties.product)
+                    properties.product
+                    if portable_product
+                    else DatasetProduct(properties.product)
                 ),
                 elevation_resolution_metres=(
                     None
@@ -318,22 +319,31 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 maximum_elevation_samples=elevation_limit,
                 maximum_imagery_pixels=imagery_limit,
                 native_resolution_override=(
-                    30.0
-                    if global_product
-                    else (
-                        None
-                        if local_inspection is None
-                        else local_inspection.native_resolution_metres
-                    )
+                    local_inspection.native_resolution_metres
+                    if local_inspection is not None
+                    else catalog_product.capabilities.native_resolution_m
                 ),
                 projected_bounds_override=(
                     None if local_inspection is None else local_inspection.projected_bounds
                 ),
-                use_global_utm=global_product,
+                use_global_utm=catalog_product.jurisdiction == "global",
+                working_crs_epsg=(
+                    local_inspection.projected_bounds[0].epsg
+                    if local_inspection is not None
+                    else (None if catalog_product.wms is None else catalog_product.wms.crs_epsg)
+                ),
+                work_areas_override=(
+                    split_spain_bbox_by_utm_zone(bounds)
+                    if local_inspection is None
+                    and catalog_product.provider_id == "ign_cnig"
+                    else None
+                ),
                 imagery_native_resolution_metres=(
-                    10.0
-                    if properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
-                    else 0.25
+                    0.25
+                    if properties.imagery_product == "NONE"
+                    else load_bundled_catalog()
+                    .product(properties.imagery_product)
+                    .capabilities.native_resolution_m
                 ),
             )
         except BlenderTerrainError as exc:
@@ -394,11 +404,10 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         # if properties.resource_profile == "LARGE":
         #     warnings.append("Large profile can exhaust system or GPU memory")
         properties.planning_warning = " | ".join(warnings)
-        imagery_name = (
-            "WorldCover"
-            if properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
-            else "PNOA"
-        )
+        imagery_name = {
+            "ESA_WORLDCOVER_S2_2021": "WorldCover",
+            "FR_BD_ORTHO": "BD ORTHO",
+        }.get(properties.imagery_product, "PNOA")
         properties.imagery_summary = (
             "Imagery disabled"
             if plan.imagery is None
@@ -440,6 +449,8 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
             "MDS50CM",
             "MDS02",
             "MDS05",
+            "FR_RGE_ALTI_1M",
+            "FR_MNS_CORREL_50CM",
             "COPERNICUS_GLO30_2021",
             "GEDTM30_V11",
         )
@@ -455,9 +466,13 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
                 "PNOA_MA"
                 if "PNOA_MA" in imagery_ids
                 else (
-                    "ESA_WORLDCOVER_S2_2021"
-                    if "ESA_WORLDCOVER_S2_2021" in imagery_ids
-                    else "NONE"
+                    "FR_BD_ORTHO"
+                    if "FR_BD_ORTHO" in imagery_ids
+                    else (
+                        "ESA_WORLDCOVER_S2_2021"
+                        if "ESA_WORLDCOVER_S2_2021" in imagery_ids
+                        else "NONE"
+                    )
                 )
             )
     finally:
@@ -651,8 +666,14 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
         self.report(
             {"INFO"},
             (
-                "Global elevation sources resolved"
-                if properties.product in {"COPERNICUS_GLO30_2021", "GEDTM30_V11"}
+                "Selected sources resolved"
+                if properties.product
+                in {
+                    "COPERNICUS_GLO30_2021",
+                    "GEDTM30_V11",
+                    "FR_RGE_ALTI_1M",
+                    "FR_MNS_CORREL_50CM",
+                }
                 else "Source discovery started in the background"
             ),
         )

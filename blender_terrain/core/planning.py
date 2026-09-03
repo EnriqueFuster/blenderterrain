@@ -6,8 +6,12 @@ import math
 from dataclasses import dataclass
 
 from ..errors import PlanningLimitExceeded, RasterAlignmentError, UserInputError
-from ..models import DatasetProduct, ProjectedBounds
-from .crs import UTMWorkArea, split_bbox_by_utm_zone, split_bbox_by_wgs84_utm_zone
+from ..models import ProjectedBounds
+from .crs import (
+    ProjectedWorkArea,
+    split_bbox_by_wgs84_utm_zone,
+    work_area_for_crs,
+)
 from .estimates import ROIEstimate, estimate_bbox
 from .grid import (
     DEFAULT_MAX_TILE_CELLS,
@@ -21,16 +25,6 @@ from .projection import project_work_area_bounds
 from .roi import BBoxWGS84
 
 ELEVATION_RESOLUTIONS = (0.5, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0, 200.0)
-PRODUCT_NATIVE_RESOLUTION = {
-    DatasetProduct.MDT50CM: 0.5,
-    DatasetProduct.MDT02: 2.0,
-    DatasetProduct.MDT05: 5.0,
-    DatasetProduct.MDT25: 25.0,
-    DatasetProduct.MDT200: 200.0,
-    DatasetProduct.MDS50CM: 0.5,
-    DatasetProduct.MDS02: 2.0,
-    DatasetProduct.MDS05: 5.0,
-}
 IMAGERY_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)
 MAX_ELEVATION_SAMPLES = 16_777_216
 PLANNING_WMS_TILE_DIMENSION = 4_096
@@ -72,8 +66,8 @@ class ImportPlan:
     """A validated offline plan suitable for later provider discovery."""
 
     bounds: BBoxWGS84
-    work_areas: tuple[UTMWorkArea, ...]
-    product: DatasetProduct | str
+    work_areas: tuple[ProjectedWorkArea, ...]
+    product: str
     elevation_resolution_metres: float
     elevation: ROIEstimate
     imagery: ImageryEstimate | None
@@ -120,7 +114,7 @@ class ImportPlan:
 
     @property
     def elevation_sample_count(self) -> int:
-        """Return the exact cell count after UTM projection and grid alignment."""
+        """Return the exact cell count after projection and grid alignment."""
 
         return sum(grid.sample_count for grid in self.grids)
 
@@ -160,7 +154,7 @@ class ImportPlan:
 
 def create_import_plan(
     bounds: BBoxWGS84,
-    product: DatasetProduct | str,
+    product: str,
     elevation_resolution_metres: float | None,
     use_imagery: bool,
     imagery_gsd_metres: float | None,
@@ -172,27 +166,35 @@ def create_import_plan(
     projected_bounds_override: tuple[ProjectedBounds, ...] | None = None,
     use_global_utm: bool = False,
     imagery_native_resolution_metres: float = 0.25,
+    working_crs_epsg: int | None = None,
+    work_areas_override: tuple[ProjectedWorkArea, ...] | None = None,
 ) -> ImportPlan:
     """Validate output choices and calculate bounded elevation and imagery demand."""
 
     if maximum_elevation_samples <= 0 or maximum_imagery_pixels <= 0:
         raise UserInputError("Resource limits must be positive")
     if native_resolution_override is None:
-        if not isinstance(product, DatasetProduct) or product not in PRODUCT_NATIVE_RESOLUTION:
-            raise UserInputError(
-                "A catalog product requires an explicit native elevation resolution"
-            )
-        native_resolution = PRODUCT_NATIVE_RESOLUTION[product]
-    else:
-        native_resolution = native_resolution_override
+        raise UserInputError("Native elevation resolution must be provided by the data source")
+    native_resolution = native_resolution_override
     if not math.isfinite(native_resolution) or native_resolution <= 0.0:
         raise UserInputError("Native elevation resolution must be positive")
     _validate_manual_tiles(manual_tile_rows, manual_tile_columns)
-    work_areas = (
-        split_bbox_by_wgs84_utm_zone(bounds)
-        if use_global_utm
-        else split_bbox_by_utm_zone(bounds)
+    projection_options = sum(
+        (working_crs_epsg is not None, use_global_utm, work_areas_override is not None)
     )
+    if projection_options > 1:
+        raise UserInputError("Only one working-area strategy may be provided")
+    work_areas = (
+        work_areas_override
+        if work_areas_override is not None
+        else (
+            (work_area_for_crs(bounds, working_crs_epsg),)
+            if working_crs_epsg is not None
+            else split_bbox_by_wgs84_utm_zone(bounds)
+        )
+    )
+    if not work_areas:
+        raise UserInputError("The working-area strategy returned no areas")
     if projected_bounds_override is not None and {
         projected.epsg for projected in projected_bounds_override
     } != {area.crs.epsg for area in work_areas}:
@@ -247,7 +249,7 @@ def _validate_manual_tiles(rows: int | None, columns: int | None) -> None:
 
 def _select_elevation_resolution(
     bounds: BBoxWGS84,
-    work_areas: tuple[UTMWorkArea, ...],
+    work_areas: tuple[ProjectedWorkArea, ...],
     requested: float | None,
     native_resolution: float,
     manual_tile_rows: int | None,

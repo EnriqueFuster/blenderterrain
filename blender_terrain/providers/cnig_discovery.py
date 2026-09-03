@@ -1,42 +1,24 @@
-"""Select provider catalog rows required by a validated import plan."""
+"""Select CNIG catalog files required by an import plan."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 
+from ..core.planning import ImportPlan
+from ..core.roi import BBoxWGS84
 from ..errors import CatalogContractChanged, NoCoverageError
-from ..models import CatalogItem, CatalogPage, DatasetProduct
-from .planning import ImportPlan
-from .roi import BBoxWGS84
+from ..models import CatalogItem, CatalogPage, DatasetProduct, DiscoveryResult
 
 
 class CatalogDiscoveryProvider(Protocol):
-    """Provider capability required by portable discovery orchestration."""
+    """CNIG catalog capability required for source discovery."""
 
     def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         """Return every catalog page for a product and ROI."""
 
 
-@dataclass(frozen=True, slots=True)
-class DiscoveryResult:
-    """Native projected source files selected for one import plan."""
-
-    items: tuple[CatalogItem, ...]
-    advertised_items: int
-    ignored_items: int
-
-    @property
-    def estimated_download_mb(self) -> float | None:
-        """Sum advertised sizes, or return None if any size is unknown."""
-
-        if any(item.size_mb is None for item in self.items):
-            return None
-        return sum(item.size_mb or 0.0 for item in self.items)
-
-
 def select_catalog_items(plan: ImportPlan, catalog: CatalogPage) -> DiscoveryResult:
-    """Filter native UTM rows and reject ambiguous or missing zone metadata."""
+    """Select matching CNIG native UTM files for an import plan."""
 
     expected_zones = {area.crs.utm_zone for area in plan.work_areas}
     selected: list[CatalogItem] = []
@@ -68,9 +50,9 @@ def select_catalog_items(plan: ImportPlan, catalog: CatalogPage) -> DiscoveryRes
 def discover_sources(
     plan: ImportPlan, provider: CatalogDiscoveryProvider
 ) -> DiscoveryResult:
-    """Discover provider rows and reduce them to sources required by the plan."""
+    """Discover CNIG rows and reduce them to sources required by the plan."""
 
     if not isinstance(plan.product, DatasetProduct):
-        raise ValueError("Legacy catalog discovery requires a CNIG product")
+        raise ValueError("CNIG catalog discovery requires a CNIG product")
     catalog = provider.discover_all(plan.product, plan.bounds)
     return select_catalog_items(plan, catalog)

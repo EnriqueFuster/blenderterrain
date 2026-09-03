@@ -2,9 +2,20 @@ from __future__ import annotations
 
 import unittest
 
-from blender_terrain.core import BBoxWGS84, create_import_plan
-from blender_terrain.errors import PlanningLimitExceeded, UserInputError
+from blender_terrain.core import BBoxWGS84
+from blender_terrain.core import create_import_plan as _create_import_plan
+from blender_terrain.errors import NoCoverageError, PlanningLimitExceeded, UserInputError
 from blender_terrain.models import DatasetProduct, ProjectedBounds
+from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
+
+
+def create_import_plan(*args: object, **kwargs: object):
+    """Build plans for the 2 m CNIG fixture used by most tests in this module."""
+
+    kwargs.setdefault("native_resolution_override", 2.0)
+    if not kwargs.get("use_global_utm") and kwargs.get("working_crs_epsg") is None:
+        kwargs.setdefault("work_areas_override", split_spain_bbox_by_utm_zone(args[0]))
+    return _create_import_plan(*args, **kwargs)  # type: ignore[arg-type]
 
 
 class ImportPlanningTests(unittest.TestCase):
@@ -13,19 +24,34 @@ class ImportPlanningTests(unittest.TestCase):
 
         self.assertEqual(
             create_import_plan(
-                bounds, DatasetProduct.MDT50CM, None, False, None
+                bounds,
+                DatasetProduct.MDT50CM,
+                None,
+                False,
+                None,
+                native_resolution_override=0.5,
             ).elevation_resolution_metres,
             0.5,
         )
         self.assertEqual(
             create_import_plan(
-                bounds, DatasetProduct.MDT25, None, False, None
+                bounds,
+                DatasetProduct.MDT25,
+                None,
+                False,
+                None,
+                native_resolution_override=25.0,
             ).elevation_resolution_metres,
             25.0,
         )
         self.assertEqual(
             create_import_plan(
-                bounds, DatasetProduct.MDT200, None, False, None
+                bounds,
+                DatasetProduct.MDT200,
+                None,
+                False,
+                None,
+                native_resolution_override=200.0,
             ).elevation_resolution_metres,
             200.0,
         )
@@ -103,11 +129,11 @@ class ImportPlanningTests(unittest.TestCase):
                 None,
             )
 
-    def test_rejects_non_elevation_product(self) -> None:
-        with self.assertRaises(UserInputError):
-            create_import_plan(
+    def test_requires_native_resolution_from_the_data_source(self) -> None:
+        with self.assertRaisesRegex(UserInputError, "Native elevation resolution"):
+            _create_import_plan(
                 BBoxWGS84(-0.39, 39.46, -0.37, 39.48),
-                DatasetProduct.PNOA_MA,
+                "ANY_ELEVATION_PRODUCT",
                 10.0,
                 False,
                 None,
@@ -218,6 +244,33 @@ class ImportPlanningTests(unittest.TestCase):
         self.assertIsNotNone(plan.imagery)
         assert plan.imagery is not None
         self.assertGreaterEqual(plan.imagery.gsd_metres, 50.0)
+
+    def test_builds_french_catalog_plan_in_lambert93(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(2.34, 48.85, 2.36, 48.87),
+            "FR_RGE_ALTI_1M",
+            2.0,
+            False,
+            None,
+            native_resolution_override=1.0,
+            working_crs_epsg=2154,
+        )
+
+        self.assertEqual([area.crs.epsg for area in plan.work_areas], [2154])
+        self.assertEqual([grid.bounds.epsg for grid in plan.grids], [2154])
+        self.assertFalse(plan.crosses_utm_zones)
+
+    def test_rejects_lambert93_outside_metropolitan_envelope(self) -> None:
+        with self.assertRaisesRegex(NoCoverageError, "metropolitan France"):
+            create_import_plan(
+                BBoxWGS84(-61.6, 16.1, -61.5, 16.2),
+                "FR_RGE_ALTI_1M",
+                10.0,
+                False,
+                None,
+                native_resolution_override=1.0,
+                working_crs_epsg=2154,
+            )
 
     def test_imagery_cannot_be_requested_finer_than_source(self) -> None:
         with self.assertRaisesRegex(UserInputError, "finer than the source"):

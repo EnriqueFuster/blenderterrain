@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 import struct
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def list_geopackage_polygon_layers(path: str | Path) -> tuple[GeoPackageLayer, .
 
     source = Path(path).resolve()
     try:
-        with _open_read_only(source) as connection:
+        with closing(_open_read_only(source)) as connection:
             rows = connection.execute(
                 """
                 SELECT c.table_name, g.column_name, UPPER(g.geometry_type_name), g.srs_id
@@ -57,7 +58,7 @@ def read_geopackage_roi(path: str | Path, layer_name: str) -> RegionOfInterest:
     if layer is None:
         raise UserInputError(f"GeoPackage polygon layer does not exist: {layer_name!r}")
     try:
-        with _open_read_only(source) as connection:
+        with closing(_open_read_only(source)) as connection:
             converter = _geopackage_converter(connection, layer.srs_id)
             identifier = _quoted_identifier(layer.geometry_column)
             table = _quoted_identifier(layer.name)
@@ -86,11 +87,14 @@ def read_geopackage_roi(path: str | Path, layer_name: str) -> RegionOfInterest:
 def _open_read_only(source: Path) -> sqlite3.Connection:
     if not source.is_file():
         raise UserInputError(f"GeoPackage does not exist: {source}")
+    connection: sqlite3.Connection | None = None
     try:
         connection = sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True)
         connection.execute("PRAGMA query_only = ON")
         application_id = connection.execute("PRAGMA application_id").fetchone()[0]
     except sqlite3.Error as error:
+        if connection is not None:
+            connection.close()
         raise UserInputError(f"Cannot open GeoPackage: {error}") from error
     if application_id != 0x47504B47:
         connection.close()

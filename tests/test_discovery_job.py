@@ -2,15 +2,23 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import numpy as np
 
-from blender_terrain.core import BBoxWGS84, ProcessedElevationTile
+from blender_terrain.core import BBoxWGS84, ProcessedElevationTile, create_import_plan
 from blender_terrain.core.grid import tile_grid
 from blender_terrain.errors import CatalogContractChanged, ProviderUnavailableError
+from blender_terrain.jobs.cnig import (
+    run_cnig_availability_job as run_availability_job,
+)
+from blender_terrain.jobs.cnig import run_cnig_discovery_job as run_discovery_job
+from blender_terrain.jobs.local import run_local_delivery_job
 from blender_terrain.jobs.models import DiscoveryJob, JobState
 from blender_terrain.jobs.storage import (
     is_cancellation_requested,
@@ -18,12 +26,8 @@ from blender_terrain.jobs.storage import (
     request_cancellation,
     write_discovery_job,
 )
-from blender_terrain.jobs.worker import (
-    run_availability_job,
-    run_delivery_job,
-    run_discovery_job,
-)
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProjectedBounds
+from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 
 class FakeProvider:
@@ -63,37 +67,6 @@ class PartialCoverageProvider(FakeProvider):
         if product is DatasetProduct.MDS50CM:
             return CatalogPage(0, ())
         return super().discover_all(product, bbox)
-
-
-class FakeDeliveryCNIG(FakeProvider):
-    def download_item(
-        self, item: CatalogItem, cache_directory: Path,
-        maximum_bytes: int = 1_073_741_824, progress_callback=None,
-    ) -> Path:
-        cache_directory.mkdir(parents=True, exist_ok=True)
-        destination = cache_directory / item.filename
-        destination.write_bytes(b"fake tiff")
-        if progress_callback:
-            progress_callback(9, 9)
-        return destination
-
-
-class FakeDeliveryImagery:
-    def download_png(
-        self, bounds: ProjectedBounds, width: int, height: int, cache_directory: Path,
-        filename: str, progress_callback=None,
-    ) -> Path:
-        cache_directory.mkdir(parents=True, exist_ok=True)
-        destination = cache_directory / filename
-        destination.write_bytes(b"fake png")
-        if progress_callback:
-            progress_callback(8, 8)
-        return destination
-
-
-class OfflineDeliveryImagery:
-    def download_png(self, *args, **kwargs) -> Path:
-        raise ProviderUnavailableError("PNOA test outage")
 
 
 def job(use_imagery: bool = False) -> DiscoveryJob:
@@ -305,96 +278,41 @@ class DiscoveryWorkerTests(unittest.TestCase):
 
 
 class DeliveryWorkerTests(unittest.TestCase):
-    def test_downloads_elevation_and_pnoa_and_persists_paths(self) -> None:
+    def test_processes_local_elevation_without_a_provider(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
+            source = directory / "local-elevation.tif"
+            source.write_bytes(b"local-test-raster")
+            local_job = replace(job(), local_elevation_paths=(str(source),))
             job_path = directory / "jobs" / str(uuid4()) / "job.json"
-            write_discovery_job(job_path, job(use_imagery=True))
-
-            state = run_delivery_job(
-                job_path,
-                cnig_factory=FakeDeliveryCNIG,
-                imagery_factory=FakeDeliveryImagery,
-                elevation_processor=_fake_elevation_processor,
+            write_discovery_job(job_path, local_job)
+            plan = create_import_plan(
+                local_job.bounds,
+                local_job.product,
+                local_job.elevation_resolution_metres,
+                False,
+                None,
+                native_resolution_override=2.0,
+                work_areas_override=split_spain_bbox_by_utm_zone(local_job.bounds),
             )
 
-            result = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
-            events = [
-                json.loads(line)
-                for line in job_path.with_name("events.jsonl")
-                .read_text(encoding="utf-8")
-                .splitlines()
-            ]
-            self.assertEqual(state, JobState.COMPLETE)
-            self.assertEqual(len(result["elevation_paths"]), 1)
-            self.assertEqual(len(result["imagery_paths"]), 1)
-            self.assertEqual(len(result["imagery"]), 1)
-            self.assertEqual(result["imagery"][0]["bounds"]["epsg"], 25830)
-            self.assertEqual(len(result["processed_elevation"]), 1)
-            self.assertEqual(result["request"]["product"], "MDT02")
-            self.assertEqual(result["request"]["imagery_gsd_metres"], 5.0)
-            self.assertEqual(result["crs"][0]["epsg"], 25830)
-            self.assertEqual(result["sources"][0]["sequential_id"], "100")
-            self.assertIn("IGN-CNIG", result["provenance"]["source"])
-            self.assertIn("politica-datos", result["provenance"]["data_policy_url"])
-            self.assertEqual(result["cache_reuse"]["elevation_files"], 0)
-            self.assertEqual(result["cache_reuse"]["imagery_files"], 0)
-            self.assertGreaterEqual(result["timings_seconds"]["total"], 0.0)
-            self.assertGreaterEqual(result["timings_seconds"]["processing"], 0.0)
-            self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
-            self.assertIn("DOWNLOADING_ELEVATION", [event["state"] for event in events])
-            self.assertIn("DOWNLOADING_IMAGERY", [event["state"] for event in events])
-            download_messages = [
-                event["message"]
-                for event in events
-                if event["state"].startswith("DOWNLOADING_")
-            ]
-            self.assertTrue(
-                any(
-                    "elevation 1/1" in message and "100%" in message
-                    for message in download_messages
+            with (
+                patch("blender_terrain.jobs.local.create_local_import_plan", return_value=plan),
+                patch(
+                    "blender_terrain.jobs.local.inspect_local_elevation",
+                    return_value=SimpleNamespace(paths=(source.resolve(),)),
+                ),
+            ):
+                state = run_local_delivery_job(
+                    job_path,
+                    elevation_processor=_fake_elevation_processor,
                 )
-            )
-            self.assertTrue(any("imagery 1/1" in message for message in download_messages))
-            processing_messages = [
-                event["message"]
-                for event in events
-                if event["state"] == "PROCESSING_ELEVATION"
-            ]
-            self.assertIn("Processing terrain tile 1 of 1", processing_messages)
-            self.assertIn("Processed 1 terrain tile(s)", processing_messages)
-            self.assertIn("Writing terrain tile 1 of 1", processing_messages)
-
-    def test_honours_cancellation_before_network_delivery(self) -> None:
-        with TemporaryDirectory() as temporary_directory:
-            job_path = Path(temporary_directory) / "jobs" / str(uuid4()) / "job.json"
-            write_discovery_job(job_path, job())
-            request_cancellation(job_path.parent)
-
-            state = run_delivery_job(job_path, cnig_factory=FakeDeliveryCNIG)
-
-            self.assertEqual(state, JobState.CANCELLED)
-
-    def test_completes_processed_terrain_with_warning_when_pnoa_fails(self) -> None:
-        with TemporaryDirectory() as temporary_directory:
-            job_path = Path(temporary_directory) / "jobs" / str(uuid4()) / "job.json"
-            write_discovery_job(job_path, job(use_imagery=True))
-
-            state = run_delivery_job(
-                job_path,
-                cnig_factory=FakeDeliveryCNIG,
-                imagery_factory=OfflineDeliveryImagery,
-                elevation_processor=_fake_elevation_processor,
-            )
 
             result = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
-            self.assertEqual(state, JobState.COMPLETE_WITH_WARNINGS)
-            self.assertEqual(result["state"], "COMPLETE_WITH_WARNINGS")
-            self.assertEqual(result["imagery"], [])
-            self.assertEqual(result["imagery_paths"], [])
-            self.assertEqual(len(result["processed_elevation"]), 1)
-            self.assertIn("PNOA test outage", result["warnings"][0])
-
+            self.assertEqual(state, JobState.COMPLETE)
+            self.assertEqual(result["elevation_paths"], [str(source.resolve())])
+            self.assertEqual(result["provenance"]["source"], "User-provided local elevation raster")
+            self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
 
 def _fake_elevation_processor(
     paths: tuple[Path, ...],

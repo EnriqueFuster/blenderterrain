@@ -6,25 +6,27 @@ from dataclasses import dataclass
 
 from ..errors import NoCoverageError, UserInputError
 from .roi import BBoxWGS84
-from .territory import TerritoryGroup, classify_territory_envelope
 
 
 @dataclass(frozen=True, slots=True)
 class CRSInfo:
-    """A supported native UTM coordinate reference system."""
+    """A projected coordinate reference system supported by terrain processing."""
 
     epsg: int
     name: str
     datum: str
-    utm_zone: int
+    utm_zone: int | None
 
 
 @dataclass(frozen=True, slots=True)
-class UTMWorkArea:
-    """The part of a WGS84 bounding box assigned to one native UTM CRS."""
+class ProjectedWorkArea:
+    """The part of a WGS84 bounding box assigned to one projected CRS."""
 
     bounds: BBoxWGS84
     crs: CRSInfo
+
+
+UTMWorkArea = ProjectedWorkArea
 
 
 _SUPPORTED_CRS = {
@@ -33,43 +35,27 @@ _SUPPORTED_CRS = {
     30: CRSInfo(25830, "ETRS89 / UTM zone 30N", "ETRS89", 30),
     31: CRSInfo(25831, "ETRS89 / UTM zone 31N", "ETRS89", 31),
 }
-
-# Western longitude is inclusive; eastern longitude is exclusive except for the
-# final boundary. Territory validation is deliberately a separate concern.
-_ZONE_LONGITUDE_RANGES = {
-    28: (-18.0, -12.0),
-    29: (-12.0, -6.0),
-    30: (-6.0, 0.0),
-    31: (0.0, 6.0),
-}
-
+LAMBERT93 = CRSInfo(2154, "RGF93 v1 / Lambert-93", "RGF93 v1", None)
+_FRANCE_METROPOLITAN_ENVELOPE = BBoxWGS84(-5.5, 41.0, 10.0, 51.5)
 
 def crs_from_epsg(epsg: int) -> CRSInfo:
-    """Return a supported Spanish projected CRS by canonical EPSG code."""
+    """Return a supported projected CRS by canonical EPSG code."""
 
+    if epsg == LAMBERT93.epsg:
+        return LAMBERT93
     for crs in _SUPPORTED_CRS.values():
         if crs.epsg == epsg:
             return crs
     raise UserInputError(f"Local raster CRS EPSG:{epsg} is not supported")
 
 
-def split_bbox_by_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
-    """Select the datum family and split bounds at supported UTM meridians."""
+def work_area_for_crs(bounds: BBoxWGS84, epsg: int) -> ProjectedWorkArea:
+    """Create one work area for a CRS whose supported extent contains the ROI."""
 
-    territory = classify_territory_envelope(bounds)
-    supported_zones = (28,) if territory is TerritoryGroup.CANARY_ISLANDS else (29, 30, 31)
-    work_areas: list[UTMWorkArea] = []
-    for zone in supported_zones:
-        zone_west, zone_east = _ZONE_LONGITUDE_RANGES[zone]
-        part_west = max(bounds.west, zone_west)
-        part_east = min(bounds.east, zone_east)
-        if part_east <= part_west:
-            continue
-        part = BBoxWGS84(part_west, bounds.south, part_east, bounds.north)
-        work_areas.append(UTMWorkArea(part, _SUPPORTED_CRS[zone]))
-    if not work_areas:
-        raise NoCoverageError("ROI does not intersect a supported Spanish UTM zone")
-    return tuple(work_areas)
+    crs = crs_from_epsg(epsg)
+    if epsg == LAMBERT93.epsg and not _contains(_FRANCE_METROPOLITAN_ENVELOPE, bounds):
+        raise NoCoverageError("EPSG:2154 processing is limited to metropolitan France and Corsica")
+    return ProjectedWorkArea(bounds, crs)
 
 
 def split_bbox_by_wgs84_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
@@ -108,3 +94,12 @@ def split_bbox_by_wgs84_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
                 )
             )
     return tuple(work_areas)
+
+
+def _contains(container: BBoxWGS84, candidate: BBoxWGS84) -> bool:
+    return (
+        container.west <= candidate.west
+        and container.south <= candidate.south
+        and container.east >= candidate.east
+        and container.north >= candidate.north
+    )

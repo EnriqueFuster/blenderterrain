@@ -71,9 +71,35 @@ def test_researched_products_are_not_selectable() -> None:
         if product.implementation_status is ImplementationStatus.RESEARCHED
     )
 
-    assert {product.jurisdiction for product in researched} == {"FR", "CH"}
+    assert {product.jurisdiction for product in researched} == {"CH"}
     assert researched
     assert not any(product.selectable for product in researched)
+
+
+def test_french_products_declare_executable_wms_contracts() -> None:
+    catalog = load_bundled_catalog()
+    rge_alti = catalog.product("FR_RGE_ALTI_1M")
+    mns = catalog.product("FR_MNS_CORREL_50CM")
+    ortho = catalog.product("FR_BD_ORTHO")
+
+    assert rge_alti.wms is not None
+    assert rge_alti.wms.layer == "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES"
+    assert rge_alti.wms.sample_dtype == "<f4"
+    assert rge_alti.wms.nodata == -99999.0
+    assert mns.wms is not None
+    assert mns.wms.layer == "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES.MNS"
+    assert ortho.wms is not None
+    assert ortho.wms.layer == "HR.ORTHOIMAGERY.ORTHOPHOTOS"
+    assert ortho.wms.format == "image/png"
+    assert ortho.wms.sample_dtype is None
+    assert {product.wms.crs_epsg for product in (rge_alti, mns, ortho) if product.wms} == {
+        2154
+    }
+    assert all(
+        product.wms is not None and product.wms.maximum_dimension == 4096
+        for product in (rge_alti, mns, ortho)
+    )
+    assert all(product.selectable for product in (rge_alti, mns, ortho))
 
 
 def test_selectable_products_have_commercial_safe_license_metadata() -> None:

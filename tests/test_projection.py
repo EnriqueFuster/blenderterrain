@@ -4,14 +4,20 @@ import unittest
 
 import numpy as np
 
-from blender_terrain.core.crs import split_bbox_by_utm_zone
+from blender_terrain.core.crs import LAMBERT93, work_area_for_crs
 from blender_terrain.core.projection import (
+    project_arrays_to_wgs84,
+    project_to_wgs84,
     project_utm_arrays_to_wgs84,
     project_utm_to_wgs84,
+    project_wgs84,
     project_wgs84_to_utm,
     project_work_area_bounds,
 )
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.providers.spain_crs import (
+    split_spain_bbox_by_utm_zone as split_bbox_by_utm_zone,
+)
 
 
 class UTMProjectionTests(unittest.TestCase):
@@ -75,6 +81,49 @@ class UTMProjectionTests(unittest.TestCase):
 
         for longitude, latitude in area.bounds.polygon_ring():
             point = project_wgs84_to_utm(longitude, latitude, area.crs)
+            self.assertLessEqual(envelope.west, point.easting)
+            self.assertGreaterEqual(envelope.east, point.easting)
+            self.assertLessEqual(envelope.south, point.northing)
+            self.assertGreaterEqual(envelope.north, point.northing)
+
+
+class Lambert93ProjectionTests(unittest.TestCase):
+    def test_projection_origin_maps_to_false_origin(self) -> None:
+        point = project_wgs84(3.0, 46.5, LAMBERT93)
+
+        self.assertAlmostEqual(point.easting, 700_000.0, delta=0.001)
+        self.assertAlmostEqual(point.northing, 6_600_000.0, delta=0.001)
+
+    def test_round_trips_points_across_metropolitan_france_and_corsica(self) -> None:
+        points = ((-4.5, 48.4), (2.35, 48.86), (7.26, 43.7), (9.1, 42.0))
+        for longitude, latitude in points:
+            point = project_wgs84(longitude, latitude, LAMBERT93)
+            recovered = project_to_wgs84(point, LAMBERT93)
+
+            with self.subTest(longitude=longitude, latitude=latitude):
+                self.assertAlmostEqual(recovered.longitude, longitude, places=9)
+                self.assertAlmostEqual(recovered.latitude, latitude, places=9)
+
+    def test_array_inverse_matches_scalar_projection(self) -> None:
+        points = tuple(
+            project_wgs84(x, y, LAMBERT93) for x, y in ((2.3, 48.8), (7.2, 43.6))
+        )
+
+        longitude, latitude = project_arrays_to_wgs84(
+            np.asarray([point.easting for point in points]),
+            np.asarray([point.northing for point in points]),
+            LAMBERT93,
+        )
+
+        np.testing.assert_allclose(longitude, [2.3, 7.2], atol=1e-9)
+        np.testing.assert_allclose(latitude, [48.8, 43.6], atol=1e-9)
+
+    def test_projected_envelope_contains_bbox_edges(self) -> None:
+        area = work_area_for_crs(BBoxWGS84(2.2, 48.7, 2.5, 48.95), 2154)
+        envelope = project_work_area_bounds(area)
+
+        for longitude, latitude in area.bounds.polygon_ring():
+            point = project_wgs84(longitude, latitude, area.crs)
             self.assertLessEqual(envelope.west, point.easting)
             self.assertGreaterEqual(envelope.east, point.easting)
             self.assertLessEqual(envelope.south, point.northing)

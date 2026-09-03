@@ -22,7 +22,9 @@ class WMSCapabilities:
     max_height: int
 
 
-def parse_wms_capabilities(xml: bytes, expected_layer: str) -> WMSCapabilities:
+def parse_wms_capabilities(
+    xml: bytes, expected_layer: str, required_format: str = "image/png"
+) -> WMSCapabilities:
     """Parse WMS capabilities and reject a changed or incomplete contract."""
 
     try:
@@ -42,8 +44,9 @@ def parse_wms_capabilities(xml: bytes, expected_layer: str) -> WMSCapabilities:
         for node in (() if get_map is None else get_map.findall("wms:Format", namespace))
         if (value := (node.text or "").strip())
     )
-    if "image/png" not in formats:
-        raise ProviderContractChanged("PNOA WMS no longer advertises PNG maps")
+    if required_format not in formats:
+        label = "PNG" if required_format == "image/png" else required_format
+        raise ProviderContractChanged(f"WMS no longer advertises required format {label}")
 
     service = root.find("wms:Service", namespace)
     max_width = _positive_int(service, "MaxWidth", namespace)

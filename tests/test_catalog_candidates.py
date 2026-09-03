@@ -48,32 +48,38 @@ def test_implemented_global_dtm_coexists_with_ign_but_is_not_forced() -> None:
     assert candidates.recommended.product.id == "MDT02"
 
 
-def test_french_roi_uses_global_only_after_global_provider_is_implemented() -> None:
-    catalog = _with_status("GEDTM30_V11", ImplementationStatus.EXPERIMENTAL)
+def test_french_dtm_is_recommended_without_hiding_global_fallback() -> None:
+    candidates = discover_candidates(load_bundled_catalog(), PARIS, DatasetKind.DTM)
 
-    candidates = discover_candidates(catalog, PARIS, DatasetKind.DTM)
-
-    assert [candidate.product.id for candidate in candidates.valid] == ["GEDTM30_V11"]
-    french = next(
-        candidate
-        for candidate in candidates.rejected
-        if candidate.product.id == "FR_RGE_ALTI_1M"
-    )
-    assert french.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
+    assert [candidate.product.id for candidate in candidates.valid] == [
+        "FR_RGE_ALTI_1M",
+        "GEDTM30_V11",
+    ]
+    assert candidates.recommended is not None
+    assert candidates.recommended.product.id == "FR_RGE_ALTI_1M"
+    assert all(candidate.coverage.value == "potential" for candidate in candidates.valid)
 
 
-def test_french_roi_exposes_global_dsm_but_not_researched_national_dsm() -> None:
+def test_french_roi_exposes_national_and_global_dsm() -> None:
     candidates = discover_candidates(load_bundled_catalog(), PARIS, DatasetKind.DSM)
 
     assert [candidate.product.id for candidate in candidates.valid] == [
+        "FR_MNS_CORREL_50CM",
         "COPERNICUS_GLO30_2021"
     ]
     assert candidates.recommended is not None
-    assert candidates.recommended.product.id == "COPERNICUS_GLO30_2021"
-    assert all(
-        candidate.product.provider_id != "ign_france"
-        for candidate in candidates.valid
-    )
+    assert candidates.recommended.product.id == "FR_MNS_CORREL_50CM"
+
+
+def test_french_roi_exposes_bd_ortho_and_worldcover() -> None:
+    candidates = discover_candidates(load_bundled_catalog(), PARIS, DatasetKind.IMAGERY)
+
+    assert [candidate.product.id for candidate in candidates.valid] == [
+        "FR_BD_ORTHO",
+        "ESA_WORLDCOVER_S2_2021",
+    ]
+    assert candidates.recommended is not None
+    assert candidates.recommended.product.id == "FR_BD_ORTHO"
 
 
 def test_layer_kinds_are_resolved_independently() -> None:

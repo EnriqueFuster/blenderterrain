@@ -6,17 +6,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
+from ..catalog import load_bundled_catalog
 from ..catalog.models import DatasetKind
 from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
-from ..core.discovery import discover_sources
 from ..core.planning import create_import_plan
 from ..core.roi import BBoxWGS84
 from ..errors import JobCancelled
 from ..io.tiff_validation import validate_tiff_header
 from ..models import CatalogItem, CatalogPage, DatasetProduct
+from .cnig_discovery import discover_sources
 from .cnig_portal import CNIGPortalClient
+from .spain_crs import split_spain_bbox_by_utm_zone
 
 
 class _CnigClient(Protocol):
@@ -68,6 +70,12 @@ class CnigElevationAcquirer:
             request.target_resolution_m,
             False,
             None,
+            native_resolution_override=(
+                load_bundled_catalog()
+                .product(selection.product_id)
+                .capabilities.native_resolution_m
+            ),
+            work_areas_override=split_spain_bbox_by_utm_zone(roi),
         )
         discovery = discover_sources(plan, self.client)
         target = cache_directory / selection.provider_id / selection.product_id

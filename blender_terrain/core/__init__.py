@@ -6,9 +6,8 @@ from .bathymetry_processing import (
     compose_terrain_bathymetry,
     process_gebco_tiles,
 )
-from .crs import CRSInfo, UTMWorkArea, split_bbox_by_utm_zone
-from .delivery import DeliveryResult, TransferProgress, deliver_plan_sources
-from .discovery import DiscoveryResult, discover_sources, select_catalog_items
+from .crs import CRSInfo, ProjectedWorkArea, UTMWorkArea
+from .delivery import TransferProgress
 from .elevation_processing import (
     ProcessedElevationTile,
     geographic_source_bounds,
@@ -24,7 +23,7 @@ from .grid import (
     tile_grid_manual,
 )
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
-from .imagery import ImageryTileRequest, plan_imagery_tiles
+from .imagery import ImageryTileRequest, plan_imagery_tiles, plan_texture_tiles
 from .imagery_processing import ProcessedImageryTile, process_worldcover_imagery
 from .local_elevation import (
     LocalElevationInspection,
@@ -45,7 +44,10 @@ from .prepared_export import PreparedRasterExport, export_prepared_rasters
 from .projection import (
     GeographicPoint,
     ProjectedPoint,
+    project_arrays_to_wgs84,
+    project_to_wgs84,
     project_utm_to_wgs84,
+    project_wgs84,
     project_wgs84_to_utm,
     project_work_area_bounds,
 )
@@ -61,7 +63,6 @@ from .terrain_schema import (
     read_terrain_metadata,
     subdivision_risk_message,
 )
-from .territory import TerritoryGroup, classify_territory_envelope
 from .texture_mapping import (
     TextureTransform,
     bounds_fully_covered,
@@ -79,8 +80,6 @@ __all__ = [
     "BBoxWGS84",
     "CRSInfo",
     "ComposedTerrainTile",
-    "DeliveryResult",
-    "DiscoveryResult",
     "ElevationRange",
     "GeographicPoint",
     "GridSpec",
@@ -96,13 +95,13 @@ __all__ = [
     "ProcessedElevationTile",
     "ProcessedImageryTile",
     "ProjectedPoint",
+    "ProjectedWorkArea",
     "ROIEstimate",
     "RegionOfInterest",
     "TerrainMeshGeometry",
     "TerrainMetadata",
     "TerrainRepresentation",
     "TerrainSettings",
-    "TerritoryGroup",
     "TextureTransform",
     "TransferProgress",
     "UTMWorkArea",
@@ -112,12 +111,9 @@ __all__ = [
     "build_displacement_mesh_geometry",
     "build_terrain_mesh_geometry",
     "calculate_elevation_range",
-    "classify_territory_envelope",
     "closed_ring",
     "compose_terrain_bathymetry",
     "create_import_plan",
-    "deliver_plan_sources",
-    "discover_sources",
     "estimate_bbox",
     "export_prepared_rasters",
     "format_bbox",
@@ -128,17 +124,19 @@ __all__ = [
     "normalize_heightmap",
     "parse_bbox",
     "plan_imagery_tiles",
+    "plan_texture_tiles",
     "process_elevation_tiles",
     "process_gebco_tiles",
     "process_worldcover_imagery",
+    "project_arrays_to_wgs84",
+    "project_to_wgs84",
     "project_utm_to_wgs84",
+    "project_wgs84",
     "project_wgs84_to_utm",
     "project_work_area_bounds",
     "projected_texture_transform",
     "read_terrain_metadata",
     "resolve_local_elevation_paths",
-    "select_catalog_items",
-    "split_bbox_by_utm_zone",
     "subdivision_risk_message",
     "tile_grid",
     "tile_grid_manual",

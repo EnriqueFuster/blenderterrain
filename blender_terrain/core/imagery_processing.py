@@ -14,9 +14,9 @@ from ..io.imagery_window import ImageryWindowReader
 from ..io.png_validation import validate_png, write_rgb_png
 from ..models import ProjectedBounds
 from .crs import CRSInfo
-from .imagery import plan_imagery_tiles
+from .imagery import plan_texture_tiles
 from .planning import ImportPlan
-from .projection import project_utm_arrays_to_wgs84
+from .projection import project_arrays_to_wgs84
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,17 +35,17 @@ def process_worldcover_imagery(
     progress_callback: Callable[[int, int], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
 ) -> tuple[ProcessedImageryTile, ...]:
-    """Nearest-neighbour reproject RGB bands onto the planned UTM texture grids."""
+    """Nearest-neighbour reproject RGB bands onto planned texture grids."""
 
     readers = tuple(ImageryWindowReader(path) for path in source_paths)
-    requests = plan_imagery_tiles(plan)
+    requests = plan_texture_tiles(plan, "worldcover")
     outputs: list[ProcessedImageryTile] = []
     if progress_callback is not None:
         progress_callback(0, len(requests))
     for completed, request in enumerate(requests, start=1):
         if cancellation_requested():
             raise JobCancelled("Imagery processing was cancelled")
-        path = output_directory / request.filename.replace("pnoa_", "worldcover_")
+        path = output_directory / request.filename
         if path.is_file():
             validate_png(path, request.width, request.height)
         else:
@@ -93,7 +93,7 @@ def _reproject_request(
             (bounds.north - bounds.south) / height
         )
         x, y = np.meshgrid(eastings, northings)
-        longitude, latitude = project_utm_arrays_to_wgs84(x, y, crs)
+        longitude, latitude = project_arrays_to_wgs84(x, y, crs)
         block = output[start:stop]
         block_covered = covered[start:stop]
         for reader in readers:

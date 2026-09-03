@@ -47,8 +47,6 @@ from ..providers.gebco import PRODUCT_ID as GEBCO_PRODUCT_ID
 from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
 from ..providers.worldcover import PRODUCT_ID as WORLDCOVER_PRODUCT_ID
 
-_GLOBAL_PRODUCT_IDS = {GLO30_PRODUCT_ID, GEDTM30_PRODUCT_ID}
-
 _POLL_INTERVAL_SECONDS = 0.25
 _TERMINAL_STATES = {
     JobState.COMPLETE.value,
@@ -100,10 +98,10 @@ def recover_interrupted_jobs() -> int:
         properties.job_state = JobState.INVALID_DATA.value
         properties.job_progress = 1.0
         properties.job_message = "Previous background task was interrupted; retry when ready"
-        if mode == "discovery":
+        if mode in {"cnig_discovery", "local_discovery"}:
             properties.discovery_ready = False
             properties.discovery_summary = ""
-        elif mode == "availability":
+        elif mode == "cnig_availability":
             properties.product_availability_json = "[]"
             properties.product_availability_summary = ""
         else:
@@ -136,17 +134,31 @@ def start_discovery(context: bpy.types.Context) -> None:
     if not properties.is_valid:
         raise UserInputError("Validate the ROI before discovering sources")
     properties.discovery_ready = False
-    if properties.product in _GLOBAL_PRODUCT_IDS:
+    if properties.elevation_source == "LOCAL":
+        _start_worker(
+            context,
+            properties,
+            "local_discovery",
+            "Starting local raster validation",
+        )
+        return
+    product = load_bundled_catalog().product(properties.product)
+    if product.provider_id != "ign_cnig":
         region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
         count = (
-            len(glo30_tiles_for_roi(region.bounds)) if properties.product == GLO30_PRODUCT_ID else 2
+            len(glo30_tiles_for_roi(region.bounds))
+            if properties.product == GLO30_PRODUCT_ID
+            else 0
         )
         properties.discovered_file_count = count
-        properties.discovery_summary = (
-            f"{count} Copernicus GLO-30 tile(s) required"
-            if properties.product == GLO30_PRODUCT_ID
-            else "GEDTM30 elevation and uncertainty windows required"
-        )
+        if properties.product == GLO30_PRODUCT_ID:
+            properties.discovery_summary = f"{count} Copernicus GLO-30 tile(s) required"
+        elif properties.product == GEDTM30_PRODUCT_ID:
+            properties.discovery_summary = "GEDTM30 elevation and uncertainty windows required"
+        else:
+            properties.discovery_summary = (
+                f"{product.name} WMS windows required; valid pixels are confirmed during download"
+            )
         if properties.bathymetry_mode == "GEBCO":
             properties.discovery_summary += "; GEBCO elevation and quality windows required"
         if properties.imagery_product != "NONE":
@@ -154,9 +166,9 @@ def start_discovery(context: bpy.types.Context) -> None:
         properties.discovery_ready = True
         properties.job_state = JobState.COMPLETE.value
         properties.job_progress = 1.0
-        properties.job_message = "Global DSM sources resolved from the confirmed ROI"
+        properties.job_message = "Selected raster sources resolved from the confirmed ROI"
         return
-    _start_worker(context, properties, "discovery", "Starting background source discovery")
+    _start_worker(context, properties, "cnig_discovery", "Starting CNIG source discovery")
 
 
 def start_delivery(context: bpy.types.Context) -> None:
@@ -169,7 +181,7 @@ def start_delivery(context: bpy.types.Context) -> None:
     if properties.elevation_source != "LOCAL":
         _start_acquisition_worker(context, properties)
         return
-    _start_worker(context, properties, "delivery", "Starting background data download")
+    _start_worker(context, properties, "local_delivery", "Starting local raster processing")
 
 
 def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> None:
@@ -252,9 +264,8 @@ def _acquisition_plan_from_properties(properties: Any, region: RegionOfInterest)
         imagery_product = catalog.product(properties.imagery_product)
         imagery_layer = LayerRequest(
             DatasetKind.IMAGERY,
-            properties.selected_imagery_gsd or 10.0
-            if is_global
-            else (None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)),
+            properties.selected_imagery_gsd
+            or imagery_product.capabilities.native_resolution_m,
             "2021" if is_global else None,
         )
         layers.append(imagery_layer)
@@ -288,7 +299,7 @@ def start_availability(context: bpy.types.Context) -> None:
     _start_worker(
         context,
         properties,
-        "availability",
+        "cnig_availability",
         "Starting product availability check",
     )
 
@@ -325,7 +336,13 @@ def retry_last_job(context: bpy.types.Context) -> None:
     except (OSError, ValueError) as exc:
         raise UserInputError("The previous job is no longer available in the cache") from exc
     mode = properties.last_job_mode
-    if mode not in {"discovery", "availability", "delivery", "acquisition"}:
+    if mode not in {
+        "cnig_discovery",
+        "cnig_availability",
+        "acquisition",
+        "local_discovery",
+        "local_delivery",
+    }:
         raise UserInputError("The previous job mode cannot be retried")
     if mode == "acquisition":
         previous_acquisition = read_acquisition_job(resolved_previous)
@@ -364,7 +381,8 @@ def retry_last_job(context: bpy.types.Context) -> None:
 
 def _job_requires_network(job: DiscoveryJob, mode: str) -> bool:
     return (
-        mode == "availability"
+        mode == "cnig_availability"
+        or mode == "cnig_discovery"
         or not job.local_elevation_paths
         or (job.use_imagery and job.local_imagery_path is None)
     )
@@ -392,8 +410,7 @@ def _launch_worker(
         "--",
         str(job_path),
     ]
-    if mode != "discovery":
-        command.append(mode)
+    command.append(mode)
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     log_path = job_directory / "worker.log"
     try:
@@ -424,7 +441,7 @@ def _launch_worker(
     properties.job_event_history = json.dumps([{"message": message, "progress": 0.0}])
     properties.last_job_path = str(job_path)
     properties.last_job_mode = mode
-    if mode == "discovery":
+    if mode in {"cnig_discovery", "local_discovery"}:
         properties.discovery_summary = ""
     if not bpy.app.timers.is_registered(_poll_active_job):
         bpy.app.timers.register(_poll_active_job, first_interval=_POLL_INTERVAL_SECONDS)
@@ -574,7 +591,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
     properties.job_state = state
     properties.job_progress = 1.0
     if state in {JobState.COMPLETE.value, JobState.COMPLETE_WITH_WARNINGS.value}:
-        if active.mode == "availability":
+        if active.mode == "cnig_availability":
             availability = result.get("availability", [])
             if not isinstance(availability, list):
                 availability = []
@@ -592,7 +609,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
                 str(warnings[0]) if warnings else "Product availability check completed"
             )
             return
-        if active.mode in {"delivery", "acquisition"}:
+        if active.mode in {"acquisition", "local_delivery"}:
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
             bathymetry_count = len(result.get("bathymetry", []))
@@ -647,10 +664,10 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         properties.discovery_ready = True
         properties.job_message = "Source discovery completed"
     else:
-        if active.mode == "discovery":
+        if active.mode in {"cnig_discovery", "local_discovery"}:
             properties.discovery_summary = ""
             properties.discovery_ready = False
-        elif active.mode == "availability":
+        elif active.mode == "cnig_availability":
             properties.product_availability_json = "[]"
             properties.product_availability_summary = ""
         else:

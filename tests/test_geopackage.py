@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import struct
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -55,7 +56,7 @@ def test_rejects_sqlite_database_without_geopackage_identifier(tmp_path: Path) -
 
 
 def _create_geopackage(path: Path) -> None:
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA application_id = 1196444487")
         connection.executescript(
             """
