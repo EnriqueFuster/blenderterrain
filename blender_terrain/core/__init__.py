@@ -7,7 +7,7 @@ from .bathymetry_processing import (
     process_gebco_tiles,
 )
 from .crs import CRSInfo, ProjectedWorkArea, UTMWorkArea, split_bbox_by_utm_zone
-from .delivery import DeliveryResult, TransferProgress, deliver_plan_sources
+from .delivery import TransferProgress
 from .discovery import DiscoveryResult, discover_sources, select_catalog_items
 from .elevation_processing import (
     ProcessedElevationTile,
@@ -82,7 +82,6 @@ __all__ = [
     "BBoxWGS84",
     "CRSInfo",
     "ComposedTerrainTile",
-    "DeliveryResult",
     "DiscoveryResult",
     "ElevationRange",
     "GeographicPoint",
@@ -120,7 +119,6 @@ __all__ = [
     "closed_ring",
     "compose_terrain_bathymetry",
     "create_import_plan",
-    "deliver_plan_sources",
     "discover_sources",
     "estimate_bbox",
     "export_prepared_rasters",
