@@ -7,12 +7,8 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
-from typing import Protocol
 
 from ..core import (
-    ImportPlan,
-    ProcessedElevationTile,
-    RegionOfInterest,
     TransferProgress,
     inspect_local_imagery,
     process_elevation_tiles,
@@ -44,6 +40,7 @@ from .storage import (
     read_discovery_job,
     write_result,
 )
+from .terrain import ElevationProcessor
 
 
 class LocalElevationClient:
@@ -64,19 +61,6 @@ class LocalElevationClient:
         if progress_callback is not None:
             progress_callback(size, size)
         return path
-
-
-class ElevationProcessor(Protocol):
-    """Callable contract for the legacy elevation processing stage."""
-
-    def __call__(
-        self,
-        source_paths: tuple[Path, ...],
-        plan: ImportPlan,
-        progress_callback: Callable[[int, int], None] | None = None,
-        maximum_source_window_pixels: int = 4_194_304,
-        region: RegionOfInterest | None = None,
-    ) -> tuple[ProcessedElevationTile, ...]: ...
 
 
 def run_delivery_job(

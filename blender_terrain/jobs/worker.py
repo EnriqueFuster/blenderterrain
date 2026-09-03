@@ -24,8 +24,6 @@ from ..errors import (
 )
 from ..providers.registry import build_raster_acquirers
 from .imagery import prepare_confirmed_imagery
-from .legacy_delivery import ElevationProcessor
-from .legacy_delivery import run_delivery_job as run_delivery_job
 from .models import JobState, ProgressEvent
 from .output import (
     build_result_payload,
@@ -41,6 +39,7 @@ from .storage import (
     read_acquisition_job,
     write_result,
 )
+from .terrain import ElevationProcessor
 from .terrain import PreparedElevation as PreparedElevation
 from .terrain import acquire_confirmed_sources as acquire_confirmed_sources
 from .terrain import prepare_confirmed_bathymetry as prepare_confirmed_bathymetry

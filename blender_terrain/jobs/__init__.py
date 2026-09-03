@@ -3,12 +3,12 @@
 from .acquisition_job import AcquisitionJob
 from .legacy_discovery import run_discovery_job
 from .models import DiscoveryJob, JobState, ProgressEvent
-from .worker import (
+from .terrain import (
     PreparedElevation,
     acquire_confirmed_sources,
     prepare_confirmed_elevation,
-    run_confirmed_acquisition_job,
 )
+from .worker import run_confirmed_acquisition_job
 
 __all__ = [
     "AcquisitionJob",

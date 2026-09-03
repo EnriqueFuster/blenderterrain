@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
@@ -30,7 +31,19 @@ from ..core import (
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
 from ..errors import JobCancelled, NoCoverageError, RasterFormatError, UserInputError
 from ..providers.registry import build_raster_acquirers
-from .legacy_delivery import ElevationProcessor
+
+
+class ElevationProcessor(Protocol):
+    """Callable contract for provider-neutral elevation processing."""
+
+    def __call__(
+        self,
+        source_paths: tuple[Path, ...],
+        plan: ImportPlan,
+        progress_callback: Callable[[int, int], None] | None = None,
+        maximum_source_window_pixels: int = 4_194_304,
+        region: RegionOfInterest | None = None,
+    ) -> tuple[ProcessedElevationTile, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
