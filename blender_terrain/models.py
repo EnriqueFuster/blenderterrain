@@ -75,6 +75,23 @@ class CatalogPage:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscoveryResult:
+    """Source files selected for one import plan."""
+
+    items: tuple[CatalogItem, ...]
+    advertised_items: int
+    ignored_items: int
+
+    @property
+    def estimated_download_mb(self) -> float | None:
+        """Sum advertised sizes, or return None if any size is unknown."""
+
+        if any(item.size_mb is None for item in self.items):
+            return None
+        return sum(item.size_mb or 0.0 for item in self.items)
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectedBounds:
     """Rectangular bounds expressed in one projected EPSG coordinate system."""
 

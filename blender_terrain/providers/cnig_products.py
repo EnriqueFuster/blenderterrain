@@ -1,4 +1,4 @@
-"""Legacy CNIG product metadata retained outside the generic planner."""
+"""Native resolution metadata for the original CNIG product enum."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ NATIVE_RESOLUTION_METRES = {
 }
 
 
-def legacy_native_resolution(product: str) -> float | None:
-    """Return native resolution for a product from the pre-catalog CNIG API."""
+def cnig_native_resolution(product: str) -> float | None:
+    """Return native resolution for a known CNIG elevation product."""
 
     try:
         cnig_product = DatasetProduct(product)

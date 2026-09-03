@@ -15,8 +15,7 @@ from ..core import (
     process_elevation_tiles,
 )
 from ..errors import JobCancelled, JobFormatError, RasterFormatError, UserInputError
-from ..models import CatalogItem
-from ..providers.cnig_discovery import DiscoveryResult
+from ..models import CatalogItem, DiscoveryResult
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
 from .output import write_processed_tiles
 from .storage import (

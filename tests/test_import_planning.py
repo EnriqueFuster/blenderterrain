@@ -5,13 +5,13 @@ import unittest
 from blender_terrain.core import BBoxWGS84, create_import_plan
 from blender_terrain.errors import NoCoverageError, PlanningLimitExceeded, UserInputError
 from blender_terrain.models import DatasetProduct, ProjectedBounds
-from blender_terrain.providers.cnig_products import legacy_native_resolution
+from blender_terrain.providers.cnig_products import cnig_native_resolution
 
 
 class ImportPlanningTests(unittest.TestCase):
-    def test_legacy_cnig_resolution_metadata_is_owned_by_the_provider(self) -> None:
-        self.assertEqual(legacy_native_resolution(DatasetProduct.MDT02), 2.0)
-        self.assertIsNone(legacy_native_resolution(DatasetProduct.PNOA_MA))
+    def test_cnig_resolution_metadata_is_owned_by_the_provider(self) -> None:
+        self.assertEqual(cnig_native_resolution(DatasetProduct.MDT02), 2.0)
+        self.assertIsNone(cnig_native_resolution(DatasetProduct.PNOA_MA))
 
     def test_auto_respects_each_products_native_resolution(self) -> None:
         bounds = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)

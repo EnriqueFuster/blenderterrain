@@ -8,7 +8,6 @@ from .bathymetry_processing import (
 )
 from .crs import CRSInfo, ProjectedWorkArea, UTMWorkArea, split_bbox_by_utm_zone
 from .delivery import TransferProgress
-from .discovery import DiscoveryResult, discover_sources, select_catalog_items
 from .elevation_processing import (
     ProcessedElevationTile,
     geographic_source_bounds,
@@ -64,7 +63,6 @@ from .terrain_schema import (
     read_terrain_metadata,
     subdivision_risk_message,
 )
-from .territory import TerritoryGroup, classify_territory_envelope
 from .texture_mapping import (
     TextureTransform,
     bounds_fully_covered,
@@ -82,7 +80,6 @@ __all__ = [
     "BBoxWGS84",
     "CRSInfo",
     "ComposedTerrainTile",
-    "DiscoveryResult",
     "ElevationRange",
     "GeographicPoint",
     "GridSpec",
@@ -105,7 +102,6 @@ __all__ = [
     "TerrainMetadata",
     "TerrainRepresentation",
     "TerrainSettings",
-    "TerritoryGroup",
     "TextureTransform",
     "TransferProgress",
     "UTMWorkArea",
@@ -115,11 +111,9 @@ __all__ = [
     "build_displacement_mesh_geometry",
     "build_terrain_mesh_geometry",
     "calculate_elevation_range",
-    "classify_territory_envelope",
     "closed_ring",
     "compose_terrain_bathymetry",
     "create_import_plan",
-    "discover_sources",
     "estimate_bbox",
     "export_prepared_rasters",
     "format_bbox",
@@ -143,7 +137,6 @@ __all__ = [
     "projected_texture_transform",
     "read_terrain_metadata",
     "resolve_local_elevation_paths",
-    "select_catalog_items",
     "split_bbox_by_utm_zone",
     "subdivision_risk_message",
     "tile_grid",

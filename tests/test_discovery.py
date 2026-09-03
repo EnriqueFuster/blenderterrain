@@ -6,7 +6,6 @@ from blender_terrain.core import (
     BBoxWGS84,
     create_import_plan,
 )
-from blender_terrain.core.discovery import discover_sources as legacy_discover_sources
 from blender_terrain.errors import CatalogContractChanged, NoCoverageError
 from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
 from blender_terrain.providers.cnig_discovery import discover_sources, select_catalog_items
@@ -84,10 +83,6 @@ class DiscoverySelectionTests(unittest.TestCase):
 
         self.assertEqual(result.items, expected.items)
         self.assertEqual(provider.arguments, (self.plan.product, self.plan.bounds))
-
-    def test_legacy_core_import_remains_compatible(self) -> None:
-        self.assertIs(legacy_discover_sources, discover_sources)
-
 
 if __name__ == "__main__":
     unittest.main()

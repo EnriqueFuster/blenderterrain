@@ -2,37 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 
 from ..core.planning import ImportPlan
 from ..core.roi import BBoxWGS84
 from ..errors import CatalogContractChanged, NoCoverageError
-from ..models import CatalogItem, CatalogPage, DatasetProduct
+from ..models import CatalogItem, CatalogPage, DatasetProduct, DiscoveryResult
 
 
 class CatalogDiscoveryProvider(Protocol):
-    """CNIG catalog capability used by the legacy discovery jobs."""
+    """CNIG catalog capability required for source discovery."""
 
     def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
         """Return every catalog page for a product and ROI."""
-
-
-@dataclass(frozen=True, slots=True)
-class DiscoveryResult:
-    """Native projected CNIG files selected for one import plan."""
-
-    items: tuple[CatalogItem, ...]
-    advertised_items: int
-    ignored_items: int
-
-    @property
-    def estimated_download_mb(self) -> float | None:
-        """Sum advertised sizes, or return None if any size is unknown."""
-
-        if any(item.size_mb is None for item in self.items):
-            return None
-        return sum(item.size_mb or 0.0 for item in self.items)
 
 
 def select_catalog_items(plan: ImportPlan, catalog: CatalogPage) -> DiscoveryResult:
@@ -71,6 +53,6 @@ def discover_sources(
     """Discover CNIG rows and reduce them to sources required by the plan."""
 
     if not isinstance(plan.product, DatasetProduct):
-        raise ValueError("Legacy catalog discovery requires a CNIG product")
+        raise ValueError("CNIG catalog discovery requires a CNIG product")
     catalog = provider.discover_all(plan.product, plan.bounds)
     return select_catalog_items(plan, catalog)
