@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
-from dataclasses import asdict
-from datetime import UTC, datetime
 from pathlib import Path
 
 from ..catalog import load_bundled_catalog
@@ -15,7 +12,7 @@ from ..core import (
     compose_terrain_bathymetry,
     process_elevation_tiles,
 )
-from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer
+from ..core.acquisition import RasterAcquirer
 from ..errors import (
     DownloadIntegrityError,
     JobCancelled,
@@ -29,8 +26,9 @@ from ..providers.registry import build_raster_acquirers
 from .imagery import prepare_confirmed_imagery
 from .legacy_delivery import ElevationProcessor
 from .legacy_delivery import run_delivery_job as run_delivery_job
-from .models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
+from .models import JobState, ProgressEvent
 from .output import (
+    build_result_payload,
     transfer_message,
     write_composed_tiles,
     write_processed_bathymetry,
@@ -235,134 +233,18 @@ def run_confirmed_acquisition_job(
             stage_progress("output", 0.8),
             "Finalizing provenance and cache results",
         )
-        elevation_selection = next(
-            selection
-            for selection in job.plan.selections.selections
-            if selection.kind in {DatasetKind.DTM, DatasetKind.DSM}
+        final_state, result_payload = build_result_payload(
+            job,
+            catalog,
+            prepared,
+            imagery,
+            bathymetry,
+            processed_payload,
+            terrain_source_payload,
+            bathymetry_payload,
+            imagery_unavailable,
         )
-        product = catalog.product(elevation_selection.product_id)
-        imagery_product = None if imagery is None else catalog.product(imagery.acquired.product_id)
-        bathymetry_product = (
-            None if bathymetry is None else catalog.product(bathymetry.acquired.product_id)
-        )
-        source_layers = (
-            ([] if prepared.acquired is None else [prepared.acquired])
-            + ([] if bathymetry is None else [bathymetry.acquired])
-            + ([] if imagery is None else [imagery.acquired])
-        )
-        elevation_unavailable = prepared.acquired is None
-        final_state = (
-            JobState.COMPLETE_WITH_WARNINGS
-            if elevation_unavailable or imagery_unavailable
-            else JobState.COMPLETE
-        )
-        write_result(
-            result_path,
-            {
-                "schema_version": RESULT_SCHEMA_VERSION,
-                "task_id": job.task_id,
-                "import_id": job.import_id,
-                "state": final_state.value,
-                "warnings": list(product.coverage.limitations)
-                + (
-                    [
-                        f"{product.name} has no data for this ROI; terrain was built from "
-                        "the confirmed bathymetry source"
-                    ]
-                    if elevation_unavailable
-                    else []
-                )
-                + (
-                    ["WorldCover has no imagery for this ROI; no texture was prepared"]
-                    if imagery_unavailable
-                    else []
-                )
-                + (
-                    []
-                    if bathymetry_product is None
-                    else list(bathymetry_product.coverage.limitations)
-                )
-                + ([] if imagery_product is None else list(imagery_product.coverage.limitations)),
-                "request": {
-                    "bounds_wgs84": asdict(job.plan.request.roi),
-                    "roi_geometry_wgs84": (
-                        None if job.region is None else job.region.to_geojson_geometry()
-                    ),
-                    "product": product.id,
-                    "elevation_resolution_metres": (
-                        prepared.import_plan.elevation_resolution_metres
-                    ),
-                    "use_imagery": imagery is not None,
-                    "use_bathymetry": bathymetry is not None,
-                    "imagery_gsd_metres": (
-                        None
-                        if prepared.import_plan.imagery is None
-                        else prepared.import_plan.imagery.gsd_metres
-                    ),
-                    "manual_tile_rows": job.manual_tile_rows,
-                    "manual_tile_columns": job.manual_tile_columns,
-                },
-                "crs": [asdict(area.crs) for area in prepared.import_plan.work_areas],
-                "sources": [
-                    {
-                        "provider_id": layer.provider_id,
-                        "product_id": layer.product_id,
-                        "kind": layer.kind.value,
-                        "license": catalog.product(layer.product_id).license.identifier,
-                        "attribution": (catalog.product(layer.product_id).license.attribution_text),
-                        "paths": [str(path) for path in layer.paths],
-                        "auxiliary_paths": [str(path) for path in layer.auxiliary_paths],
-                    }
-                    for layer in source_layers
-                ],
-                "provenance": {
-                    "source": product.name,
-                    "data_policy_url": product.license.identifier,
-                    "license": product.license.identifier,
-                    "attribution": product.license.attribution_text,
-                    "retrieved_at_utc": datetime.now(UTC).isoformat(),
-                    "uncertainty_summary": (
-                        None
-                        if prepared.acquired is None
-                        else _uncertainty_summary(prepared.acquired)
-                    ),
-                },
-                "elevation_paths": (
-                    []
-                    if prepared.acquired is None
-                    else [str(path) for path in prepared.acquired.paths]
-                ),
-                "imagery_paths": (
-                    [] if imagery is None else [str(tile.path) for tile in imagery.tiles]
-                ),
-                "imagery": (
-                    []
-                    if imagery is None
-                    else [
-                        {
-                            "path": str(tile.path),
-                            "bounds": asdict(tile.bounds),
-                            "width": tile.width,
-                            "height": tile.height,
-                            "gsd_metres": tile.gsd_metres,
-                        }
-                        for tile in imagery.tiles
-                    ]
-                ),
-                "processed_elevation": processed_payload,
-                "terrain_source": terrain_source_payload,
-                "bathymetry": bathymetry_payload,
-                "cache_reuse": {
-                    "elevation_files": (
-                        0 if prepared.acquired is None else prepared.acquired.cached_count
-                    ),
-                    "imagery_files": 0 if imagery is None else imagery.acquired.cached_count,
-                    "bathymetry_files": (
-                        0 if bathymetry is None else bathymetry.acquired.cached_count
-                    ),
-                },
-            },
-        )
+        write_result(result_path, result_payload)
         emit(
             final_state,
             1.0,
@@ -383,17 +265,3 @@ def run_confirmed_acquisition_job(
         ValueError,
     ) as exc:
         return finish_job_error(result_path, emit, JobState.INVALID_DATA, str(exc))
-
-
-def _uncertainty_summary(acquired: AcquiredRasterLayer) -> dict[str, object] | None:
-    path = next(
-        (path for path in acquired.auxiliary_paths if path.name == "uncertainty.json"),
-        None,
-    )
-    if path is None:
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return payload if isinstance(payload, dict) else None
