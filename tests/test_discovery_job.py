@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import numpy as np
 
-from blender_terrain.core import BBoxWGS84, ProcessedElevationTile
+from blender_terrain.core import BBoxWGS84, ProcessedElevationTile, create_import_plan
 from blender_terrain.core.grid import tile_grid
 from blender_terrain.errors import CatalogContractChanged, ProviderUnavailableError
 from blender_terrain.jobs.legacy_delivery import run_delivery_job
@@ -16,6 +19,7 @@ from blender_terrain.jobs.legacy_discovery import (
     run_availability_job,
     run_discovery_job,
 )
+from blender_terrain.jobs.local import run_local_delivery_job
 from blender_terrain.jobs.models import DiscoveryJob, JobState
 from blender_terrain.jobs.storage import (
     is_cancellation_requested,
@@ -305,6 +309,40 @@ class DiscoveryWorkerTests(unittest.TestCase):
 
 
 class DeliveryWorkerTests(unittest.TestCase):
+    def test_processes_local_elevation_without_a_provider(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            source = directory / "local-elevation.tif"
+            source.write_bytes(b"local-test-raster")
+            local_job = replace(job(), local_elevation_paths=(str(source),))
+            job_path = directory / "jobs" / str(uuid4()) / "job.json"
+            write_discovery_job(job_path, local_job)
+            plan = create_import_plan(
+                local_job.bounds,
+                local_job.product,
+                local_job.elevation_resolution_metres,
+                False,
+                None,
+            )
+
+            with (
+                patch("blender_terrain.jobs.local.create_local_import_plan", return_value=plan),
+                patch(
+                    "blender_terrain.jobs.local.inspect_local_elevation",
+                    return_value=SimpleNamespace(paths=(source.resolve(),)),
+                ),
+            ):
+                state = run_local_delivery_job(
+                    job_path,
+                    elevation_processor=_fake_elevation_processor,
+                )
+
+            result = json.loads(job_path.with_name("result.json").read_text(encoding="utf-8"))
+            self.assertEqual(state, JobState.COMPLETE)
+            self.assertEqual(result["elevation_paths"], [str(source.resolve())])
+            self.assertEqual(result["provenance"]["source"], "User-provided local elevation raster")
+            self.assertTrue(Path(result["processed_elevation"][0]["path"]).is_file())
+
     def test_downloads_elevation_and_pnoa_and_persists_paths(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

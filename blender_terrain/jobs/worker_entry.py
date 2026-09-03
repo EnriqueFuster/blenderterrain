@@ -19,7 +19,10 @@ def main() -> int:
         run_availability_job,
         run_discovery_job,
     )
-    from blender_terrain.jobs.local import run_local_discovery_job
+    from blender_terrain.jobs.local import (
+        run_local_delivery_job,
+        run_local_discovery_job,
+    )
     from blender_terrain.jobs.worker import run_confirmed_acquisition_job
 
     job_path = Path(arguments[0]).resolve()
@@ -31,6 +34,8 @@ def main() -> int:
         run_availability_job(job_path)
     elif len(arguments) == 2 and arguments[1] == "local_discovery":
         run_local_discovery_job(job_path)
+    elif len(arguments) == 2 and arguments[1] == "local_delivery":
+        run_local_delivery_job(job_path)
     elif len(arguments) == 1:
         run_discovery_job(job_path)
     else:

@@ -181,7 +181,7 @@ def start_delivery(context: bpy.types.Context) -> None:
     if properties.elevation_source != "LOCAL":
         _start_acquisition_worker(context, properties)
         return
-    _start_worker(context, properties, "delivery", "Starting background data download")
+    _start_worker(context, properties, "local_delivery", "Starting local raster processing")
 
 
 def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> None:
@@ -342,6 +342,7 @@ def retry_last_job(context: bpy.types.Context) -> None:
         "delivery",
         "acquisition",
         "local_discovery",
+        "local_delivery",
     }:
         raise UserInputError("The previous job mode cannot be retried")
     if mode == "acquisition":
@@ -610,7 +611,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
                 str(warnings[0]) if warnings else "Product availability check completed"
             )
             return
-        if active.mode in {"delivery", "acquisition"}:
+        if active.mode in {"delivery", "acquisition", "local_delivery"}:
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
             bathymetry_count = len(result.get("bathymetry", []))
