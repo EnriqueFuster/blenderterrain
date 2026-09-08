@@ -42,6 +42,7 @@ _GDAL_NODATA: Final = 42113
 _GDAL_METADATA: Final = 42112
 _MODEL_PIXEL_SCALE: Final = 33550
 _MODEL_TIEPOINT: Final = 33922
+_MODEL_TRANSFORMATION: Final = 34264
 _GEO_KEY_DIRECTORY: Final = 34735
 
 _GT_MODEL_TYPE: Final = 1024
@@ -146,7 +147,7 @@ class BigTiffFloatTileReader:
         self._file_size = self._source.size
         self._byte_order, first_ifd_offset = self._read_header()
         tags = self._read_first_directory(first_ifd_offset)
-        self._predictor = _single_value(tags, _PREDICTOR)
+        self._predictor = _single_value_or_default(tags, _PREDICTOR, 1)
         self._compression = _single_value(tags, _COMPRESSION)
         self._samples_per_pixel = _single_value(tags, _SAMPLES_PER_PIXEL)
         self._bits_per_sample = _uniform_value(
@@ -201,11 +202,14 @@ class BigTiffFloatTileReader:
             * self._bits_per_sample
             // 8
         )
-        raw = (
-            _inflate_exact(compressed, expected_bytes)
-            if self._compression == 8
-            else _decompress_zstd(compressed, expected_bytes)
-        )
+        if self._compression == 1:
+            raw = compressed
+            if len(raw) != expected_bytes:
+                raise RasterFormatError("TIFF tile does not match its expected size")
+        elif self._compression == 8:
+            raw = _inflate_exact(compressed, expected_bytes)
+        else:
+            raw = _decompress_zstd(compressed, expected_bytes)
         if self._predictor == 2:
             unsigned_type = {8: "u1", 16: "u2", 32: "u4"}[self._bits_per_sample]
             differences = np.frombuffer(
@@ -375,13 +379,13 @@ class BigTiffFloatTileReader:
             (3, 32),
         }:
             raise RasterFormatError("TIFF sample type is unsupported")
-        if self._compression not in {8, 50000}:
-            raise RasterFormatError("Only Deflate and Zstandard TIFF compression are supported")
+        if self._compression not in {1, 8, 50000}:
+            raise RasterFormatError("TIFF compression is unsupported")
         if self._samples_per_pixel not in {1, 3, 4}:
             raise RasterFormatError("Only one-band, RGB, and four-band TIFF images are supported")
         if _single_value_or_default(tags, _PLANAR_CONFIGURATION, 1) != 1:
             raise RasterFormatError("Only interleaved TIFF samples are supported")
-        if _single_value(tags, _PREDICTOR) not in {1, 2, 3}:
+        if self._predictor not in {1, 2, 3}:
             raise RasterFormatError("TIFF predictor is unsupported")
         if self._sample_format == 2 and self._predictor == 3:
             raise RasterFormatError("Floating-point prediction cannot encode signed integers")
@@ -400,22 +404,23 @@ class BigTiffFloatTileReader:
 
 
 class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
-    """Read the classic little-endian Float32 tiled layout used by GLO-30."""
+    """Read a supported classic tiled Float32 TIFF."""
 
     def _read_header(self) -> tuple[str, int]:
         header = self._source.read(0, 8)
-        if len(header) != 8 or header[:2] != b"II":
-            raise RasterFormatError("Only little-endian classic TIFF files are supported")
-        version, first_ifd_offset = struct.unpack("<HI", header[2:])
+        if len(header) != 8 or header[:2] not in {b"II", b"MM"}:
+            raise RasterFormatError("Classic TIFF byte order is invalid")
+        byte_order = "<" if header[:2] == b"II" else ">"
+        version, first_ifd_offset = struct.unpack(f"{byte_order}HI", header[2:])
         if version != 42:
             raise RasterFormatError("Classic TIFF header version is invalid")
         if not 8 <= first_ifd_offset < self._file_size:
             raise RasterFormatError("Classic TIFF first directory offset is invalid")
-        return "<", first_ifd_offset
+        return byte_order, first_ifd_offset
 
     def _read_first_directory(self, offset: int) -> dict[int, TagValue]:
         count_bytes = self._source.read(offset, 2)
-        entry_count = struct.unpack("<H", count_bytes)[0]
+        entry_count = struct.unpack(f"{self._byte_order}H", count_bytes)[0]
         directory_size = 2 + entry_count * 12 + 4
         if offset + directory_size > self._file_size:
             raise RasterFormatError("Classic TIFF directory points outside the source file")
@@ -424,7 +429,9 @@ class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
         tags: dict[int, TagValue] = {}
         for index in range(entry_count):
             entry = entries[index * 12 : (index + 1) * 12]
-            tag, value_type, value_count, value_or_offset = struct.unpack("<HHII", entry)
+            tag, value_type, value_count, value_or_offset = struct.unpack(
+                f"{self._byte_order}HHII", entry
+            )
             if value_type not in _TYPE_SIZES:
                 continue
             value_size = _TYPE_SIZES[value_type] * value_count
@@ -436,7 +443,7 @@ class ClassicTiffFloatTileReader(BigTiffFloatTileReader):
                 if value_or_offset + value_size > self._file_size:
                     raise RasterFormatError("Classic TIFF tag points outside the source file")
                 encoded = self._source.read(value_or_offset, value_size)
-            tags[tag] = _decode_value(value_type, value_count, encoded)
+            tags[tag] = _decode_value(value_type, value_count, encoded, self._byte_order)
         return tags
 
 
@@ -447,9 +454,10 @@ def open_float_tile_reader(
 
     source = LocalRandomAccessReader.open(path) if isinstance(path, Path) else path
     header = source.read(0, 4)
-    if len(header) != 4 or header[:2] != b"II":
-        raise RasterFormatError("Only little-endian TIFF elevation files are supported")
-    version = struct.unpack("<H", header[2:])[0]
+    if len(header) != 4 or header[:2] not in {b"II", b"MM"}:
+        raise RasterFormatError("TIFF byte order is invalid")
+    byte_order = "<" if header[:2] == b"II" else ">"
+    version = struct.unpack(f"{byte_order}H", header[2:])[0]
     if version == 42:
         return ClassicTiffFloatTileReader(source)
     if version == 43:
@@ -457,10 +465,12 @@ def open_float_tile_reader(
     raise RasterFormatError("TIFF header version is unsupported")
 
 
-def _decode_value(value_type: int, count: int, encoded: bytes) -> TagValue:
+def _decode_value(
+    value_type: int, count: int, encoded: bytes, byte_order: str = "<"
+) -> TagValue:
     if value_type == 2:
         return encoded.decode("ascii", errors="strict")
-    return struct.unpack(f"<{count}{_NUMERIC_FORMATS[value_type]}", encoded)
+    return struct.unpack(f"{byte_order}{count}{_NUMERIC_FORMATS[value_type]}", encoded)
 
 
 def _single_value(tags: dict[int, TagValue], tag: int) -> int:
@@ -514,13 +524,6 @@ def _parse_gdal_scale_offset(tags: dict[int, TagValue]) -> tuple[float, float]:
 
 
 def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:
-    scale = _numeric_values(tags, _MODEL_PIXEL_SCALE, 3)
-    tiepoint = _numeric_values(tags, _MODEL_TIEPOINT, 6)
-    if scale[0] <= 0 or scale[1] <= 0:
-        raise RasterFormatError("GeoTIFF pixel scale must be positive")
-    if scale[2] != 0 or tiepoint[2] != 0 or tiepoint[5] != 0:
-        raise RasterFormatError("GeoTIFF vertical model coordinates are not supported")
-
     keys = _parse_geo_keys(tags)
     model_type = keys.get(_GT_MODEL_TYPE)
     if model_type not in {1, 2}:
@@ -534,18 +537,56 @@ def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:
         raise RasterFormatError("GeoTIFF has no directly encoded projected EPSG code")
     epsg = _canonical_xy_epsg(declared_epsg)
 
-    origin_x = tiepoint[3] - tiepoint[0] * scale[0]
-    origin_y = tiepoint[4] + tiepoint[1] * scale[1]
+    origin_x, origin_y, pixel_width, pixel_height = _parse_affine_transform(tags)
     if raster_type == 2:
-        origin_x -= scale[0] / 2
-        origin_y += scale[1] / 2
+        origin_x -= pixel_width / 2
+        origin_y -= pixel_height / 2
     return GeoReference(
         epsg=epsg,
         origin_x=origin_x,
         origin_y=origin_y,
-        pixel_width=scale[0],
-        pixel_height=-scale[1],
+        pixel_width=pixel_width,
+        pixel_height=pixel_height,
         declared_epsg=declared_epsg,
+    )
+
+
+def _parse_affine_transform(
+    tags: dict[int, TagValue],
+) -> tuple[float, float, float, float]:
+    transformation = tags.get(_MODEL_TRANSFORMATION)
+    if transformation is not None:
+        if not isinstance(transformation, tuple) or len(transformation) != 16:
+            raise RasterFormatError("GeoTIFF model transformation is invalid")
+        if (
+            transformation[1] != 0
+            or transformation[2] != 0
+            or transformation[4] != 0
+            or transformation[6] != 0
+            or transformation[8:12] != (0.0, 0.0, 0.0, 0.0)
+            or transformation[12:16] != (0.0, 0.0, 0.0, 1.0)
+            or transformation[0] <= 0
+            or transformation[5] >= 0
+        ):
+            raise RasterFormatError("Only north-up GeoTIFF transformations are supported")
+        return (
+            float(transformation[3]),
+            float(transformation[7]),
+            float(transformation[0]),
+            float(transformation[5]),
+        )
+
+    scale = _numeric_values(tags, _MODEL_PIXEL_SCALE, 3)
+    tiepoint = _numeric_values(tags, _MODEL_TIEPOINT, 6)
+    if scale[0] <= 0 or scale[1] <= 0:
+        raise RasterFormatError("GeoTIFF pixel scale must be positive")
+    if scale[2] != 0 or tiepoint[2] != 0 or tiepoint[5] != 0:
+        raise RasterFormatError("GeoTIFF vertical model coordinates are not supported")
+    return (
+        float(tiepoint[3] - tiepoint[0] * scale[0]),
+        float(tiepoint[4] + tiepoint[1] * scale[1]),
+        float(scale[0]),
+        -float(scale[1]),
     )
 
 
@@ -563,7 +604,12 @@ def _parse_geo_keys(tags: dict[int, TagValue]) -> dict[int, int]:
     ):
         raise RasterFormatError("GeoTIFF key directory is missing or invalid")
     directory = tuple(raw_directory)
-    if len(directory) < 4 or directory[0:3] != (1, 1, 0):
+    if (
+        len(directory) < 4
+        or directory[0] != 1
+        or directory[1] != 1
+        or directory[2] not in {0, 1, 2}
+    ):
         raise RasterFormatError("GeoTIFF key directory header is unsupported")
     key_count = int(directory[3])
     if len(directory) != 4 + key_count * 4:

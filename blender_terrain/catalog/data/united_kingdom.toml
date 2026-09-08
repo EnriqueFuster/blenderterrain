@@ -11,7 +11,7 @@ evidence_urls = ["https://environment.data.gov.uk/dataset/13787b9a-26a4-4775-852
 reliability_score = 92
 network_cost_score = 30
 capabilities = { kind = "dtm", native_resolution_m = 1.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "wcs", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
-wcs = { version = "2.0.1", coverage_id = "13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m", format = "image/tiff;application=geotiff", crs_epsg = 27700, maximum_dimension = 2048, sample_dtype = "<f4" }
+wcs = { version = "2.0.1", coverage_id = "13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m", format = "image/tiff;application=geotiff", crs_epsg = 27700, maximum_dimension = 2048, sample_dtype = "f4", nodata = -3.4028234663852886e38 }
 coverage = { bounds = [[-6.236, 49.943, 2.072, 55.816]], requires_discovery = true, limitations = ["Approximately 99 percent of England, not complete coverage", "Composite of surveys acquired between 2000 and 2022", "Heights use Ordnance Datum Newlyn"] }
 license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Environment Agency copyright and/or database right 2026. All rights reserved." }
 
@@ -28,7 +28,7 @@ evidence_urls = ["https://environment.data.gov.uk/dataset/9ba4d5ac-d596-445a-905
 reliability_score = 92
 network_cost_score = 30
 capabilities = { kind = "dsm", native_resolution_m = 1.0, semantics = "dsm", authoritative = true, acquisition_mode = "wcs", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
-wcs = { version = "2.0.1", coverage_id = "9ba4d5ac-d596-445a-9056-dae3ddec0178__Lidar_Composite_Elevation_LZ_DSM_1m", format = "image/tiff;application=geotiff", crs_epsg = 27700, maximum_dimension = 2048, sample_dtype = "<f4" }
+wcs = { version = "2.0.1", coverage_id = "9ba4d5ac-d596-445a-9056-dae3ddec0178__Lidar_Composite_Elevation_LZ_DSM_1m", format = "image/tiff;application=geotiff", crs_epsg = 27700, maximum_dimension = 2048, sample_dtype = "f4", nodata = -3.4028234663852886e38 }
 coverage = { bounds = [[-6.236, 49.943, 2.072, 55.816]], requires_discovery = true, limitations = ["Approximately 99 percent of England, not complete coverage", "Composite survey date varies spatially", "Heights use Ordnance Datum Newlyn"] }
 license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Environment Agency copyright and/or database right 2026. All rights reserved." }
 
