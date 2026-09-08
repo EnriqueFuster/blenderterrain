@@ -120,7 +120,7 @@ def _product(value: object, source: str) -> ProductRecord:
                 "sample_dtype",
             },
             f"wcs in {source}",
-            {"nodata"},
+            {"nodata", "output_crs_epsg", "subsetting_crs_epsg"},
         )
     _exact_keys(coverage, {"bounds", "requires_discovery", "limitations"}, f"coverage in {source}")
     _exact_keys(
@@ -199,6 +199,8 @@ def _product(value: object, source: str) -> ProductRecord:
                 maximum_dimension=_integer(wcs, "maximum_dimension"),
                 sample_dtype=_string(wcs, "sample_dtype"),
                 nodata=_optional_number(wcs, "nodata"),
+                subsetting_crs_epsg=_optional_integer(wcs, "subsetting_crs_epsg"),
+                output_crs_epsg=_optional_integer(wcs, "output_crs_epsg"),
             )
         ),
     )
@@ -304,6 +306,15 @@ def _optional_number(table: Mapping[str, Any], key: str) -> float | None:
     if not isinstance(value, int | float) or isinstance(value, bool):
         raise ValueError(f"Catalog field {key} must be a number")
     return float(value)
+
+
+def _optional_integer(table: Mapping[str, Any], key: str) -> int | None:
+    value = table.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{key} must be an integer")
+    return value
 
 
 def _array(table: Mapping[str, Any], key: str) -> list[object]:

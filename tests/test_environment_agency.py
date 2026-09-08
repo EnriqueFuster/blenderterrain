@@ -7,33 +7,41 @@ from urllib.parse import parse_qs, urlsplit
 import numpy as np
 import pytest
 
-from blender_terrain.catalog import load_bundled_catalog
-from blender_terrain.core.grid import GridSpec
+from blender_terrain.catalog import (
+    DatasetKind,
+    LayerRequest,
+    ProductSelection,
+    SelectionMode,
+    load_bundled_catalog,
+)
+from blender_terrain.core.delivery import TransferProgress
+from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.io.bigtiff_tiles import open_float_tile_reader
-from blender_terrain.models import ProjectedBounds
+from blender_terrain.io.http_download import DownloadedAsset
 from blender_terrain.providers.environment_agency import (
+    EnvironmentAgencyRequest,
+    EnvironmentAgencyWCSAcquirer,
     EnvironmentAgencyWCSClient,
     plan_environment_agency_requests,
 )
 
 
 def test_plans_bounded_native_wcs_requests() -> None:
-    grid = GridSpec(ProjectedBounds(530000, 176000, 535000, 181000, 27700), 1.0, 5000, 5000)
+    roi = BBoxWGS84(-0.16, 51.49, -0.08, 51.535)
 
-    requests = plan_environment_agency_requests(grid, 2048)
+    requests = plan_environment_agency_requests(roi, 2048)
 
     assert len(requests) == 9
-    assert (requests[0].width, requests[0].height) == (2048, 2048)
-    assert requests[-1].bounds == ProjectedBounds(534096, 176000, 535000, 176904, 27700)
-    assert (requests[-1].width, requests[-1].height) == (904, 904)
+    assert requests[0].bounds.north == roi.north
+    assert requests[0].bounds.west == roi.west
+    assert requests[-1].bounds.south == roi.south
+    assert requests[-1].bounds.east == roi.east
+    assert all(max(request.width, request.height) <= 2048 for request in requests)
 
 
 def test_builds_verified_environment_agency_wcs_query() -> None:
     product = load_bundled_catalog().product("GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM")
-    request = plan_environment_agency_requests(
-        GridSpec(ProjectedBounds(530000, 180000, 530100, 180100, 27700), 1.0, 100, 100),
-        2048,
-    )[0]
+    request = plan_environment_agency_requests(BBoxWGS84(-0.13, 51.5, -0.129, 51.5005), 2048)[0]
 
     url = EnvironmentAgencyWCSClient(product).request_url(request)
     query = parse_qs(urlsplit(url).query)
@@ -43,20 +51,18 @@ def test_builds_verified_environment_agency_wcs_query() -> None:
     assert query["version"] == ["2.0.1"]
     assert query["request"] == ["GetCoverage"]
     assert query["coverageId"] == [product.wcs.coverage_id]
-    assert query["subset"] == ["E(530000,530100)", "N(180000,180100)"]
+    assert query["subsettingCrs"] == ["http://www.opengis.net/def/crs/EPSG/0/4326"]
+    assert query["outputCrs"] == ["http://www.opengis.net/def/crs/EPSG/0/4326"]
+    assert query["subset"] == ["Lat(51.5,51.5005)", "Long(-0.13,-0.129)"]
     assert query["format"] == ["image/tiff;application=geotiff"]
 
 
-@pytest.mark.parametrize(
-    "grid",
-    [
-        GridSpec(ProjectedBounds(0, 0, 10, 10, 25830), 1.0, 10, 10),
-        GridSpec(ProjectedBounds(0, 0, 10, 10, 27700), 2.0, 5, 5),
-    ],
-)
-def test_rejects_non_native_or_non_bng_requests(grid: GridSpec) -> None:
-    with pytest.raises(ValueError, match="1 m EPSG:27700"):
-        plan_environment_agency_requests(grid, 2048)
+@pytest.mark.parametrize(("maximum_dimension", "resolution"), [(8, 1.0), (2048, 0.0)])
+def test_rejects_invalid_request_limits(maximum_dimension: int, resolution: float) -> None:
+    with pytest.raises(ValueError, match="limits"):
+        plan_environment_agency_requests(
+            BBoxWGS84(-0.13, 51.5, -0.129, 51.5005), maximum_dimension, resolution
+        )
 
 
 def test_reads_observed_environment_agency_tiff_layout(tmp_path: Path) -> None:
@@ -69,6 +75,45 @@ def test_reads_observed_environment_agency_tiff_layout(tmp_path: Path) -> None:
     np.testing.assert_array_equal(reader.read_tile(0, 0), expected)
     assert reader.georeference.epsg == 27700
     assert reader.georeference.bounds(2, 2) == (530000.0, 180000.0, 530002.0, 180002.0)
+
+
+def test_acquires_only_the_confirmed_environment_agency_product(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    product = load_bundled_catalog().product("GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM")
+    selection = ProductSelection(
+        product.provider_id, product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
+    )
+    progress: list[TransferProgress] = []
+
+    def download(
+        self: EnvironmentAgencyWCSClient,
+        request: EnvironmentAgencyRequest,
+        cache_directory: Path,
+        progress_callback=None,
+        cancellation_requested=lambda: False,
+    ) -> DownloadedAsset:
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        path = cache_directory / f"{request.row}-{request.column}.tif"
+        path.write_bytes(b"fixture")
+        if progress_callback is not None:
+            progress_callback(7, 7)
+        return DownloadedAsset(path, 7, False)
+
+    monkeypatch.setattr(EnvironmentAgencyWCSClient, "download", download)
+
+    result = EnvironmentAgencyWCSAcquirer(product).acquire(
+        selection,
+        LayerRequest(DatasetKind.DTM, target_resolution_m=5.0),
+        BBoxWGS84(-0.13, 51.5, -0.129, 51.5005),
+        tmp_path,
+        progress.append,
+    )
+
+    assert result.provider_id == product.provider_id
+    assert result.product_id == product.id
+    assert len(result.paths) == 1
+    assert progress[-1].filename == "WCS block 1/1"
 
 
 def _write_ea_layout(path: Path, values: np.ndarray) -> None:

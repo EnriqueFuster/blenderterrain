@@ -118,6 +118,9 @@ def test_english_products_declare_researched_wcs_contracts() -> None:
     assert dtm.wcs.version == "2.0.1"
     assert dtm.wcs.crs_epsg == 27700
     assert dtm.wcs.maximum_dimension == 2048
+    assert dtm.wcs.subsetting_crs_epsg == 4326
+    assert dtm.wcs.output_crs_epsg == 4326
+    assert dtm.wcs.nodata is not None
     assert dtm.wcs.coverage_id.endswith("Lidar_Composite_Elevation_DTM_1m")
     assert dsm.wcs.coverage_id.endswith("Lidar_Composite_Elevation_LZ_DSM_1m")
     assert not dtm.selectable

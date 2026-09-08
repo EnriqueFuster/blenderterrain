@@ -151,6 +151,8 @@ class WCSContract:
     maximum_dimension: int
     sample_dtype: str
     nodata: float | None = None
+    subsetting_crs_epsg: int | None = None
+    output_crs_epsg: int | None = None
 
     def __post_init__(self) -> None:
         if self.version != "2.0.1":
@@ -159,6 +161,11 @@ class WCSContract:
             raise ValueError("WCS coverage, format and sample type cannot be empty")
         if self.crs_epsg <= 0 or self.maximum_dimension <= 0:
             raise ValueError("WCS CRS and maximum dimension must be positive")
+        if any(
+            epsg is not None and epsg <= 0
+            for epsg in (self.subsetting_crs_epsg, self.output_crs_epsg)
+        ):
+            raise ValueError("WCS request CRS codes must be positive")
 
 
 @dataclass(frozen=True, slots=True)
