@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wcs:Capabilities xmlns:wcs="http://www.opengis.net/wcs/2.0" version="2.0.1">
+  <wcs:ServiceMetadata>
+    <wcs:formatSupported>image/tiff</wcs:formatSupported>
+    <wcs:formatSupported>image/tiff;application=geotiff</wcs:formatSupported>
+  </wcs:ServiceMetadata>
+  <wcs:Contents>
+    <wcs:CoverageSummary>
+      <wcs:CoverageId>13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m</wcs:CoverageId>
+    </wcs:CoverageSummary>
+  </wcs:Contents>
+</wcs:Capabilities>

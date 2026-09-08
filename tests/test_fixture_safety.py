@@ -35,7 +35,7 @@ class FixtureSafetyTests(unittest.TestCase):
         contract_fixtures = (
             path
             for path in FIXTURE_ROOT.rglob("*")
-            if path.suffix in {".html", ".json"}
+            if path.suffix in {".html", ".json", ".xml"}
             and not path.name.endswith(".provenance.json")
         )
         for path in contract_fixtures:

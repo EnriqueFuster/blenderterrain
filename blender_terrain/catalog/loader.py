@@ -18,6 +18,7 @@ from .models import (
     ProductCapabilities,
     ProductRecord,
     SemanticConfidence,
+    WCSContract,
     WMSContract,
 )
 
@@ -70,12 +71,13 @@ def _product(value: object, source: str) -> ProductRecord:
             "license",
         },
         f"product in {source}",
-        {"wms"},
+        {"wcs", "wms"},
     )
     capabilities = _table(record["capabilities"], f"capabilities in {source}")
     coverage = _table(record["coverage"], f"coverage in {source}")
     license_policy = _table(record["license"], f"license in {source}")
     wms = _optional_table(record, "wms", source)
+    wcs = _optional_table(record, "wcs", source)
     _exact_keys(
         capabilities,
         {
@@ -105,6 +107,20 @@ def _product(value: object, source: str) -> ProductRecord:
             },
             f"wms in {source}",
             {"sample_dtype", "nodata"},
+        )
+    if wcs is not None:
+        _exact_keys(
+            wcs,
+            {
+                "version",
+                "coverage_id",
+                "format",
+                "crs_epsg",
+                "maximum_dimension",
+                "sample_dtype",
+            },
+            f"wcs in {source}",
+            {"nodata"},
         )
     _exact_keys(coverage, {"bounds", "requires_discovery", "limitations"}, f"coverage in {source}")
     _exact_keys(
@@ -170,6 +186,19 @@ def _product(value: object, source: str) -> ProductRecord:
                 maximum_dimension=_integer(wms, "maximum_dimension"),
                 sample_dtype=_optional_string(wms, "sample_dtype"),
                 nodata=_optional_number(wms, "nodata"),
+            )
+        ),
+        wcs=(
+            None
+            if wcs is None
+            else WCSContract(
+                version=_string(wcs, "version"),
+                coverage_id=_string(wcs, "coverage_id"),
+                format=_string(wcs, "format"),
+                crs_epsg=_integer(wcs, "crs_epsg"),
+                maximum_dimension=_integer(wcs, "maximum_dimension"),
+                sample_dtype=_string(wcs, "sample_dtype"),
+                nodata=_optional_number(wcs, "nodata"),
             )
         ),
     )

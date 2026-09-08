@@ -32,6 +32,7 @@ class AcquisitionMode(StrEnum):
     WMS = "wms"
     STAC = "stac"
     OPENDAP = "opendap"
+    WCS = "wcs"
 
 
 class ImplementationStatus(StrEnum):
@@ -140,6 +141,27 @@ class WMSContract:
 
 
 @dataclass(frozen=True, slots=True)
+class WCSContract:
+    """Parameters required to request one numeric WCS coverage."""
+
+    version: str
+    coverage_id: str
+    format: str
+    crs_epsg: int
+    maximum_dimension: int
+    sample_dtype: str
+    nodata: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.version != "2.0.1":
+            raise ValueError("Only the verified WCS 2.0.1 contract is supported")
+        if not self.coverage_id or not self.format or not self.sample_dtype:
+            raise ValueError("WCS coverage, format and sample type cannot be empty")
+        if self.crs_epsg <= 0 or self.maximum_dimension <= 0:
+            raise ValueError("WCS CRS and maximum dimension must be positive")
+
+
+@dataclass(frozen=True, slots=True)
 class ProductRecord:
     id: str
     provider_id: str
@@ -156,6 +178,7 @@ class ProductRecord:
     coverage: Coverage
     license: LicensePolicy
     wms: WMSContract | None = None
+    wcs: WCSContract | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.provider_id or not self.name:
@@ -168,6 +191,8 @@ class ProductRecord:
                 raise ValueError(f"{label} score must be between 0 and 100")
         if self.wms is not None and self.capabilities.acquisition_mode is not AcquisitionMode.WMS:
             raise ValueError("Only WMS products can declare a WMS contract")
+        if self.wcs is not None and self.capabilities.acquisition_mode is not AcquisitionMode.WCS:
+            raise ValueError("Only WCS products can declare a WCS contract")
 
     @property
     def selectable(self) -> bool:

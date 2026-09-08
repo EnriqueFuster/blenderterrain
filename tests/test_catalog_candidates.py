@@ -14,6 +14,7 @@ from blender_terrain.core.roi import BBoxWGS84
 
 VALENCIA = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
 PARIS = BBoxWGS84(2.34, 48.85, 2.36, 48.87)
+LONDON = BBoxWGS84(-0.15, 51.49, -0.10, 51.53)
 
 
 def test_spanish_dtm_candidates_are_ranked_without_hiding_global_product() -> None:
@@ -117,6 +118,19 @@ def test_global_bathymetry_is_available_independently() -> None:
     assert [candidate.product.id for candidate in candidates.valid] == ["GEBCO_2026"]
     assert candidates.recommended is not None
     assert candidates.recommended.product.id == "GEBCO_2026"
+
+
+def test_researched_english_dtm_is_visible_but_not_selectable() -> None:
+    candidates = discover_candidates(load_bundled_catalog(), LONDON, DatasetKind.DTM)
+
+    assert [candidate.product.id for candidate in candidates.valid] == ["GEDTM30_V11"]
+    english = next(
+        candidate
+        for candidate in candidates.rejected
+        if candidate.product.id == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
+    )
+    assert english.coverage.value == "potential"
+    assert english.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
 
 
 def _with_status(product_id: str, status: ImplementationStatus) -> Catalog:

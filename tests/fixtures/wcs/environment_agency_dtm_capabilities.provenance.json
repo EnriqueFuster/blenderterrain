@@ -1,0 +1,7 @@
+{
+  "captured_on": "2026-09-08",
+  "fixture": "environment_agency_dtm_capabilities.xml",
+  "sanitization": "Reduced to the negotiated WCS version, output formats and DTM coverage identifier.",
+  "sanitized_sha256": "9252dece0ecdcb6a08c3873f12bb6c5f8ae7b6272c4ec2033daaa9d3de9feb3f",
+  "source_url": "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m/wcs?service=WCS&request=GetCapabilities&version=2.0.1"
+}

@@ -1,0 +1,113 @@
+[[products]]
+id = "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
+provider_id = "environment_agency"
+name = "Environment Agency LiDAR Composite DTM 1 m"
+jurisdiction = "GB-ENG"
+implementation_status = "researched"
+version = "composite 2022"
+last_verified = "2026-09-08"
+endpoint = "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m/wcs"
+evidence_urls = ["https://environment.data.gov.uk/dataset/13787b9a-26a4-4775-8523-806d13af58fc"]
+reliability_score = 92
+network_cost_score = 30
+capabilities = { kind = "dtm", native_resolution_m = 1.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "wcs", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
+wcs = { version = "2.0.1", coverage_id = "13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m", format = "image/tiff;application=geotiff", crs_epsg = 27700, maximum_dimension = 2048, sample_dtype = "<f4" }
+coverage = { bounds = [[-6.236, 49.943, 2.072, 55.816]], requires_discovery = true, limitations = ["Approximately 99 percent of England, not complete coverage", "Composite of surveys acquired between 2000 and 2022", "Heights use Ordnance Datum Newlyn"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Environment Agency copyright and/or database right 2026. All rights reserved." }
+
+[[products]]
+id = "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN"
+provider_id = "environment_agency"
+name = "Environment Agency LiDAR Composite DSM last return 1 m"
+jurisdiction = "GB-ENG"
+implementation_status = "researched"
+version = "composite 2022"
+last_verified = "2026-09-08"
+endpoint = "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-surface-model-last-return-dsm-1m/wcs"
+evidence_urls = ["https://environment.data.gov.uk/dataset/9ba4d5ac-d596-445a-9056-dae3ddec0178"]
+reliability_score = 92
+network_cost_score = 30
+capabilities = { kind = "dsm", native_resolution_m = 1.0, semantics = "dsm", authoritative = true, acquisition_mode = "wcs", supports_roi_window = true, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
+wcs = { version = "2.0.1", coverage_id = "9ba4d5ac-d596-445a-9056-dae3ddec0178__Lidar_Composite_Elevation_LZ_DSM_1m", format = "image/tiff;application=geotiff", crs_epsg = 27700, maximum_dimension = 2048, sample_dtype = "<f4" }
+coverage = { bounds = [[-6.236, 49.943, 2.072, 55.816]], requires_discovery = true, limitations = ["Approximately 99 percent of England, not complete coverage", "Composite survey date varies spatially", "Heights use Ordnance Datum Newlyn"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Environment Agency copyright and/or database right 2026. All rights reserved." }
+
+[[products]]
+id = "GB_WLS_DMW_LIDAR_1M_32F_DTM"
+provider_id = "datamap_wales"
+name = "DataMapWales LiDAR DTM 1 m Float32"
+jurisdiction = "GB-WLS"
+implementation_status = "researched"
+version = "2020-2023 composite"
+last_verified = "2026-09-08"
+endpoint = "https://dmwproductionblob.blob.core.windows.net/cogs/lidar/wales_dtm_32bit_cog.tif"
+evidence_urls = ["https://datamap.gov.wales/maps/lidar-viewer/"]
+reliability_score = 90
+network_cost_score = 20
+capabilities = { kind = "dtm", native_resolution_m = 1.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "global_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-5.6, 51.2, -2.5, 53.5]], requires_discovery = true, limitations = ["The rectangular COG contains extensive NoData outside the Welsh footprint", "Not designed as a hydraulic terrain model", "Low vegetation or bridges may remain", "Heights normally use Ordnance Datum Newlyn"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Welsh Government and Natural Resources Wales, licensed under OGL v3.0" }
+
+[[products]]
+id = "GB_WLS_DMW_LIDAR_1M_32F_DSM"
+provider_id = "datamap_wales"
+name = "DataMapWales LiDAR DSM 1 m Float32"
+jurisdiction = "GB-WLS"
+implementation_status = "researched"
+version = "2020-2023 composite"
+last_verified = "2026-09-08"
+endpoint = "https://dmwproductionblob.blob.core.windows.net/cogs/lidar/wales_dsm_32bit_cog.tif"
+evidence_urls = ["https://datamap.gov.wales/maps/lidar-viewer/"]
+reliability_score = 90
+network_cost_score = 20
+capabilities = { kind = "dsm", native_resolution_m = 1.0, semantics = "dsm", authoritative = true, acquisition_mode = "global_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-5.6, 51.2, -2.5, 53.5]], requires_discovery = true, limitations = ["The rectangular COG contains extensive NoData outside the Welsh footprint", "DTM and DSM cells may originate from different campaigns", "Heights normally use Ordnance Datum Newlyn"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Welsh Government and Natural Resources Wales, licensed under OGL v3.0" }
+
+[[products]]
+id = "GB_SCT_SRSP_CAMPAIGN_DTM"
+provider_id = "scottish_remote_sensing"
+name = "Scottish Public Sector LiDAR campaign DTM"
+jurisdiction = "GB-SCT"
+implementation_status = "researched"
+version = "multiple campaigns"
+last_verified = "2026-09-08"
+endpoint = "https://registry.opendata.aws/scottish-lidar/"
+evidence_urls = ["https://remotesensingdata.gov.scot/about", "https://registry.opendata.aws/scottish-lidar/"]
+reliability_score = 75
+network_cost_score = 45
+capabilities = { kind = "dtm", native_resolution_m = 1.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "tiled_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-8.8, 54.5, -0.5, 61.0]], requires_discovery = true, limitations = ["No homogeneous national coverage or resolution", "Campaign footprint, CRS, date and license must be verified per raster", "2025-2027 programme assets remain excluded until license metadata is explicit"] }
+license = { identifier = "OGL-UK-3.0-per-asset", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Scottish Government public sector LiDAR; per-asset attribution required" }
+
+[[products]]
+id = "GB_SCT_SRSP_CAMPAIGN_DSM"
+provider_id = "scottish_remote_sensing"
+name = "Scottish Public Sector LiDAR campaign DSM"
+jurisdiction = "GB-SCT"
+implementation_status = "researched"
+version = "multiple campaigns"
+last_verified = "2026-09-08"
+endpoint = "https://registry.opendata.aws/scottish-lidar/"
+evidence_urls = ["https://remotesensingdata.gov.scot/about", "https://registry.opendata.aws/scottish-lidar/"]
+reliability_score = 75
+network_cost_score = 45
+capabilities = { kind = "dsm", native_resolution_m = 1.0, semantics = "dsm", authoritative = true, acquisition_mode = "tiled_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-8.8, 54.5, -0.5, 61.0]], requires_discovery = true, limitations = ["No homogeneous national coverage or resolution", "Campaign footprint, CRS, date and license must be verified per raster", "LAZ phase 2 is non-commercial and is not part of this raster product"] }
+license = { identifier = "OGL-UK-3.0-per-asset", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Scottish Government public sector LiDAR; per-asset attribution required" }
+
+[[products]]
+id = "GB_NIR_OSNI_10M_DTM"
+provider_id = "osni"
+name = "OSNI Open Data DTM 10 m"
+jurisdiction = "GB-NIR"
+implementation_status = "researched"
+version = "grouped sheets"
+last_verified = "2026-09-08"
+endpoint = "https://www.nidirect.gov.uk/articles/10m-digital-terrain-model-height-data"
+evidence_urls = ["https://www.nidirect.gov.uk/articles/osni-open-data-product-list", "https://www.nidirect.gov.uk/articles/10m-digital-terrain-model-height-data"]
+reliability_score = 82
+network_cost_score = 60
+capabilities = { kind = "dtm", native_resolution_m = 10.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
+coverage = { bounds = [[-8.3, 53.9, -5.3, 55.4]], requires_discovery = true, limitations = ["Horizontal CRS must be proven from authoritative metadata before implementation", "Heights are metres above mean sea level at Belfast Lough", "Distribution uses grouped ZIP files containing text grids"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Land & Property Services and OSNI, licensed under OGL v3.0" }
