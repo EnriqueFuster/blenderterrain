@@ -147,6 +147,8 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             "GEDTM30_V11",
             "FR_RGE_ALTI_1M",
             "FR_MNS_CORREL_50CM",
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
         }
         if products_loaded and cnig_product:
             layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
@@ -409,6 +411,10 @@ def _elevation_product_label(product_id: str) -> str:
         "GEDTM30_V11": "GEDTM30 v1.1 modelled DTM",
         "FR_RGE_ALTI_1M": "RGE ALTI 1 m DTM",
         "FR_MNS_CORREL_50CM": "MNS-Correl 50 cm DSM",
+        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM": "EA LiDAR Composite 1 m DTM",
+        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN": (
+            "EA LiDAR Composite 1 m DSM"
+        ),
     }.get(product_id, product_id)
 
 

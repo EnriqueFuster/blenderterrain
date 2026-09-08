@@ -28,6 +28,7 @@ def main() -> None:
         extension.register()
         addon = extension.blender_terrain.addon
         job_controller = extension.blender_terrain.ui.job_controller
+        terrain_builder = extension.blender_terrain.ui.terrain_builder
         classes = addon.registered_class_types()
         assert all(class_type.is_registered for class_type in classes)
         assert classes[0].bl_idname == repository.name
@@ -128,7 +129,9 @@ def main() -> None:
         assert not properties.delivery_ready
         assert properties.job_state == "INVALID_DATA"
         assert "interrupted" in properties.job_message
-        _smoke_terrain_operator(properties, use_imagery=_cycle == 0)
+        _smoke_terrain_operator(
+            properties, terrain_builder, use_imagery=_cycle == 0
+        )
         properties = bpy.context.scene.blender_terrain_roi
         properties.product = "COPERNICUS_GLO30_2021"
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
@@ -190,6 +193,34 @@ def main() -> None:
         assert "GEDTM30" in properties.discovery_summary
         properties.available_product_ids_json = "[]"
         properties.product = "MDT02"
+        properties.west = -0.13
+        properties.south = 51.5
+        properties.east = -0.129
+        properties.north = 51.5005
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert json.loads(properties.available_product_ids_json) == [
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
+            "COPERNICUS_GLO30_2021",
+            "GEDTM30_V11",
+        ]
+        assert properties.product == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
+        assert properties.crs_summary == "EPSG:32630"
+        assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
+        assert "WCS windows required" in properties.discovery_summary
+        english_plan = job_controller._acquisition_plan_from_properties(
+            properties,
+            extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+                json.loads(properties.roi_geometry_json)
+            ),
+        )
+        assert (
+            english_plan.selections.for_kind(extension.blender_terrain.catalog.DatasetKind.DTM)
+            .product_id
+            == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
+        )
+        properties.available_product_ids_json = "[]"
+        properties.product = "MDT02"
         properties.imagery_product = "ESA_WORLDCOVER_S2_2021"
         properties.elevation_source = "LOCAL"
         assert properties.elevation_source == "LOCAL"
@@ -201,7 +232,9 @@ def main() -> None:
     print("BlenderTerrain register/unregister smoke test passed")
 
 
-def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
+def _smoke_terrain_operator(
+    properties: object, terrain_builder: object, use_imagery: bool
+) -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         array_path = directory / "terrain.npy"
@@ -359,13 +392,7 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert displacement.uv_layer == "TerrainUV"
         assert smooth.name == "Terrain Smooth by Angle"
         assert smooth.node_group.name == "BlenderTerrain Smooth by Angle"
-        smooth_angle_input = next(
-            item.identifier
-            for item in smooth.node_group.interface.items_tree
-            if item.item_type == "SOCKET" and item.in_out == "INPUT" and item.name == "Angle"
-        )
-        smooth_angle = getattr(smooth.properties.inputs, smooth_angle_input)
-        assert math.isclose(smooth_angle.value, 0.0, abs_tol=1e-7)
+        assert math.isclose(terrain_builder.get_smooth_angle(smooth), 0.0, abs_tol=1e-7)
         assert properties.active_import_id == properties.import_id
         assert properties.active_import_representation == "DISPLACEMENT"
         assert properties.active_import_full_resolution_mesh == properties.full_resolution_mesh
@@ -385,7 +412,9 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         expected_range = 9.0 if use_imagery else 3.0
         assert math.isclose(displacement.strength, expected_range * 1.1, rel_tol=1e-6)
         assert smooth.show_viewport
-        assert math.isclose(smooth_angle.value, math.radians(45.0), rel_tol=1e-6)
+        assert math.isclose(
+            terrain_builder.get_smooth_angle(smooth), math.radians(45.0), rel_tol=1e-6
+        )
         assert math.isclose(properties.selected_strength_multiplier, 1.1, rel_tol=1e-6)
         assert math.isclose(properties.selected_displacement_midlevel, 0.2, rel_tol=1e-6)
         assert properties.selected_subdivision_viewport == 0
@@ -401,7 +430,9 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert math.isclose(displacement.mid_level, 0.3, rel_tol=1e-6)
         assert subdivision.levels == 1
         assert smooth.show_viewport
-        assert math.isclose(smooth_angle.value, math.radians(60.0), rel_tol=1e-6)
+        assert math.isclose(
+            terrain_builder.get_smooth_angle(smooth), math.radians(60.0), rel_tol=1e-6
+        )
         assert bpy.ops.blender_terrain.restore_selected_settings() == {"FINISHED"}
         assert math.isclose(terrain["blender_terrain_strength_multiplier"], 1.1, rel_tol=1e-6)
         assert math.isclose(displacement.strength, expected_range * 1.1, rel_tol=1e-6)
@@ -409,7 +440,9 @@ def _smoke_terrain_operator(properties: object, use_imagery: bool) -> None:
         assert math.isclose(properties.selected_displacement_midlevel, 0.2, rel_tol=1e-6)
         assert subdivision.levels == 0
         assert smooth.show_viewport
-        assert math.isclose(smooth_angle.value, math.radians(45.0), rel_tol=1e-6)
+        assert math.isclose(
+            terrain_builder.get_smooth_angle(smooth), math.radians(45.0), rel_tol=1e-6
+        )
         assert math.isclose(properties.selected_smooth_angle, math.radians(45.0), rel_tol=1e-6)
         assert bpy.ops.blender_terrain.select_import_objects() == {"FINISHED"}
         _assert_evaluated_elevation(

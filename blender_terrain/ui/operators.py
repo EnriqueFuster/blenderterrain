@@ -451,6 +451,8 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
             "MDS05",
             "FR_RGE_ALTI_1M",
             "FR_MNS_CORREL_50CM",
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
             "COPERNICUS_GLO30_2021",
             "GEDTM30_V11",
         )
@@ -673,6 +675,8 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
                     "GEDTM30_V11",
                     "FR_RGE_ALTI_1M",
                     "FR_MNS_CORREL_50CM",
+                    "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+                    "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
                 }
                 else "Source discovery started in the background"
             ),

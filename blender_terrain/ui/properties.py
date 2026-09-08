@@ -51,6 +51,20 @@ _PRODUCT_ITEMS = (
         0,
         12,
     ),
+    (
+        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+        "DTM (EA LiDAR Composite 1 m, England)",
+        "Official English terrain composite; approximately 99% coverage",
+        0,
+        13,
+    ),
+    (
+        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
+        "DSM (EA LiDAR Composite 1 m, England)",
+        "Official English last-return surface composite",
+        0,
+        14,
+    ),
 )
 
 

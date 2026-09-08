@@ -156,8 +156,10 @@ def start_discovery(context: bpy.types.Context) -> None:
         elif properties.product == GEDTM30_PRODUCT_ID:
             properties.discovery_summary = "GEDTM30 elevation and uncertainty windows required"
         else:
+            protocol = product.capabilities.acquisition_mode.value.upper()
             properties.discovery_summary = (
-                f"{product.name} WMS windows required; valid pixels are confirmed during download"
+                f"{product.name} {protocol} windows required; "
+                "valid pixels are confirmed during download"
             )
         if properties.bathymetry_mode == "GEBCO":
             properties.discovery_summary += "; GEBCO elevation and quality windows required"
