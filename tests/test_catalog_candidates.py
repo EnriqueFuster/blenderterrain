@@ -120,17 +120,15 @@ def test_global_bathymetry_is_available_independently() -> None:
     assert candidates.recommended.product.id == "GEBCO_2026"
 
 
-def test_researched_english_dtm_is_visible_but_not_selectable() -> None:
+def test_english_dtm_is_recommended_without_hiding_global_fallback() -> None:
     candidates = discover_candidates(load_bundled_catalog(), LONDON, DatasetKind.DTM)
 
-    assert [candidate.product.id for candidate in candidates.valid] == ["GEDTM30_V11"]
-    english = next(
-        candidate
-        for candidate in candidates.rejected
-        if candidate.product.id == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
-    )
-    assert english.coverage.value == "potential"
-    assert english.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
+    assert [candidate.product.id for candidate in candidates.valid] == [
+        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+        "GEDTM30_V11",
+    ]
+    assert candidates.recommended is not None
+    assert candidates.recommended.product.id == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
 
 
 def _with_status(product_id: str, status: ImplementationStatus) -> Catalog:

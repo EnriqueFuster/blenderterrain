@@ -73,7 +73,6 @@ def test_researched_products_are_not_selectable() -> None:
 
     assert {product.jurisdiction for product in researched} == {
         "CH",
-        "GB-ENG",
         "GB-NIR",
         "GB-SCT",
         "GB-WLS",
@@ -108,7 +107,7 @@ def test_french_products_declare_executable_wms_contracts() -> None:
     assert all(product.selectable for product in (rge_alti, mns, ortho))
 
 
-def test_english_products_declare_researched_wcs_contracts() -> None:
+def test_english_products_declare_experimental_wcs_contracts() -> None:
     catalog = load_bundled_catalog()
     dtm = catalog.product("GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM")
     dsm = catalog.product("GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN")
@@ -123,8 +122,8 @@ def test_english_products_declare_researched_wcs_contracts() -> None:
     assert dtm.wcs.nodata is not None
     assert dtm.wcs.coverage_id.endswith("Lidar_Composite_Elevation_DTM_1m")
     assert dsm.wcs.coverage_id.endswith("Lidar_Composite_Elevation_LZ_DSM_1m")
-    assert not dtm.selectable
-    assert not dsm.selectable
+    assert dtm.selectable
+    assert dsm.selectable
 
 
 def test_uk_catalog_models_four_independent_authorities() -> None:
@@ -143,7 +142,10 @@ def test_uk_catalog_models_four_independent_authorities() -> None:
         "osni",
         "scottish_remote_sensing",
     }
-    assert not any(product.selectable for product in uk)
+    assert {product.id for product in uk if product.selectable} == {
+        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
+        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+    }
 
 
 def test_selectable_products_have_commercial_safe_license_metadata() -> None:

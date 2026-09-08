@@ -24,6 +24,7 @@ from blender_terrain.providers.environment_agency import (
     EnvironmentAgencyWCSClient,
     plan_environment_agency_requests,
 )
+from blender_terrain.providers.registry import build_raster_acquirers
 
 
 def test_plans_bounded_native_wcs_requests() -> None:
@@ -102,7 +103,7 @@ def test_acquires_only_the_confirmed_environment_agency_product(
 
     monkeypatch.setattr(EnvironmentAgencyWCSClient, "download", download)
 
-    result = EnvironmentAgencyWCSAcquirer(product).acquire(
+    result = EnvironmentAgencyWCSAcquirer(load_bundled_catalog()).acquire(
         selection,
         LayerRequest(DatasetKind.DTM, target_resolution_m=5.0),
         BBoxWGS84(-0.13, 51.5, -0.129, 51.5005),
@@ -114,6 +115,12 @@ def test_acquires_only_the_confirmed_environment_agency_product(
     assert result.product_id == product.id
     assert len(result.paths) == 1
     assert progress[-1].filename == "WCS block 1/1"
+
+
+def test_provider_registry_builds_environment_agency_adapter() -> None:
+    adapters = build_raster_acquirers(("environment_agency",))
+
+    assert isinstance(adapters["environment_agency"], EnvironmentAgencyWCSAcquirer)
 
 
 def _write_ea_layout(path: Path, values: np.ndarray) -> None:

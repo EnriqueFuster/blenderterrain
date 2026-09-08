@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from ..core.acquisition import RasterAcquirer
 from .cnig_acquisition import CnigElevationAcquirer
 from .copernicus_dem import CopernicusGlo30Acquirer
+from .environment_agency import EnvironmentAgencyWCSAcquirer
 from .gebco import GebcoAcquirer
 from .gedtm30 import Gedtm30Acquirer
 from .geopf_wms import GeopfWMSAcquirer
@@ -24,6 +25,7 @@ def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcqui
         "esa_worldcover": WorldCoverAcquirer,
         "gebco": GebcoAcquirer,
         "ign_france": GeopfWMSAcquirer,
+        "environment_agency": EnvironmentAgencyWCSAcquirer,
     }
     return {
         provider_id: factories[provider_id]()

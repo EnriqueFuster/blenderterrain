@@ -8,7 +8,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
 
-from ..catalog import DatasetKind, LayerRequest, ProductRecord, ProductSelection
+from ..catalog import (
+    Catalog,
+    DatasetKind,
+    LayerRequest,
+    ProductRecord,
+    ProductSelection,
+    load_bundled_catalog,
+)
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
@@ -145,10 +152,8 @@ def _epsg_uri(epsg: int) -> str:
 class EnvironmentAgencyWCSAcquirer:
     """Acquire a confirmed English DTM or DSM selection."""
 
-    def __init__(self, product: ProductRecord) -> None:
-        if product.provider_id != PROVIDER_ID or product.wcs is None:
-            raise ValueError("Environment Agency acquirer received an incompatible product")
-        self.product = product
+    def __init__(self, catalog: Catalog | None = None) -> None:
+        self.catalog = catalog or load_bundled_catalog()
 
     def acquire(
         self,
@@ -161,21 +166,25 @@ class EnvironmentAgencyWCSAcquirer:
     ) -> AcquiredRasterLayer:
         if (
             selection.provider_id != PROVIDER_ID
-            or selection.product_id != self.product.id
             or selection.kind is not request.kind
-            or selection.kind is not self.product.capabilities.kind
             or selection.kind not in {DatasetKind.DTM, DatasetKind.DSM}
         ):
             raise ValueError("Environment Agency acquirer received an incompatible selection")
-        contract = self.product.wcs
-        assert contract is not None
+        product = self.catalog.product(selection.product_id)
+        if (
+            product.provider_id != PROVIDER_ID
+            or product.capabilities.kind is not selection.kind
+            or product.wcs is None
+        ):
+            raise ValueError("Environment Agency acquirer received an incompatible selection")
+        contract = product.wcs
         windows = plan_environment_agency_requests(
             roi,
             contract.maximum_dimension,
-            self.product.capabilities.native_resolution_m,
+            product.capabilities.native_resolution_m,
         )
-        target = cache_directory / PROVIDER_ID / self.product.id
-        client = EnvironmentAgencyWCSClient(self.product)
+        target = cache_directory / PROVIDER_ID / product.id
+        client = EnvironmentAgencyWCSClient(product)
         paths: list[Path] = []
         cached_count = 0
         for index, window in enumerate(windows):
@@ -212,7 +221,7 @@ class EnvironmentAgencyWCSAcquirer:
                 )
         return AcquiredRasterLayer(
             PROVIDER_ID,
-            self.product.id,
+            product.id,
             selection.kind,
             tuple(paths),
             cached_count,
