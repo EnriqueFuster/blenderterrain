@@ -60,8 +60,13 @@ BlenderTerrain requires Blender 4.5 or later.
 To build the ZIP from source:
 
 ```text
-blender --command extension build --output-dir .artifacts/extension-build
+blender --factory-startup --command extension build --output-dir .artifacts/extension-build
 ```
+
+Source builds bundle PyProj 3.7.2 and OSTN15. The included wheels support Python
+3.11–3.13 on Windows x64, Linux x64 (glibc 2.28+), macOS Intel (13+) and macOS
+ARM (14+). Other platform/Python combinations require compatible dependency
+wheels before building. Do not install dependencies with pip from Blender.
 
 ## Basic workflow
 
