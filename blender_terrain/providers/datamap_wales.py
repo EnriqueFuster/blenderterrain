@@ -7,7 +7,14 @@ from pathlib import Path
 
 import numpy as np
 
-from ..catalog import Catalog, DatasetKind, LayerRequest, ProductRecord, ProductSelection
+from ..catalog import (
+    Catalog,
+    DatasetKind,
+    LayerRequest,
+    ProductRecord,
+    ProductSelection,
+    load_bundled_catalog,
+)
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
@@ -16,7 +23,7 @@ from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
 from ..io.elevation_window import elevation_window_is_valid, write_elevation_window
 from ..io.random_access import HttpRangeReader
 from ..models import ProjectedBounds
-from .british_grid import BritishGridTransform
+from .british_grid import BritishGridTransform, bundled_ostn15_path
 
 
 def open_wales_reader(product: ProductRecord, cache_directory: Path) -> BigTiffFloatTileReader:
@@ -48,9 +55,9 @@ def open_wales_reader(product: ProductRecord, cache_directory: Path) -> BigTiffF
 class DataMapWalesAcquirer:
     """Read bounded BNG windows and publish geographic windows for the common pipeline."""
 
-    def __init__(self, catalog: Catalog, grid_path: Path) -> None:
-        self.catalog = catalog
-        self.grid_path = grid_path
+    def __init__(self, catalog: Catalog | None = None, grid_path: Path | None = None) -> None:
+        self.catalog = catalog or load_bundled_catalog()
+        self.grid_path = grid_path or bundled_ostn15_path()
 
     def acquire(
         self,

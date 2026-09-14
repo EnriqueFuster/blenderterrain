@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import hashlib
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from ..errors import DownloadIntegrityError, NoCoverageError, ProviderUnavailableError
 
 OSTN15_SHA256 = "5d6ed64d2119952c4c559fa1fccbc594b6520fc3ec3ef2fc10be13202c4384fa"
+
+
+def bundled_ostn15_path() -> Path:
+    """Return the installed grid without relying on a top-level package name.
+
+    Both the Python wheel and Blender extension install resources as real files.
+    The .gtg extension distinguishes transformation grids from cached raster data.
+    """
+
+    package = __package__.rsplit(".", 1)[0]
+    return Path(str(files(package).joinpath("assets", "ostn15.gtg")))
 
 
 class BritishGridTransform:

@@ -5,7 +5,17 @@ import numpy as np
 import pytest
 
 from blender_terrain.errors import DownloadIntegrityError, NoCoverageError, ProviderUnavailableError
-from blender_terrain.providers.british_grid import BritishGridTransform
+from blender_terrain.providers.british_grid import BritishGridTransform, bundled_ostn15_path
+
+
+def test_bundled_grid_transforms_cardiff():
+    transform = BritishGridTransform(bundled_ostn15_path())
+    np.testing.assert_allclose(
+        transform.forward(-3.18, 51.48),
+        (318153.2406714825, 176331.91924008727),
+        atol=0.001,
+        rtol=0,
+    )
 
 
 def test_missing_grid_fails_without_fallback(tmp_path):
