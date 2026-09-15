@@ -208,6 +208,8 @@ class BigTiffFloatTileReader:
                 raise RasterFormatError("TIFF tile does not match its expected size")
         elif self._compression == 8:
             raw = _inflate_exact(compressed, expected_bytes)
+        elif self._compression == 5:
+            raw = _decompress_lzw(compressed, expected_bytes)
         else:
             raw = _decompress_zstd(compressed, expected_bytes)
         if self._predictor == 2:
@@ -379,7 +381,7 @@ class BigTiffFloatTileReader:
             (3, 32),
         }:
             raise RasterFormatError("TIFF sample type is unsupported")
-        if self._compression not in {1, 8, 50000}:
+        if self._compression not in {1, 5, 8, 50000}:
             raise RasterFormatError("TIFF compression is unsupported")
         if self._samples_per_pixel not in {1, 3, 4}:
             raise RasterFormatError("Only one-band, RGB, and four-band TIFF images are supported")
@@ -629,6 +631,44 @@ def _inflate_exact(compressed: bytes, expected_size: int) -> bytes:
     if len(raw) != expected_size or decompressor.unconsumed_tail or decompressor.unused_data:
         raise RasterFormatError("TIFF tile does not decompress to its expected size")
     return raw
+
+
+def _decompress_lzw(compressed: bytes, expected_size: int) -> bytes:
+    """Decode TIFF LZW (MSB-first, early code-width change) with bounded output."""
+
+    dictionary = [bytes([value]) for value in range(256)] + [b"", b""]
+    width, bit_offset, previous = 9, 0, b""
+    output = bytearray()
+    while bit_offset + width <= len(compressed) * 8:
+        byte_offset, shift = divmod(bit_offset, 8)
+        encoded = int.from_bytes(compressed[byte_offset : byte_offset + 3].ljust(3, b"\0"), "big")
+        code = (encoded >> (24 - shift - width)) & ((1 << width) - 1)
+        bit_offset += width
+        if code == 256:
+            dictionary = [bytes([value]) for value in range(256)] + [b"", b""]
+            width, previous = 9, b""
+            continue
+        if code == 257:
+            if len(output) != expected_size:
+                raise RasterFormatError("TIFF LZW tile does not match its expected size")
+            return bytes(output)
+        if code < len(dictionary):
+            entry = dictionary[code]
+        elif code == len(dictionary) and previous:
+            entry = previous + previous[:1]
+        else:
+            raise RasterFormatError("TIFF LZW tile contains an invalid code")
+        output.extend(entry)
+        if len(output) > expected_size:
+            raise RasterFormatError("TIFF LZW tile exceeds its expected size")
+        if previous and len(dictionary) < 4096:
+            dictionary.append(previous + entry[:1])
+            if len(dictionary) == (1 << width) - 1 and width < 12:
+                width += 1
+        previous = entry
+        if len(output) == expected_size:
+            return bytes(output)
+    raise RasterFormatError("TIFF LZW tile is truncated")
 
 
 def _decompress_zstd(compressed: bytes, expected_size: int) -> bytes:

@@ -13,11 +13,20 @@ from blender_terrain.errors import RasterFormatError
 from blender_terrain.io.bigtiff_tiles import (
     BigTiffFloatTileReader,
     PixelWindow,
+    _decompress_lzw,
     open_float_tile_reader,
 )
 from blender_terrain.io.elevation_mosaic import read_elevation_mosaic
 from blender_terrain.io.random_access import RandomAccessReader
 from blender_terrain.models import ProjectedBounds
+
+
+def test_tiff_lzw_decodes_bounded_codes() -> None:
+    codes = (256, 65, 66, 257)
+    encoded = (int("".join(f"{code:09b}" for code in codes), 2) << 4).to_bytes(5, "big")
+    with unittest.TestCase().assertRaisesRegex(RasterFormatError, "expected size"):
+        _decompress_lzw(encoded, 3)
+    assert _decompress_lzw(encoded, 2) == b"AB"
 
 
 class BigTiffTilesTests(unittest.TestCase):
