@@ -97,6 +97,38 @@ coverage = { bounds = [[-8.8, 54.5, -0.5, 61.0]], requires_discovery = true, lim
 license = { identifier = "OGL-UK-3.0-per-asset", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Scottish Government public sector LiDAR; per-asset attribution required" }
 
 [[products]]
+id = "GB_SCT_SRSP_PHASE1_NH24_DTM"
+provider_id = "scottish_remote_sensing"
+name = "Scottish Public Sector LiDAR phase 1 NH24 DTM 1 m"
+jurisdiction = "GB-SCT"
+implementation_status = "researched"
+version = "phase 1, capture March 2011–May 2012"
+last_verified = "2026-09-15"
+endpoint = "https://srsp-open-data.s3.eu-west-2.amazonaws.com/lidar/phase-1/dtm/27700/gridded/NH24_1M_DTM_PHASE1.tif"
+evidence_urls = ["https://registry.opendata.aws/scottish-lidar/", "https://www.data.gov.uk/dataset/a4411d01-c95d-44d5-9db0-db8c2b94bc5a/lidar-for-scotland-phase-1-dtm"]
+reliability_score = 75
+network_cost_score = 35
+capabilities = { kind = "dtm", native_resolution_m = 1.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "tiled_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-4.905252, 57.461790, -4.835812, 57.499194]], requires_discovery = true, limitations = ["One 4 km raster asset only; the WGS84 envelope is not a NoData footprint", "Phase 1 survey dates vary between 2011 and 2012", "Heights are in Ordnance Datum Newlyn"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Crown copyright Scottish Government, SEPA and Scottish Water (2012)" }
+
+[[products]]
+id = "GB_SCT_SRSP_PHASE1_NH24_DSM"
+provider_id = "scottish_remote_sensing"
+name = "Scottish Public Sector LiDAR phase 1 NH24 DSM 1 m"
+jurisdiction = "GB-SCT"
+implementation_status = "researched"
+version = "phase 1, capture March 2011–May 2012"
+last_verified = "2026-09-15"
+endpoint = "https://srsp-open-data.s3.eu-west-2.amazonaws.com/lidar/phase-1/dsm/27700/gridded/NH24_1M_DSM_PHASE1.tif"
+evidence_urls = ["https://registry.opendata.aws/scottish-lidar/", "https://www.data.gov.uk/dataset/148a9089-a53f-4ebb-9897-4d212a72063e/lidar-for-scotland-phase-1-dsm"]
+reliability_score = 75
+network_cost_score = 35
+capabilities = { kind = "dsm", native_resolution_m = 1.0, semantics = "dsm", authoritative = true, acquisition_mode = "tiled_cog", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-4.905252, 57.461790, -4.835812, 57.499194]], requires_discovery = true, limitations = ["One 4 km raster asset only; the WGS84 envelope is not a NoData footprint", "Phase 1 survey dates vary between 2011 and 2012", "Heights are in Ordnance Datum Newlyn"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Crown copyright Scottish Government, SEPA and Scottish Water (2012)" }
+
+[[products]]
 id = "GB_NIR_OSNI_10M_DTM"
 provider_id = "osni"
 name = "OSNI Open Data DTM 10 m"
