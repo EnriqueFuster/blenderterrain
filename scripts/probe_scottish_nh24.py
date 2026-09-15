@@ -14,6 +14,7 @@ from blender_terrain.catalog import (
     load_bundled_catalog,
 )
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.elevation_window import ElevationWindowReader
 from blender_terrain.providers.british_grid import BritishGridTransform, bundled_ostn15_path
 from blender_terrain.providers.scottish_lidar import (
@@ -88,11 +89,19 @@ def main() -> None:
             selection = ProductSelection(
                 product.provider_id, product.id, kind, SelectionMode.MANUAL, True
             )
-            acquired = acquirer.acquire(selection, LayerRequest(kind), roi, cache / "acquired")
+            try:
+                acquired = acquirer.acquire(selection, LayerRequest(kind), roi, cache / "acquired")
+            except NoCoverageError:
+                print(kind.name, "coverage=NONE")
+                continue
+            valid_cells = 0
+            total_cells = 0
             for path in acquired.paths:
                 window = ElevationWindowReader(path)
                 data = np.load(path, mmap_mode="r", allow_pickle=False)
                 valid = data[data != window.nodata]
+                valid_cells += valid.size
+                total_cells += data.size
                 print(
                     kind.name,
                     path.name,
@@ -103,6 +112,11 @@ def main() -> None:
                     else "NoData",
                 )
             print(kind.name, f"cached={acquired.cached_count}/{len(acquired.paths)}")
+            print(
+                kind.name,
+                "coverage=FULL" if valid_cells == total_cells else "coverage=PARTIAL",
+                f"valid={valid_cells}/{total_cells}",
+            )
 
 
 if __name__ == "__main__":

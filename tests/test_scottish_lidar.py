@@ -71,19 +71,27 @@ def test_rejects_changed_asset_grid(tmp_path):
         open_scottish_lidar_reader(product, tmp_path)
 
 
-def test_nh24_acquisition_reads_bounded_window_and_reuses_cache(tmp_path):
+@pytest.mark.parametrize("partial", [False, True])
+def test_nh24_acquisition_reads_bounded_window_and_reuses_cache(tmp_path, partial):
     catalog = load_bundled_catalog()
     product = catalog.product("GB_SCT_SRSP_PHASE1_NH24_DTM")
     selection = ProductSelection(
         product.provider_id, product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
     )
+
+    def read_window(row, col, h, w):
+        data = np.full((h, w), 12.0, dtype=np.float32)
+        if partial:
+            data[:, : w // 2] = -9999.0
+        return data
+
     source = SimpleNamespace(
         georeference=SimpleNamespace(
             origin_x=0.0, origin_y=100.0, pixel_width=1.0, pixel_height=-1.0
         ),
         layout=SimpleNamespace(width=100, height=100),
         nodata=-9999.0,
-        read_window=lambda row, col, h, w: np.full((h, w), 12.0, dtype=np.float32),
+        read_window=read_window,
     )
     with (
         patch("blender_terrain.providers.scottish_lidar.BritishGridTransform") as transform,
@@ -93,7 +101,7 @@ def test_nh24_acquisition_reads_bounded_window_and_reuses_cache(tmp_path):
         ) as opened,
     ):
         transform.return_value.forward.side_effect = lambda x, y: (
-            np.full(x.shape, 20.5),
+            np.broadcast_to(20.5 + np.arange(x.shape[1]), x.shape),
             np.full(y.shape, 80.5),
         )
         acquirer = ScottishLidarAcquirer(catalog, tmp_path / "grid.tif")
@@ -101,7 +109,9 @@ def test_nh24_acquisition_reads_bounded_window_and_reuses_cache(tmp_path):
         acquired = acquirer.acquire(selection, LayerRequest(DatasetKind.DTM), roi, tmp_path)
         reader = ElevationWindowReader(acquired.paths[0])
         assert reader.georeference.epsg == 4326
-        assert np.all(np.load(acquired.paths[0]) == 12.0)
+        data = np.load(acquired.paths[0])
+        assert np.any(data == 12.0)
+        assert bool(np.any(data == -9999.0)) == partial
         repeated = acquirer.acquire(selection, LayerRequest(DatasetKind.DTM), roi, tmp_path)
         assert repeated.cached_count == len(repeated.paths)
         assert opened.call_count == 1
