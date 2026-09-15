@@ -12,7 +12,7 @@ def main() -> None:
     arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     module_name = arguments[0] if arguments else "bl_ext.user_default.blender_terrain"
     if len(arguments) > 1:
-        sys.path.insert(0, arguments[1])
+        sys.path[:0] = arguments[1:]
     extension = importlib.import_module(module_name)
     if not hasattr(bpy.types.Scene, "blender_terrain_roi"):
         extension.register()
@@ -25,6 +25,18 @@ def main() -> None:
         assert properties.is_valid
         assert properties.product == "MDT02"
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
+        if len(arguments) > 2:
+            from math import isclose
+
+            from pyproj import __version__ as pyproj_version
+
+            assert pyproj_version == "3.7.2"
+            british_grid = extension.blender_terrain.providers.british_grid
+            easting, northing = british_grid.BritishGridTransform(
+                british_grid.bundled_ostn15_path()
+            ).forward(-3.18, 51.48)
+            assert isclose(easting, 318153.2407, abs_tol=0.001)
+            assert isclose(northing, 176331.9192, abs_tol=0.001)
     finally:
         if registered_here:
             extension.unregister()
