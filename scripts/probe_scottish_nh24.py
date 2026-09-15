@@ -1,20 +1,40 @@
-"""Probe small NH24 DTM/DSM windows without downloading whole assets."""
+"""Probe NH24 source windows and one small end-to-end acquisition."""
 
+import argparse
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
-from blender_terrain.catalog import load_bundled_catalog
-from blender_terrain.providers.scottish_lidar import open_scottish_lidar_reader
+from blender_terrain.catalog import (
+    DatasetKind,
+    LayerRequest,
+    ProductSelection,
+    SelectionMode,
+    load_bundled_catalog,
+)
+from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.io.elevation_window import ElevationWindowReader
+from blender_terrain.providers.british_grid import BritishGridTransform, bundled_ostn15_path
+from blender_terrain.providers.scottish_lidar import (
+    ScottishLidarAcquirer,
+    open_scottish_lidar_reader,
+)
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--acquire", action="store_true", help="Extract a small valid NH24 ROI")
+    args = parser.parse_args()
     catalog = load_bundled_catalog()
     cache = Path(".artifacts/scottish-nh24-probe")
-    center_windows: dict[str, np.ndarray] = {}
+    center_windows: dict[str, NDArray[np.float32]] = {}
+    dtm_reference = None
     for kind in ("DTM", "DSM"):
         product = catalog.product(f"GB_SCT_SRSP_PHASE1_NH24_{kind}")
         reader = open_scottish_lidar_reader(product, cache / kind.lower())
+        if kind == "DTM":
+            dtm_reference = reader.georeference
         for label, row, column in (
             ("center", 1900, 1900),
             ("northwest", 0, 0),
@@ -38,6 +58,39 @@ def main() -> None:
         f"changed={np.count_nonzero(difference)}/{difference.size}",
         f"range={float(difference.min()):.2f}..{float(difference.max()):.2f}",
     )
+    if args.acquire:
+        assert dtm_reference is not None
+        easting = dtm_reference.origin_x + 1950 * dtm_reference.pixel_width
+        northing = dtm_reference.origin_y + 1950 * dtm_reference.pixel_height
+        longitude, latitude = BritishGridTransform(bundled_ostn15_path()).inverse(easting, northing)
+        roi = BBoxWGS84(
+            longitude - 0.0005,
+            latitude - 0.0003,
+            longitude + 0.0005,
+            latitude + 0.0003,
+        )
+        print("Acquisition ROI", roi)
+        acquirer = ScottishLidarAcquirer(catalog)
+        for kind in (DatasetKind.DTM, DatasetKind.DSM):
+            product = catalog.product(f"GB_SCT_SRSP_PHASE1_NH24_{kind.name}")
+            selection = ProductSelection(
+                product.provider_id, product.id, kind, SelectionMode.MANUAL, True
+            )
+            acquired = acquirer.acquire(selection, LayerRequest(kind), roi, cache / "acquired")
+            for path in acquired.paths:
+                window = ElevationWindowReader(path)
+                data = np.load(path, mmap_mode="r", allow_pickle=False)
+                valid = data[data != window.nodata]
+                print(
+                    kind.name,
+                    path.name,
+                    f"EPSG:{window.georeference.epsg}",
+                    f"valid={valid.size}/{data.size}",
+                    f"range={float(valid.min()):.2f}..{float(valid.max()):.2f}"
+                    if valid.size
+                    else "NoData",
+                )
+            print(kind.name, f"cached={acquired.cached_count}/{len(acquired.paths)}")
 
 
 if __name__ == "__main__":
