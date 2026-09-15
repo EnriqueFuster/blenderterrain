@@ -135,11 +135,11 @@ name = "OSNI Open Data DTM 10 m"
 jurisdiction = "GB-NIR"
 implementation_status = "researched"
 version = "grouped sheets"
-last_verified = "2026-09-08"
+last_verified = "2026-09-15"
 endpoint = "https://www.nidirect.gov.uk/articles/10m-digital-terrain-model-height-data"
-evidence_urls = ["https://www.nidirect.gov.uk/articles/osni-open-data-product-list", "https://www.nidirect.gov.uk/articles/10m-digital-terrain-model-height-data"]
+evidence_urls = ["https://www.nidirect.gov.uk/articles/10m-digital-terrain-model-height-data", "https://admin.opendatani.gov.uk/dataset/osni-open-data-10m-dtm-sheets-1-50", "https://www.opendatani.gov.uk/@land-property-services-ordnance-survey-of-northern-ireland/osni-open-data-coverage-grid-10k"]
 reliability_score = 82
 network_cost_score = 60
 capabilities = { kind = "dtm", native_resolution_m = 10.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
-coverage = { bounds = [[-8.3, 53.9, -5.3, 55.4]], requires_discovery = true, limitations = ["Horizontal CRS must be proven from authoritative metadata before implementation", "Heights are metres above mean sea level at Belfast Lough", "Distribution uses grouped ZIP files containing text grids"] }
+coverage = { bounds = [[-8.3, 53.9, -5.3, 55.4]], requires_discovery = true, limitations = ["Horizontal CRS of the TXT sheets is not established from product-specific authoritative metadata", "Heights are metres above mean sea level at Belfast Lough", "Published accuracy is 1.0 m RMSE", "Each sheet spans about 9.6 km x 6.4 km; grouped TXT downloads are large"] }
 license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Land & Property Services and OSNI, licensed under OGL v3.0" }

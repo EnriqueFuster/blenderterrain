@@ -15,6 +15,7 @@ from blender_terrain.core.roi import BBoxWGS84
 VALENCIA = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
 PARIS = BBoxWGS84(2.34, 48.85, 2.36, 48.87)
 LONDON = BBoxWGS84(-0.15, 51.49, -0.10, 51.53)
+BELFAST = BBoxWGS84(-5.94, 54.59, -5.91, 54.61)
 
 
 def test_spanish_dtm_candidates_are_ranked_without_hiding_global_product() -> None:
@@ -47,6 +48,19 @@ def test_implemented_global_dtm_coexists_with_ign_but_is_not_forced() -> None:
     assert "GEDTM30_V11" in {candidate.product.id for candidate in candidates.valid}
     assert candidates.recommended is not None
     assert candidates.recommended.product.id == "MDT02"
+
+
+def test_osni_stays_unselectable_without_product_specific_crs_evidence() -> None:
+    candidates = discover_candidates(load_bundled_catalog(), BELFAST, DatasetKind.DTM)
+    osni = next(
+        candidate
+        for candidate in candidates.rejected
+        if candidate.product.id == "GB_NIR_OSNI_10M_DTM"
+    )
+    assert osni.coverage.value == "potential"
+    assert osni.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
+    assert any("Horizontal CRS" in limit for limit in osni.product.coverage.limitations)
+    assert "GEDTM30_V11" in {candidate.product.id for candidate in candidates.valid}
 
 
 def test_french_dtm_is_recommended_without_hiding_global_fallback() -> None:
