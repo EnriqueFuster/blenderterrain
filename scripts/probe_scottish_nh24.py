@@ -25,6 +25,7 @@ from blender_terrain.providers.scottish_lidar import (
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--acquire", action="store_true", help="Extract a small valid NH24 ROI")
+    parser.add_argument("--survey", action="store_true", help="Sample a bounded 8 x 8 NoData grid")
     args = parser.parse_args()
     catalog = load_bundled_catalog()
     cache = Path(".artifacts/scottish-nh24-probe")
@@ -52,6 +53,17 @@ def main() -> None:
                 if valid.size
                 else "NoData",
             )
+        if args.survey:
+            print(kind, "sampled coverage (# full, + partial, . empty; not a footprint)")
+            for survey_row in range(8):
+                markers = []
+                for survey_column in range(8):
+                    row = round((survey_row + 0.5) * reader.layout.height / 8) - 16
+                    column = round((survey_column + 0.5) * reader.layout.width / 8) - 16
+                    sample = reader.read_window(row, column, 32, 32)
+                    count = np.count_nonzero(sample != reader.nodata)
+                    markers.append("#" if count == sample.size else "+" if count else ".")
+                print("".join(markers))
     difference = center_windows["DSM"] - center_windows["DTM"]
     print(
         "DSM minus DTM center",
