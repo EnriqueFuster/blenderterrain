@@ -75,7 +75,6 @@ def test_researched_products_are_not_selectable() -> None:
         "CH",
         "GB-NIR",
         "GB-SCT",
-        "GB-WLS",
     }
     assert researched
     assert not any(product.selectable for product in researched)
@@ -145,6 +144,8 @@ def test_uk_catalog_models_four_independent_authorities() -> None:
     assert {product.id for product in uk if product.selectable} == {
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+        "GB_WLS_DMW_LIDAR_1M_32F_DTM",
+        "GB_WLS_DMW_LIDAR_1M_32F_DSM",
     }
 
 

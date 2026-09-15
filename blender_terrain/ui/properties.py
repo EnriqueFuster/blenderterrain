@@ -65,6 +65,20 @@ _PRODUCT_ITEMS = (
         0,
         14,
     ),
+    (
+        "GB_WLS_DMW_LIDAR_1M_32F_DTM",
+        "DTM (DataMapWales 1 m, Wales)",
+        "Official Welsh terrain mosaic",
+        0,
+        15,
+    ),
+    (
+        "GB_WLS_DMW_LIDAR_1M_32F_DSM",
+        "DSM (DataMapWales 1 m, Wales)",
+        "Official Welsh surface mosaic",
+        0,
+        16,
+    ),
 )
 
 
@@ -93,9 +107,7 @@ def _imagery_product_items(
         ("FR_BD_ORTHO", "BD ORTHO", "Official French aerial orthophotography"),
         ("ESA_WORLDCOVER_S2_2021", "ESA WorldCover 2021", "Global static 10 m imagery"),
     )
-    _IMAGERY_ITEMS_CACHE[:] = [
-        item for item in items if not available or item[0] in available
-    ]
+    _IMAGERY_ITEMS_CACHE[:] = [item for item in items if not available or item[0] in available]
     _IMAGERY_ITEMS_CACHE.append(("NONE", "No Imagery", "Create terrain without imagery"))
     return _IMAGERY_ITEMS_CACHE
 

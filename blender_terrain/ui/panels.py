@@ -149,6 +149,8 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             "FR_MNS_CORREL_50CM",
             "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
             "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
+            "GB_WLS_DMW_LIDAR_1M_32F_DTM",
+            "GB_WLS_DMW_LIDAR_1M_32F_DSM",
         }
         if products_loaded and cnig_product:
             layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
@@ -412,6 +414,8 @@ def _elevation_product_label(product_id: str) -> str:
         "FR_RGE_ALTI_1M": "RGE ALTI 1 m DTM",
         "FR_MNS_CORREL_50CM": "MNS-Correl 50 cm DSM",
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM": "EA LiDAR Composite 1 m DTM",
+        "GB_WLS_DMW_LIDAR_1M_32F_DTM": "DataMapWales 1 m DTM",
+        "GB_WLS_DMW_LIDAR_1M_32F_DSM": "DataMapWales 1 m DSM",
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN": (
             "EA LiDAR Composite 1 m DSM"
         ),

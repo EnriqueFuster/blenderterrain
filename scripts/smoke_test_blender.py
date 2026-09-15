@@ -222,6 +222,27 @@ def main() -> None:
         properties.available_product_ids_json = "[]"
         properties.product = "MDT02"
         properties.imagery_product = "ESA_WORLDCOVER_S2_2021"
+        properties.west = -3.18
+        properties.south = 51.48
+        properties.east = -3.1795
+        properties.north = 51.4805
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert {
+            "GB_WLS_DMW_LIDAR_1M_32F_DTM", "GB_WLS_DMW_LIDAR_1M_32F_DSM",
+            "GEDTM30_V11", "COPERNICUS_GLO30_2021",
+        } <= set(json.loads(properties.available_product_ids_json))
+        properties.product = "GB_WLS_DMW_LIDAR_1M_32F_DTM"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
+        welsh_plan = job_controller._acquisition_plan_from_properties(
+            properties,
+            extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+                json.loads(properties.roi_geometry_json)
+            ),
+        )
+        assert welsh_plan.selections.for_kind(
+            extension.blender_terrain.catalog.DatasetKind.DTM
+        ).product_id == "GB_WLS_DMW_LIDAR_1M_32F_DTM"
         properties.elevation_source = "LOCAL"
         assert properties.elevation_source == "LOCAL"
         properties.elevation_source = "CNIG"
