@@ -168,7 +168,9 @@ def start_discovery(context: bpy.types.Context) -> None:
         properties.discovery_ready = True
         properties.job_state = JobState.COMPLETE.value
         properties.job_progress = 1.0
-        properties.job_message = "Selected raster sources resolved from the confirmed ROI"
+        properties.job_message = (
+            "Source windows estimated; valid pixels are checked during download"
+        )
         return
     _start_worker(context, properties, "cnig_discovery", "Starting CNIG source discovery")
 

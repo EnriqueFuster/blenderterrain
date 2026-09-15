@@ -138,6 +138,7 @@ def main() -> None:
         assert properties.selected_resolution == 30.0
         assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
         assert properties.discovery_ready
+        assert "valid pixels are checked during download" in properties.job_message
         assert "Copernicus GLO-30" in properties.discovery_summary
         assert "GEBCO" in properties.discovery_summary
         region = extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(

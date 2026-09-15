@@ -670,18 +670,8 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
         self.report(
             {"INFO"},
             (
-                "Selected sources resolved"
-                if properties.product
-                in {
-                    "COPERNICUS_GLO30_2021",
-                    "GEDTM30_V11",
-                    "FR_RGE_ALTI_1M",
-                    "FR_MNS_CORREL_50CM",
-                    "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
-                    "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
-                    "GB_WLS_DMW_LIDAR_1M_32F_DTM",
-                    "GB_WLS_DMW_LIDAR_1M_32F_DSM",
-                }
+                "Source windows estimated; coverage checked during download"
+                if load_bundled_catalog().product(properties.product).provider_id != "ign_cnig"
                 else "Source discovery started in the background"
             ),
         )
