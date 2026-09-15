@@ -12,7 +12,7 @@ from blender_terrain.catalog import (
     load_bundled_catalog,
 )
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.errors import DownloadIntegrityError
+from blender_terrain.errors import DownloadIntegrityError, NoCoverageError
 from blender_terrain.io.elevation_window import ElevationWindowReader
 from blender_terrain.providers.registry import build_raster_acquirers
 from blender_terrain.providers.scottish_lidar import (
@@ -124,3 +124,55 @@ def test_scottish_acquirer_rejects_unverified_campaign_before_network(tmp_path):
             tmp_path,
         )
     opened.assert_not_called()
+
+
+def test_nh24_rejects_roi_outside_asset_before_network(tmp_path):
+    catalog = load_bundled_catalog()
+    product = catalog.product("GB_SCT_SRSP_PHASE1_NH24_DTM")
+    selection = ProductSelection(
+        product.provider_id, product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
+    )
+    with (
+        patch("blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader") as opened,
+        pytest.raises(NoCoverageError, match="intersect"),
+    ):
+        ScottishLidarAcquirer(catalog, tmp_path / "grid.tif").acquire(
+            selection,
+            LayerRequest(DatasetKind.DTM),
+            BBoxWGS84(-3.19, 55.95, -3.18, 55.96),
+            tmp_path,
+        )
+    opened.assert_not_called()
+
+
+def test_nh24_all_nodata_fails_on_first_and_cached_attempt(tmp_path):
+    catalog = load_bundled_catalog()
+    product = catalog.product("GB_SCT_SRSP_PHASE1_NH24_DTM")
+    selection = ProductSelection(
+        product.provider_id, product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
+    )
+    source = SimpleNamespace(
+        georeference=SimpleNamespace(
+            origin_x=0.0, origin_y=100.0, pixel_width=1.0, pixel_height=-1.0
+        ),
+        layout=SimpleNamespace(width=100, height=100),
+        nodata=-9999.0,
+        read_window=lambda row, col, h, w: np.full((h, w), -9999.0, dtype=np.float32),
+    )
+    with (
+        patch("blender_terrain.providers.scottish_lidar.BritishGridTransform") as transform,
+        patch(
+            "blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader",
+            return_value=source,
+        ) as opened,
+    ):
+        transform.return_value.forward.side_effect = lambda x, y: (
+            np.full(x.shape, 20.5),
+            np.full(y.shape, 80.5),
+        )
+        acquirer = ScottishLidarAcquirer(catalog, tmp_path / "grid.tif")
+        roi = BBoxWGS84(-4.87, 57.48, -4.8699, 57.4801)
+        for _ in range(2):
+            with pytest.raises(NoCoverageError, match="no elevation cells"):
+                acquirer.acquire(selection, LayerRequest(DatasetKind.DTM), roi, tmp_path)
+        assert opened.call_count == 1

@@ -13,9 +13,13 @@ from ..catalog import ProductRecord, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
-from ..errors import JobCancelled
+from ..errors import JobCancelled, NoCoverageError
 from ..io.bigtiff_tiles import BigTiffFloatTileReader
-from ..io.elevation_window import elevation_window_is_valid, write_elevation_window
+from ..io.elevation_window import (
+    ElevationWindowReader,
+    elevation_window_is_valid,
+    write_elevation_window,
+)
 from ..models import ProjectedBounds
 from .british_grid import BritishGridTransform
 
@@ -47,6 +51,7 @@ def acquire_bng_windows(
     paths: list[Path] = []
     cached_count = 0
     reader = None
+    has_data = False
     for row in range(0, height, 512):
         for column in range(0, width, 512):
             if cancellation_requested():
@@ -95,6 +100,7 @@ def acquire_bng_windows(
                         int(columns[valid].max()) - left + 1,
                     )
                     data[valid] = source[rows[valid] - top, columns[valid] - left]
+                has_data |= bool(np.any(data != reader.nodata))
                 path.unlink(missing_ok=True)
                 path.with_suffix(".npy.json").unlink(missing_ok=True)
                 write_elevation_window(path, data, bounds, reader.nodata)
@@ -113,6 +119,15 @@ def acquire_bng_windows(
                         cached=cached,
                     )
                 )
+    if not has_data:
+        # Cached windows can be reused without opening the remote raster again.
+        for path in paths:
+            window = ElevationWindowReader(path)
+            if np.any(np.load(path, mmap_mode="r", allow_pickle=False) != window.nodata):
+                has_data = True
+                break
+    if not has_data:
+        raise NoCoverageError(f"{product.name} has no elevation cells in the ROI")
     return AcquiredRasterLayer(
         selection.provider_id, product.id, selection.kind, tuple(paths), cached_count
     )

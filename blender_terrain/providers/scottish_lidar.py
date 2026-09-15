@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..catalog import (
     Catalog,
+    CoverageMatch,
     DatasetKind,
     LayerRequest,
     ProductRecord,
@@ -16,7 +17,7 @@ from ..catalog import (
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
-from ..errors import DownloadIntegrityError
+from ..errors import DownloadIntegrityError, NoCoverageError
 from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
 from ..io.random_access import HttpRangeReader
 from .british_cog import acquire_bng_windows
@@ -83,6 +84,8 @@ class ScottishLidarAcquirer:
             or product.capabilities.kind is not selection.kind
         ):
             raise ValueError("Scottish LiDAR received an unverified or incompatible selection")
+        if product.coverage.match(roi) is CoverageMatch.NONE:
+            raise NoCoverageError("NH24 does not intersect the requested ROI")
         return acquire_bng_windows(
             product,
             selection,
