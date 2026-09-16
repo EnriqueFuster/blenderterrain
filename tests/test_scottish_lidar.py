@@ -18,6 +18,8 @@ from blender_terrain.providers.registry import build_raster_acquirers
 from blender_terrain.providers.scottish_lidar import (
     ScottishLidarAcquirer,
     open_scottish_lidar_reader,
+    phase1_tile_ids_for_bng_bounds,
+    phase1_tile_url,
 )
 
 
@@ -35,6 +37,30 @@ def test_nh24_is_a_specific_selectable_asset(kind):
 def test_scottish_source_is_registered_for_jobs():
     adapters = build_raster_acquirers(["scottish_remote_sensing"])
     assert isinstance(adapters["scottish_remote_sensing"], ScottishLidarAcquirer)
+
+
+def test_resolves_phase1_grid_tiles_without_a_remote_catalog():
+    assert phase1_tile_ids_for_bng_bounds(220_000, 840_000, 224_000, 844_000) == ("NH24",)
+    assert phase1_tile_ids_for_bng_bounds(219_999, 839_999, 220_001, 840_001) == (
+        "NH13",
+        "NH23",
+        "NH14",
+        "NH24",
+    )
+    assert phase1_tile_ids_for_bng_bounds(220_000, 840_000, 230_000, 850_000) == ("NH24",)
+
+
+def test_builds_only_validated_phase1_urls():
+    assert phase1_tile_url(DatasetKind.DTM, "NH24").endswith(
+        "/dtm/27700/gridded/NH24_1M_DTM_PHASE1.tif"
+    )
+    with pytest.raises(ValueError, match="identifier"):
+        phase1_tile_url(DatasetKind.IMAGERY, "../../unsafe")
+
+
+def test_rejects_bounds_outside_the_british_grid():
+    with pytest.raises(NoCoverageError, match="outside"):
+        phase1_tile_ids_for_bng_bounds(-1, 840_000, 1, 840_001)
 
 
 def test_uses_range_reader_and_checks_asset_grid(tmp_path):

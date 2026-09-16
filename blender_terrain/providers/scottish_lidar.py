@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -26,6 +28,53 @@ from .british_grid import BritishGridTransform, bundled_ostn15_path
 _VERIFIED_PRODUCTS = frozenset(
     {"GB_SCT_SRSP_PHASE1_NH24_DTM", "GB_SCT_SRSP_PHASE1_NH24_DSM"}
 )
+_TILE_ID = re.compile(r"[A-HJ-Z]{2}\d{2}")
+_S3_BASE = "https://srsp-open-data.s3.eu-west-2.amazonaws.com/lidar/phase-1"
+
+
+def phase1_tile_ids_for_bng_bounds(
+    west: float, south: float, east: float, north: float
+) -> tuple[str, ...]:
+    """Return 10 km British National Grid tile identifiers intersecting bounds."""
+
+    if not all(math.isfinite(value) for value in (west, south, east, north)):
+        raise ValueError("British grid bounds must be finite")
+    if west >= east or south >= north:
+        raise ValueError("British grid bounds must have positive area")
+    if west < 0 or south < 0 or east > 700_000 or north > 1_300_000:
+        raise NoCoverageError("Bounds fall outside the British National Grid")
+    first_easting = math.floor(west / 10_000) * 10_000
+    last_easting = math.floor(math.nextafter(east, -math.inf) / 10_000) * 10_000
+    first_northing = math.floor(south / 10_000) * 10_000
+    last_northing = math.floor(math.nextafter(north, -math.inf) / 10_000) * 10_000
+    return tuple(
+        _bng_tile_id(easting, northing)
+        for northing in range(first_northing, last_northing + 1, 10_000)
+        for easting in range(first_easting, last_easting + 1, 10_000)
+    )
+
+
+def phase1_tile_url(kind: DatasetKind, tile_id: str) -> str:
+    """Build the official phase-1 raster URL for one validated grid identifier."""
+
+    if kind not in (DatasetKind.DTM, DatasetKind.DSM) or not _TILE_ID.fullmatch(tile_id):
+        raise ValueError("Expected a phase-1 DTM/DSM tile identifier")
+    label = kind.value
+    return f"{_S3_BASE}/{label}/27700/gridded/{tile_id}_1M_{label.upper()}_PHASE1.tif"
+
+
+def _bng_tile_id(easting: int, northing: int) -> str:
+    e100km, n100km = easting // 100_000, northing // 100_000
+    first = (19 - n100km) - (19 - n100km) % 5 + (e100km + 10) // 5
+    second = ((19 - n100km) * 5) % 25 + e100km % 5
+    if first > 7:
+        first += 1
+    if second > 7:
+        second += 1
+    return (
+        f"{chr(ord('A') + first)}{chr(ord('A') + second)}"
+        f"{easting % 100_000 // 10_000}{northing % 100_000 // 10_000}"
+    )
 
 
 def open_scottish_lidar_reader(
