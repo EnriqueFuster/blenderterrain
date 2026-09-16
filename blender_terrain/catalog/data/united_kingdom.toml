@@ -103,7 +103,7 @@ name = "Scottish Public Sector LiDAR phase 1 NH24 DTM 1 m"
 jurisdiction = "GB-SCT"
 implementation_status = "researched"
 version = "phase 1, capture March 2011–May 2012"
-last_verified = "2026-09-15"
+last_verified = "2026-09-16"
 endpoint = "https://srsp-open-data.s3.eu-west-2.amazonaws.com/lidar/phase-1/dtm/27700/gridded/NH24_1M_DTM_PHASE1.tif"
 evidence_urls = ["https://registry.opendata.aws/scottish-lidar/", "https://www.data.gov.uk/dataset/a4411d01-c95d-44d5-9db0-db8c2b94bc5a/lidar-for-scotland-phase-1-dtm"]
 reliability_score = 75
@@ -141,5 +141,5 @@ evidence_urls = ["https://www.nidirect.gov.uk/articles/10m-digital-terrain-model
 reliability_score = 82
 network_cost_score = 60
 capabilities = { kind = "dtm", native_resolution_m = 10.0, semantics = "derived_dtm", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = false }
-coverage = { bounds = [[-8.3, 53.9, -5.3, 55.4]], requires_discovery = true, limitations = ["Horizontal CRS of the TXT sheets is not established from product-specific authoritative metadata", "Heights are metres above mean sea level at Belfast Lough", "Published accuracy is 1.0 m RMSE", "Each sheet spans about 9.6 km x 6.4 km; grouped TXT downloads are large"] }
+coverage = { bounds = [[-8.3, 53.9, -5.3, 55.4]], requires_discovery = true, limitations = ["Coordinates use TM75 / Irish Grid (EPSG:29903)", "Heights are metres above mean sea level at Belfast Lough", "Published accuracy is 1.0 m RMSE", "Each sheet spans about 9.6 km x 6.4 km; grouped ZIP resources require range access"] }
 license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Land & Property Services and OSNI, licensed under OGL v3.0" }

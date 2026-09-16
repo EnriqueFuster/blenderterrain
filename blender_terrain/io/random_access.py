@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -49,6 +50,46 @@ class LocalRandomAccessReader:
             payload = stream.read(length)
         if len(payload) != length:
             raise DownloadIntegrityError("Local random-access read was truncated")
+        return payload
+
+
+class RandomAccessIO(io.RawIOBase):
+    """Expose a bounded random-access reader as a seekable binary stream."""
+
+    def __init__(self, reader: RandomAccessReader) -> None:
+        self.reader = reader
+        self._position = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self._position
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        origins = {
+            io.SEEK_SET: 0,
+            io.SEEK_CUR: self._position,
+            io.SEEK_END: self.reader.size,
+        }
+        if whence not in origins:
+            raise ValueError("Unsupported seek mode")
+        position = origins[whence] + offset
+        if position < 0:
+            raise ValueError("Cannot seek before the start of the source")
+        self._position = position
+        return position
+
+    def read(self, size: int = -1) -> bytes:
+        remaining = max(0, self.reader.size - self._position)
+        amount = remaining if size is None or size < 0 else min(size, remaining)
+        if amount == 0:
+            return b""
+        payload = self.reader.read(self._position, amount)
+        self._position += len(payload)
         return payload
 
 

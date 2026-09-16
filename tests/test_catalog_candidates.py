@@ -64,7 +64,7 @@ def test_osni_stays_unselectable_without_product_specific_crs_evidence() -> None
     )
     assert osni.coverage.value == "potential"
     assert osni.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
-    assert any("Horizontal CRS" in limit for limit in osni.product.coverage.limitations)
+    assert any("EPSG:29903" in limit for limit in osni.product.coverage.limitations)
     assert "GEDTM30_V11" in {candidate.product.id for candidate in candidates.valid}
 
 

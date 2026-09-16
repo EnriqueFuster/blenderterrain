@@ -1,10 +1,11 @@
 import sys
+from io import BytesIO
 from zipfile import ZipFile
 
 import pytest
 
-from blender_terrain.errors import RasterFormatError
-from blender_terrain.providers.osni import iter_osni_xyz
+from blender_terrain.errors import ProviderUnavailableError, RasterFormatError
+from blender_terrain.providers.osni import OSNI_CRS_EPSG, _resolve_resource_url, iter_osni_xyz
 from scripts.probe_osni_sample import main
 
 
@@ -14,6 +15,48 @@ def test_parses_sample_xyz_without_assigning_crs():
         (344415.0, 380625.0, 88.5394),
         (344425.0, 380625.0, 88.6),
     ]
+
+
+def test_official_irish_grid_is_explicit() -> None:
+    assert OSNI_CRS_EPSG == 29903
+
+
+class RedirectResponse(BytesIO):
+    def __init__(self, url: str) -> None:
+        super().__init__(b"P")
+        self.url = url
+
+    def geturl(self) -> str:
+        return self.url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+class RedirectOpener:
+    def __init__(self, url: str) -> None:
+        self.url = url
+
+    def open(self, request, timeout):
+        assert request.get_header("Range") == "bytes=0-0"
+        assert request.get_header("Referer") == "https://www.opendatani.gov.uk/"
+        return RedirectResponse(self.url)
+
+
+def test_accepts_only_signed_official_storage_redirects() -> None:
+    resource = (
+        "https://admin.opendatani.gov.uk/dataset/id/resource/id/download/osni.zip"
+    )
+    trusted = (
+        "https://83025b28472d6aa2bf5ae59f3724aa78.eu.r2.cloudflarestorage.com/"
+        "dx-ni-prod/osni.zip?X-Amz-Signature=test"
+    )
+    assert _resolve_resource_url(resource, RedirectOpener(trusted)) == trusted
+    with pytest.raises(ProviderUnavailableError, match="untrusted"):
+        _resolve_resource_url(resource, RedirectOpener("https://example.com/osni.zip?token=x"))
 
 
 @pytest.mark.parametrize(

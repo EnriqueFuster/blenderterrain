@@ -9,7 +9,7 @@ from urllib.request import Request
 import pytest
 
 from blender_terrain.errors import DownloadIntegrityError, NoCoverageError
-from blender_terrain.io.random_access import HttpRangeReader
+from blender_terrain.io.random_access import HttpRangeReader, RandomAccessIO
 
 
 class RangeResponse(BytesIO):
@@ -40,6 +40,25 @@ class BytesRangeOpener:
         self.calls.append((start, end))
         status = 206 if self.honor_range else 200
         return RangeResponse(self.payload[start : end + 1], start, len(self.payload), status)
+
+
+def test_exposes_random_access_reader_as_seekable_stream() -> None:
+    payload = b"0123456789"
+    source = type(
+        "MemoryReader",
+        (),
+        {
+            "size": len(payload),
+            "read": lambda self, offset, length: payload[offset : offset + length],
+        },
+    )()
+    stream = RandomAccessIO(source)
+
+    assert stream.read(3) == b"012"
+    assert stream.seek(-2, 2) == 8
+    assert stream.read() == b"89"
+    assert stream.seek(4) == 4
+    assert stream.read(2) == b"45"
 
 
 def test_reads_across_cached_http_blocks(tmp_path: Path) -> None:
