@@ -5,7 +5,16 @@ from zipfile import ZipFile
 import pytest
 
 from blender_terrain.errors import ProviderUnavailableError, RasterFormatError
-from blender_terrain.providers.osni import OSNI_CRS_EPSG, _resolve_resource_url, iter_osni_xyz
+from blender_terrain.providers.osni import (
+    OSNI_CRS_EPSG,
+    _resolve_resource_url,
+    iter_osni_xyz,
+    osni_archive_range,
+    osni_archive_url,
+    osni_member_name,
+    parse_osni_grid,
+    select_osni_sheets,
+)
 from scripts.probe_osni_sample import main
 
 
@@ -19,6 +28,56 @@ def test_parses_sample_xyz_without_assigning_crs():
 
 def test_official_irish_grid_is_explicit() -> None:
     assert OSNI_CRS_EPSG == 29903
+
+
+def test_maps_coverage_quarters_to_grouped_sheet_archives() -> None:
+    document = {
+        "crs": {
+            "type": "name",
+            "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"},
+        },
+        "features": [
+            {
+                "properties": {"NAME": "230ne.tif"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[-7.52, 54.29], [-7.44, 54.29], [-7.44, 54.32], [-7.52, 54.32]]
+                    ],
+                },
+            },
+            {
+                "properties": {"NAME": "230nw.tif"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[-7.60, 54.29], [-7.52, 54.29], [-7.52, 54.32], [-7.60, 54.32]]
+                    ],
+                },
+            },
+            {
+                "properties": {"NAME": "231ne.tif"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[-7.44, 54.29], [-7.36, 54.29], [-7.36, 54.32], [-7.44, 54.32]]
+                    ],
+                },
+            },
+            {"properties": {"NAME": " "}, "geometry": {"type": "Polygon", "coordinates": []}},
+        ],
+    }
+    cells = parse_osni_grid(document)
+    assert select_osni_sheets(cells, -7.53, 54.30, -7.43, 54.31) == (230, 231)
+    assert osni_archive_range(230) == (201, 250)
+    assert "sheets_201-250.zip" in osni_archive_url(230)
+    assert osni_member_name(230) == "Sheet230v4.txt"
+
+
+@pytest.mark.parametrize("sheet", [0, 294])
+def test_rejects_osni_sheet_outside_published_range(sheet: int) -> None:
+    with pytest.raises(ValueError, match="between 1 and 293"):
+        osni_archive_range(sheet)
 
 
 class RedirectResponse(BytesIO):
@@ -47,9 +106,7 @@ class RedirectOpener:
 
 
 def test_accepts_only_signed_official_storage_redirects() -> None:
-    resource = (
-        "https://admin.opendatani.gov.uk/dataset/id/resource/id/download/osni.zip"
-    )
+    resource = "https://admin.opendatani.gov.uk/dataset/id/resource/id/download/osni.zip"
     trusted = (
         "https://83025b28472d6aa2bf5ae59f3724aa78.eu.r2.cloudflarestorage.com/"
         "dx-ni-prod/osni.zip?X-Amz-Signature=test"
