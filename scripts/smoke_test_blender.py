@@ -252,8 +252,8 @@ def main() -> None:
         properties.north = 57.482
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         assert {
-            "GB_SCT_SRSP_PHASE1_NH24_DTM",
-            "GB_SCT_SRSP_PHASE1_NH24_DSM",
+            "GB_SCT_SRSP_PHASE1_DTM",
+            "GB_SCT_SRSP_PHASE1_DSM",
             "GEDTM30_V11",
             "COPERNICUS_GLO30_2021",
         } <= set(json.loads(properties.available_product_ids_json))

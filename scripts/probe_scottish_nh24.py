@@ -85,7 +85,7 @@ def main() -> None:
         print("Acquisition ROI", roi)
         acquirer = ScottishLidarAcquirer(catalog)
         for kind in (DatasetKind.DTM, DatasetKind.DSM):
-            product = catalog.product(f"GB_SCT_SRSP_PHASE1_NH24_{kind.name}")
+            product = catalog.product(f"GB_SCT_SRSP_PHASE1_{kind.name}")
             selection = ProductSelection(
                 product.provider_id, product.id, kind, SelectionMode.MANUAL, True
             )

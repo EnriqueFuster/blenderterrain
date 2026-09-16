@@ -144,8 +144,8 @@ def test_uk_catalog_models_four_independent_authorities() -> None:
     assert {product.id for product in uk if product.selectable} == {
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
-        "GB_SCT_SRSP_PHASE1_NH24_DSM",
-        "GB_SCT_SRSP_PHASE1_NH24_DTM",
+        "GB_SCT_SRSP_PHASE1_DSM",
+        "GB_SCT_SRSP_PHASE1_DTM",
         "GB_WLS_DMW_LIDAR_1M_32F_DTM",
         "GB_WLS_DMW_LIDAR_1M_32F_DSM",
     }

@@ -6,15 +6,17 @@ import hashlib
 import math
 from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..catalog import ProductRecord, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
 from ..errors import JobCancelled, NoCoverageError
-from ..io.bigtiff_tiles import BigTiffFloatTileReader
+from ..io.bigtiff_tiles import GeoReference, TileLayout
 from ..io.elevation_window import (
     ElevationWindowReader,
     elevation_window_is_valid,
@@ -23,7 +25,23 @@ from ..io.elevation_window import (
 from ..models import ProjectedBounds
 from .british_grid import BritishGridTransform
 
-ReaderFactory = Callable[[ProductRecord, Path], BigTiffFloatTileReader]
+
+class BngWindowReader(Protocol):
+    @property
+    def georeference(self) -> GeoReference: ...
+
+    @property
+    def layout(self) -> TileLayout: ...
+
+    @property
+    def nodata(self) -> float: ...
+
+    def read_window(
+        self, row: int, column: int, height: int, width: int
+    ) -> NDArray[np.float32]: ...
+
+
+ReaderFactory = Callable[[ProductRecord, Path], BngWindowReader]
 
 
 def acquire_bng_windows(

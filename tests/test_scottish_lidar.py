@@ -17,6 +17,7 @@ from blender_terrain.io.elevation_window import ElevationWindowReader
 from blender_terrain.providers.registry import build_raster_acquirers
 from blender_terrain.providers.scottish_lidar import (
     ScottishLidarAcquirer,
+    ScottishPhase1MosaicReader,
     open_scottish_lidar_reader,
     phase1_tile_ids_for_bng_bounds,
     phase1_tile_url,
@@ -24,11 +25,11 @@ from blender_terrain.providers.scottish_lidar import (
 
 
 @pytest.mark.parametrize("kind", [DatasetKind.DTM, DatasetKind.DSM])
-def test_nh24_is_a_specific_selectable_asset(kind):
+def test_nh24_is_retained_as_specific_non_selectable_evidence(kind):
     catalog = load_bundled_catalog()
     product = catalog.product(f"GB_SCT_SRSP_PHASE1_NH24_{kind.name}")
     assert product.capabilities.kind is kind
-    assert product.selectable
+    assert not product.selectable
     assert product.coverage.match(BBoxWGS84(-4.87, 57.48, -4.869, 57.481)).value == "potential"
     assert product.coverage.match(BBoxWGS84(-3.19, 55.95, -3.18, 55.96)).value == "none"
     assert product.license.commercial_safe
@@ -144,15 +145,15 @@ def test_nh24_acquisition_reads_bounded_window_and_reuses_cache(tmp_path, partia
         assert opened.call_count == 1
 
 
-def test_scottish_acquirer_rejects_unverified_campaign_before_network(tmp_path):
+def test_scottish_acquirer_rejects_incompatible_selection_before_network(tmp_path):
     catalog = load_bundled_catalog()
-    product = catalog.product("GB_SCT_SRSP_CAMPAIGN_DTM")
+    product = catalog.product("GB_SCT_SRSP_PHASE1_DTM")
     selection = ProductSelection(
-        product.provider_id, product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
+        "invalid_provider", product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
     )
     with (
         patch("blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader") as opened,
-        pytest.raises(ValueError, match="unverified"),
+        pytest.raises(ValueError, match="incompatible"),
     ):
         ScottishLidarAcquirer(catalog, tmp_path / "grid.tif").acquire(
             selection,
@@ -161,6 +162,72 @@ def test_scottish_acquirer_rejects_unverified_campaign_before_network(tmp_path):
             tmp_path,
         )
     opened.assert_not_called()
+
+
+def test_phase1_mosaic_reads_available_tiles_and_ignores_missing_ones(tmp_path):
+    product = load_bundled_catalog().product("GB_SCT_SRSP_PHASE1_DTM")
+    available = SimpleNamespace(
+        georeference=SimpleNamespace(
+            epsg=27700,
+            origin_x=220_000.0,
+            origin_y=850_000.0,
+            pixel_width=1.0,
+            pixel_height=-1.0,
+            bounds=lambda width, height: (220_000.0, 840_000.0, 230_000.0, 850_000.0),
+        ),
+        layout=SimpleNamespace(width=10_000, height=10_000),
+        nodata=-9999.0,
+        read_window=lambda row, col, h, w: np.full((h, w), 42.0, dtype=np.float32),
+    )
+
+    def open_tile(source, cache):
+        if "NH24" not in source.endpoint:
+            raise NoCoverageError("missing")
+        return available
+
+    with patch(
+        "blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader",
+        side_effect=open_tile,
+    ):
+        mosaic = ScottishPhase1MosaicReader(product, tmp_path)
+        data = mosaic.read_window(450_000, 219_995, 10, 10)
+        assert np.all(data[:, :5] == -9999.0)
+        assert np.all(data[:, 5:] == 42.0)
+
+
+def test_phase1_product_uses_sparse_mosaic_in_acquisition(tmp_path):
+    catalog = load_bundled_catalog()
+    product = catalog.product("GB_SCT_SRSP_PHASE1_DTM")
+    selection = ProductSelection(
+        product.provider_id, product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
+    )
+    source = SimpleNamespace(
+        georeference=SimpleNamespace(
+            origin_x=0.0, origin_y=100.0, pixel_width=1.0, pixel_height=-1.0
+        ),
+        layout=SimpleNamespace(width=100, height=100),
+        nodata=-9999.0,
+        read_window=lambda row, col, h, w: np.full((h, w), 18.0, dtype=np.float32),
+    )
+    with (
+        patch("blender_terrain.providers.scottish_lidar.BritishGridTransform") as transform,
+        patch(
+            "blender_terrain.providers.scottish_lidar.ScottishPhase1MosaicReader",
+            return_value=source,
+        ) as mosaic,
+    ):
+        transform.return_value.forward.side_effect = lambda x, y: (
+            np.broadcast_to(20.5 + np.arange(x.shape[1]), x.shape),
+            np.full(y.shape, 80.5),
+        )
+        acquired = ScottishLidarAcquirer(catalog, tmp_path / "grid.tif").acquire(
+            selection,
+            LayerRequest(DatasetKind.DTM),
+            BBoxWGS84(-4.87, 57.48, -4.8699, 57.4801),
+            tmp_path,
+        )
+        assert np.any(np.load(acquired.paths[0]) == 18.0)
+        mosaic.assert_called_once()
 
 
 def test_nh24_rejects_roi_outside_asset_before_network(tmp_path):

@@ -178,14 +178,11 @@ def test_uk_roi_keeps_independent_official_and_global_choices(
         assert global_id in valid_ids
         if official_id is not None:
             assert official_id in valid_ids
-        if roi == EDINBURGH:
-            assert all(
-                candidate.product.jurisdiction == "global" for candidate in candidates.valid
+        if roi == EDINBURGH and kind is not DatasetKind.IMAGERY:
+            assert any(
+                candidate.product.jurisdiction == "GB-SCT" for candidate in candidates.valid
             )
-        assert not any(
-            candidate.product.jurisdiction in {"GB-SCT", "GB-NIR"}
-            for candidate in candidates.valid
-        )
+        assert not any(candidate.product.jurisdiction == "GB-NIR" for candidate in candidates.valid)
         assert all(candidate.product.selectable for candidate in candidates.valid)
 
 
@@ -193,7 +190,7 @@ def test_uk_roi_keeps_independent_official_and_global_choices(
 def test_verified_scottish_asset_is_available_only_inside_nh24(kind: DatasetKind) -> None:
     candidates = discover_candidates(load_bundled_catalog(), NH24, kind)
     valid_ids = {candidate.product.id for candidate in candidates.valid}
-    assert f"GB_SCT_SRSP_PHASE1_NH24_{kind.name}" in valid_ids
+    assert f"GB_SCT_SRSP_PHASE1_{kind.name}" in valid_ids
     assert not any(
         candidate.product.id.startswith("GB_SCT_SRSP_PHASE1_NH24_")
         for candidate in discover_candidates(load_bundled_catalog(), EDINBURGH, kind).valid
