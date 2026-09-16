@@ -22,18 +22,19 @@ from blender_terrain.providers.scottish_lidar import (
 
 
 @pytest.mark.parametrize("kind", [DatasetKind.DTM, DatasetKind.DSM])
-def test_nh24_is_a_specific_unselectable_asset(kind):
+def test_nh24_is_a_specific_selectable_asset(kind):
     catalog = load_bundled_catalog()
     product = catalog.product(f"GB_SCT_SRSP_PHASE1_NH24_{kind.name}")
     assert product.capabilities.kind is kind
-    assert not product.selectable
+    assert product.selectable
     assert product.coverage.match(BBoxWGS84(-4.87, 57.48, -4.869, 57.481)).value == "potential"
     assert product.coverage.match(BBoxWGS84(-3.19, 55.95, -3.18, 55.96)).value == "none"
     assert product.license.commercial_safe
 
 
-def test_researched_scottish_source_is_not_registered_for_jobs():
-    assert build_raster_acquirers(["scottish_remote_sensing"]) == {}
+def test_scottish_source_is_registered_for_jobs():
+    adapters = build_raster_acquirers(["scottish_remote_sensing"])
+    assert isinstance(adapters["scottish_remote_sensing"], ScottishLidarAcquirer)
 
 
 def test_uses_range_reader_and_checks_asset_grid(tmp_path):

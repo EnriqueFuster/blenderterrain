@@ -12,6 +12,7 @@ from .environment_agency import EnvironmentAgencyWCSAcquirer
 from .gebco import GebcoAcquirer
 from .gedtm30 import Gedtm30Acquirer
 from .geopf_wms import GeopfWMSAcquirer
+from .scottish_lidar import ScottishLidarAcquirer
 from .worldcover import WorldCoverAcquirer
 
 
@@ -28,6 +29,7 @@ def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcqui
         "ign_france": GeopfWMSAcquirer,
         "environment_agency": EnvironmentAgencyWCSAcquirer,
         "datamap_wales": DataMapWalesAcquirer,
+        "scottish_remote_sensing": ScottishLidarAcquirer,
     }
     return {
         provider_id: factories[provider_id]()

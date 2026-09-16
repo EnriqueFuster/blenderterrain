@@ -244,6 +244,19 @@ def main() -> None:
         assert welsh_plan.selections.for_kind(
             extension.blender_terrain.catalog.DatasetKind.DTM
         ).product_id == "GB_WLS_DMW_LIDAR_1M_32F_DTM"
+        properties.available_product_ids_json = "[]"
+        properties.product = "MDT02"
+        properties.west = -4.872
+        properties.south = 57.480
+        properties.east = -4.870
+        properties.north = 57.482
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert {
+            "GB_SCT_SRSP_PHASE1_NH24_DTM",
+            "GB_SCT_SRSP_PHASE1_NH24_DSM",
+            "GEDTM30_V11",
+            "COPERNICUS_GLO30_2021",
+        } <= set(json.loads(properties.available_product_ids_json))
         properties.elevation_source = "LOCAL"
         assert properties.elevation_source == "LOCAL"
         properties.elevation_source = "CNIG"

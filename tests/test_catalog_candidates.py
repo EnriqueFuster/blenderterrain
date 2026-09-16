@@ -20,6 +20,7 @@ LONDON = BBoxWGS84(-0.15, 51.49, -0.10, 51.53)
 CARDIFF = BBoxWGS84(-3.19, 51.47, -3.17, 51.49)
 EDINBURGH = BBoxWGS84(-3.20, 55.94, -3.18, 55.96)
 BELFAST = BBoxWGS84(-5.94, 54.59, -5.91, 54.61)
+NH24 = BBoxWGS84(-4.872, 57.480, -4.870, 57.482)
 
 
 def test_spanish_dtm_candidates_are_ranked_without_hiding_global_product() -> None:
@@ -186,6 +187,17 @@ def test_uk_roi_keeps_independent_official_and_global_choices(
             for candidate in candidates.valid
         )
         assert all(candidate.product.selectable for candidate in candidates.valid)
+
+
+@pytest.mark.parametrize("kind", [DatasetKind.DTM, DatasetKind.DSM])
+def test_verified_scottish_asset_is_available_only_inside_nh24(kind: DatasetKind) -> None:
+    candidates = discover_candidates(load_bundled_catalog(), NH24, kind)
+    valid_ids = {candidate.product.id for candidate in candidates.valid}
+    assert f"GB_SCT_SRSP_PHASE1_NH24_{kind.name}" in valid_ids
+    assert not any(
+        candidate.product.id.startswith("GB_SCT_SRSP_PHASE1_NH24_")
+        for candidate in discover_candidates(load_bundled_catalog(), EDINBURGH, kind).valid
+    )
 
 
 def _with_status(product_id: str, status: ImplementationStatus) -> Catalog:

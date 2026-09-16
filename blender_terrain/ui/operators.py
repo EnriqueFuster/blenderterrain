@@ -455,6 +455,8 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
             "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
             "GB_WLS_DMW_LIDAR_1M_32F_DTM",
             "GB_WLS_DMW_LIDAR_1M_32F_DSM",
+            "GB_SCT_SRSP_PHASE1_NH24_DTM",
+            "GB_SCT_SRSP_PHASE1_NH24_DSM",
             "COPERNICUS_GLO30_2021",
             "GEDTM30_V11",
         )

@@ -79,6 +79,20 @@ _PRODUCT_ITEMS = (
         0,
         16,
     ),
+    (
+        "GB_SCT_SRSP_PHASE1_NH24_DTM",
+        "DTM (Scottish LiDAR NH24 1 m)",
+        "Verified historic phase-1 terrain tile",
+        0,
+        17,
+    ),
+    (
+        "GB_SCT_SRSP_PHASE1_NH24_DSM",
+        "DSM (Scottish LiDAR NH24 1 m)",
+        "Verified historic phase-1 surface tile",
+        0,
+        18,
+    ),
 )
 
 

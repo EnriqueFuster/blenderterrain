@@ -151,6 +151,8 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
             "GB_WLS_DMW_LIDAR_1M_32F_DTM",
             "GB_WLS_DMW_LIDAR_1M_32F_DSM",
+            "GB_SCT_SRSP_PHASE1_NH24_DTM",
+            "GB_SCT_SRSP_PHASE1_NH24_DSM",
         }
         if products_loaded and cnig_product:
             layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
@@ -416,6 +418,8 @@ def _elevation_product_label(product_id: str) -> str:
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM": "EA LiDAR Composite 1 m DTM",
         "GB_WLS_DMW_LIDAR_1M_32F_DTM": "DataMapWales 1 m DTM",
         "GB_WLS_DMW_LIDAR_1M_32F_DSM": "DataMapWales 1 m DSM",
+        "GB_SCT_SRSP_PHASE1_NH24_DTM": "Scottish LiDAR NH24 1 m DTM",
+        "GB_SCT_SRSP_PHASE1_NH24_DSM": "Scottish LiDAR NH24 1 m DSM",
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN": (
             "EA LiDAR Composite 1 m DSM"
         ),
