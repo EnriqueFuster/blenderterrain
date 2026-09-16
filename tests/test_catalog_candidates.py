@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from blender_terrain.catalog import (
     Catalog,
     DatasetKind,
@@ -15,6 +17,8 @@ from blender_terrain.core.roi import BBoxWGS84
 VALENCIA = BBoxWGS84(-0.39, 39.46, -0.37, 39.48)
 PARIS = BBoxWGS84(2.34, 48.85, 2.36, 48.87)
 LONDON = BBoxWGS84(-0.15, 51.49, -0.10, 51.53)
+CARDIFF = BBoxWGS84(-3.19, 51.47, -3.17, 51.49)
+EDINBURGH = BBoxWGS84(-3.20, 55.94, -3.18, 55.96)
 BELFAST = BBoxWGS84(-5.94, 54.59, -5.91, 54.61)
 
 
@@ -143,6 +147,45 @@ def test_english_dtm_is_recommended_without_hiding_global_fallback() -> None:
     ]
     assert candidates.recommended is not None
     assert candidates.recommended.product.id == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
+
+
+@pytest.mark.parametrize(
+    ("roi", "dtm_product", "dsm_product"),
+    [
+        (
+            LONDON,
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
+        ),
+        (CARDIFF, "GB_WLS_DMW_LIDAR_1M_32F_DTM", "GB_WLS_DMW_LIDAR_1M_32F_DSM"),
+        (EDINBURGH, None, None),
+        (BELFAST, None, None),
+    ],
+)
+def test_uk_roi_keeps_independent_official_and_global_choices(
+    roi: BBoxWGS84, dtm_product: str | None, dsm_product: str | None
+) -> None:
+    catalog = load_bundled_catalog()
+    expected = (
+        (DatasetKind.DTM, dtm_product, "GEDTM30_V11"),
+        (DatasetKind.DSM, dsm_product, "COPERNICUS_GLO30_2021"),
+        (DatasetKind.IMAGERY, None, "ESA_WORLDCOVER_S2_2021"),
+    )
+    for kind, official_id, global_id in expected:
+        candidates = discover_candidates(catalog, roi, kind)
+        valid_ids = {candidate.product.id for candidate in candidates.valid}
+        assert global_id in valid_ids
+        if official_id is not None:
+            assert official_id in valid_ids
+        if roi == EDINBURGH:
+            assert all(
+                candidate.product.jurisdiction == "global" for candidate in candidates.valid
+            )
+        assert not any(
+            candidate.product.jurisdiction in {"GB-SCT", "GB-NIR"}
+            for candidate in candidates.valid
+        )
+        assert all(candidate.product.selectable for candidate in candidates.valid)
 
 
 def _with_status(product_id: str, status: ImplementationStatus) -> Catalog:
