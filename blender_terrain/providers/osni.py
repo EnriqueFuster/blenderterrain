@@ -1,19 +1,36 @@
-"""Parse OSNI DTM sample coordinates without assuming a horizontal CRS."""
+"""Acquire OSNI 10 m DTM sheets in their published Irish Grid CRS."""
 
 from __future__ import annotations
 
+import json
 import math
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
+from io import TextIOWrapper
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
 from zipfile import ZipFile
 
-from ..errors import ProviderUnavailableError, RasterFormatError
+import numpy as np
+from numpy.typing import NDArray
+
+from ..catalog import (
+    Catalog,
+    DatasetKind,
+    LayerRequest,
+    ProductSelection,
+    load_bundled_catalog,
+)
+from ..core.acquisition import AcquiredRasterLayer
+from ..core.delivery import TransferProgress
+from ..core.roi import BBoxWGS84
+from ..errors import JobCancelled, NoCoverageError, ProviderUnavailableError, RasterFormatError
+from ..io.elevation_window import elevation_window_is_valid, write_elevation_window
 from ..io.random_access import HttpRangeReader, RandomAccessIO
+from ..models import ProjectedBounds
 
 OSNI_CRS_EPSG = 29903
 _ADMIN_HOST = "admin.opendatani.gov.uk"
@@ -57,6 +74,13 @@ OSNI_ARCHIVE_URLS = {
         "osni_10m_dtm_sheets_251-293.zip"
     ),
 }
+_NODATA = -9999.0
+_MAXIMUM_GRID_BYTES = 1_000_000
+_MAXIMUM_SHEET_BYTES = 50_000_000
+
+
+class ArchiveOpener(Protocol):
+    def __call__(self, resource_url: str, cache_directory: Path) -> ZipFile: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,31 +168,189 @@ def osni_archive_url(sheet: int) -> str:
     return OSNI_ARCHIVE_URLS[osni_archive_range(sheet)]
 
 
+def load_osni_grid(cache_directory: Path) -> tuple[OsniGridCell, ...]:
+    """Load and cache the small official coverage index through bounded range reads."""
+
+    resolved = _resolve_resource_url(OSNI_GRID_URL)
+    source = HttpRangeReader(
+        resolved,
+        cache_directory,
+        allowed_hosts=frozenset({_STORAGE_HOST}),
+        maximum_source_bytes=_MAXIMUM_GRID_BYTES,
+        cache_key=OSNI_GRID_URL,
+    )
+    try:
+        document = json.loads(source.read(0, source.size))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RasterFormatError("OSNI coverage grid is not valid GeoJSON") from exc
+    if not isinstance(document, dict):
+        raise RasterFormatError("OSNI coverage grid is not a GeoJSON object")
+    return parse_osni_grid(document)
+
+
+def read_osni_sheet(archive: ZipFile, sheet: int) -> tuple[NDArray[np.float32], ProjectedBounds]:
+    """Decode one regular 10 m XYZ sheet using bounded memory."""
+
+    member = osni_member_name(sheet)
+    try:
+        info = archive.getinfo(member)
+    except KeyError as exc:
+        raise RasterFormatError(f"OSNI archive does not contain {member}") from exc
+    if info.file_size <= 0 or info.file_size > _MAXIMUM_SHEET_BYTES:
+        raise RasterFormatError(f"OSNI sheet {member} has an invalid size")
+
+    minimum_x = minimum_y = math.inf
+    maximum_x = maximum_y = -math.inf
+    count = 0
+    for x, y, _height in _iter_archive_points(archive, member):
+        minimum_x, maximum_x = min(minimum_x, x), max(maximum_x, x)
+        minimum_y, maximum_y = min(minimum_y, y), max(maximum_y, y)
+        count += 1
+    columns = round((maximum_x - minimum_x) / 10.0) + 1
+    rows = round((maximum_y - minimum_y) / 10.0) + 1
+    if columns < 2 or rows < 2 or count > rows * columns:
+        raise RasterFormatError(f"OSNI sheet {member} is not a valid 10 m grid")
+
+    data = np.full((rows, columns), _NODATA, dtype=np.float32)
+    for x, y, height in _iter_archive_points(archive, member):
+        column = round((x - minimum_x) / 10.0)
+        row = round((maximum_y - y) / 10.0)
+        if (
+            not 0 <= row < rows
+            or not 0 <= column < columns
+            or data[row, column] != _NODATA
+            or abs(x - (minimum_x + column * 10.0)) > 0.01
+            or abs(y - (maximum_y - row * 10.0)) > 0.01
+        ):
+            raise RasterFormatError(f"OSNI sheet {member} has an irregular point grid")
+        data[row, column] = height
+    return data, ProjectedBounds(
+        minimum_x - 5.0,
+        minimum_y - 5.0,
+        maximum_x + 5.0,
+        maximum_y + 5.0,
+        OSNI_CRS_EPSG,
+    )
+
+
+def _iter_archive_points(archive: ZipFile, member: str) -> Iterator[tuple[float, float, float]]:
+    with archive.open(member) as binary:
+        yield from iter_osni_xyz(TextIOWrapper(binary, encoding="utf-8-sig"))
+
+
+class OsniAcquirer:
+    """Extract only selected OSNI sheets and publish native Irish Grid windows."""
+
+    def __init__(
+        self,
+        catalog: Catalog | None = None,
+        cells: tuple[OsniGridCell, ...] | None = None,
+        archive_opener: ArchiveOpener | None = None,
+    ) -> None:
+        self.catalog = catalog or load_bundled_catalog()
+        self.cells = cells
+        self.archive_opener = archive_opener or open_osni_archive
+
+    def acquire(
+        self,
+        selection: ProductSelection,
+        request: LayerRequest,
+        roi: BBoxWGS84,
+        cache_directory: Path,
+        progress_callback: Callable[[TransferProgress], None] | None = None,
+        cancellation_requested: Callable[[], bool] = lambda: False,
+    ) -> AcquiredRasterLayer:
+        product = self.catalog.product(selection.product_id)
+        if (
+            selection.provider_id != "osni"
+            or product.provider_id != selection.provider_id
+            or selection.kind is not DatasetKind.DTM
+            or selection.kind is not request.kind
+            or product.capabilities.kind is not selection.kind
+        ):
+            raise ValueError("OSNI received an incompatible selection")
+        cells = self.cells or load_osni_grid(cache_directory / "coverage")
+        sheets = select_osni_sheets(cells, roi.west, roi.south, roi.east, roi.north)
+        if not sheets:
+            raise NoCoverageError("OSNI DTM does not intersect the requested ROI")
+
+        target = cache_directory / "osni" / product.id / "native-v1"
+        paths: list[Path] = []
+        cached_count = 0
+        pending: dict[tuple[int, int], list[tuple[int, Path]]] = {}
+        for sheet in sheets:
+            path = target / f"sheet_{sheet:03d}.npy"
+            paths.append(path)
+            if elevation_window_is_valid(path):
+                cached_count += 1
+            else:
+                pending.setdefault(osni_archive_range(sheet), []).append((sheet, path))
+
+        completed = cached_count
+        for archive_range, members in pending.items():
+            if cancellation_requested():
+                raise JobCancelled("OSNI acquisition was cancelled")
+            with self.archive_opener(
+                OSNI_ARCHIVE_URLS[archive_range], target / "ranges"
+            ) as archive:
+                for sheet, path in members:
+                    if cancellation_requested():
+                        raise JobCancelled("OSNI acquisition was cancelled")
+                    data, bounds = read_osni_sheet(archive, sheet)
+                    path.unlink(missing_ok=True)
+                    path.with_suffix(".npy.json").unlink(missing_ok=True)
+                    write_elevation_window(path, data, bounds, _NODATA)
+                    completed += 1
+                    if progress_callback is not None:
+                        size = path.stat().st_size
+                        progress_callback(
+                            TransferProgress(
+                                selection.kind.value,
+                                completed - 1,
+                                len(paths),
+                                path.name,
+                                size,
+                                size,
+                            )
+                        )
+        return AcquiredRasterLayer(
+            selection.provider_id,
+            product.id,
+            selection.kind,
+            tuple(paths),
+            cached_count,
+        )
+
+
 def iter_osni_xyz(lines: Iterable[str]) -> Iterator[tuple[float, float, float]]:
-    """Yield finite x/y/height rows after the observed three-column header."""
+    """Yield finite x/y/height rows with or without the sample-file header."""
 
     iterator = enumerate(lines, start=1)
-    for _line_number, line in iterator:
+    for line_number, line in iterator:
         if line.strip():
-            if line.split() != ["x", "y", "z"]:
-                raise RasterFormatError("OSNI sample must start with an x y z header")
+            if [field.lower() for field in line.split()] != ["x", "y", "z"]:
+                yield _parse_osni_xyz_line(line, line_number)
             break
     else:
-        raise RasterFormatError("OSNI sample contains no x y z header")
+        raise RasterFormatError("OSNI sheet contains no XYZ points")
 
     for line_number, line in iterator:
-        fields = line.split()
-        if not fields:
+        if not line.strip():
             continue
-        if len(fields) != 3:
-            raise RasterFormatError(f"OSNI sample line {line_number} has no x y z triple")
-        try:
-            point = (float(fields[0]), float(fields[1]), float(fields[2]))
-        except ValueError as exc:
-            raise RasterFormatError(f"OSNI sample line {line_number} is not numeric") from exc
-        if not all(math.isfinite(value) for value in point):
-            raise RasterFormatError(f"OSNI sample line {line_number} is not finite")
-        yield point
+        yield _parse_osni_xyz_line(line, line_number)
+
+
+def _parse_osni_xyz_line(line: str, line_number: int) -> tuple[float, float, float]:
+    fields = line.split()
+    if len(fields) != 3:
+        raise RasterFormatError(f"OSNI sample line {line_number} has no x y z triple")
+    try:
+        point = (float(fields[0]), float(fields[1]), float(fields[2]))
+    except ValueError as exc:
+        raise RasterFormatError(f"OSNI sample line {line_number} is not numeric") from exc
+    if not all(math.isfinite(value) for value in point):
+        raise RasterFormatError(f"OSNI sample line {line_number} is not finite")
+    return point
 
 
 def open_osni_archive(
@@ -185,6 +367,7 @@ def open_osni_archive(
         cache_directory,
         allowed_hosts=frozenset({_STORAGE_HOST}),
         maximum_source_bytes=250_000_000,
+        cache_key=resource_url,
     )
     return ZipFile(RandomAccessIO(source))
 

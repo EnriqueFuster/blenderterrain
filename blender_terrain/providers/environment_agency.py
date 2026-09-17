@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlencode
 
 from ..catalog import (
@@ -19,12 +21,111 @@ from ..catalog import (
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
 from ..core.roi import BBoxWGS84
-from ..errors import DownloadIntegrityError, JobCancelled
+from ..errors import DownloadIntegrityError, JobCancelled, ProviderContractChanged
 from ..io.bigtiff_tiles import open_float_tile_reader
 from ..io.http_download import DownloadedAsset, download_public_tiff
 
 PROVIDER_ID = "environment_agency"
 _EARTH_RADIUS_METRES = 6_371_008.8
+EA_AERIAL_INDEX_URL = (
+    "https://environment.data.gov.uk/KB6uNVj5ZcJr7jUP/ArcGIS/rest/services/"
+    "Vertical_Aerial_Photography_Catalogues/FeatureServer/0/query"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentAgencyAerialTile:
+    """One aerial-photography tile advertised by the official EA index."""
+
+    filename: str
+    survey_id: str
+    grid_reference: str
+    download_grid_reference: str
+    year: int
+    resolution_metres: float
+    imagery_type: str
+    bands: int
+    latest: bool
+
+
+def environment_agency_aerial_query_url(roi: BBoxWGS84) -> str:
+    """Build a bounded query against the official photography index."""
+
+    query = urlencode(
+        {
+            "where": "type IN ('RGB','RGBN')",
+            "geometry": f"{roi.west:g},{roi.south:g},{roi.east:g},{roi.north:g}",
+            "geometryType": "esriGeometryEnvelope",
+            "inSR": "4326",
+            "spatialRel": "esriSpatialRelIntersects",
+            "outFields": ("filename,polygon_id,os_ref,os_ref_5k,year,resolution,type,bands,latest"),
+            "returnGeometry": "false",
+            "resultRecordCount": "2000",
+            "f": "json",
+        }
+    )
+    return f"{EA_AERIAL_INDEX_URL}?{query}"
+
+
+def parse_environment_agency_aerial_index(
+    payload: bytes,
+) -> tuple[EnvironmentAgencyAerialTile, ...]:
+    """Validate and rank aerial tiles returned by the EA feature service."""
+
+    try:
+        document = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProviderContractChanged("EA aerial index response is not valid JSON") from exc
+    if not isinstance(document, dict) or "error" in document:
+        raise ProviderContractChanged("EA aerial index returned an error")
+    if document.get("exceededTransferLimit") is True:
+        raise ProviderContractChanged("EA aerial index result exceeds 2000 records")
+    features = document.get("features")
+    if not isinstance(features, list):
+        raise ProviderContractChanged("EA aerial index has no feature list")
+    tiles = tuple(_parse_aerial_feature(feature) for feature in features)
+    return tuple(
+        sorted(
+            tiles,
+            key=lambda tile: (
+                not tile.latest,
+                -tile.year,
+                tile.resolution_metres,
+                tile.filename,
+            ),
+        )
+    )
+
+
+def _parse_aerial_feature(feature: Any) -> EnvironmentAgencyAerialTile:
+    try:
+        attributes = feature["attributes"]
+        required_text = ("filename", "polygon_id", "os_ref", "os_ref_5k", "type", "latest")
+        if any(not isinstance(attributes.get(field), str) for field in required_text):
+            raise TypeError
+        tile = EnvironmentAgencyAerialTile(
+            filename=attributes["filename"],
+            survey_id=attributes["polygon_id"],
+            grid_reference=attributes["os_ref"],
+            download_grid_reference=attributes["os_ref_5k"],
+            year=int(attributes["year"]),
+            resolution_metres=float(attributes["resolution"]),
+            imagery_type=attributes["type"],
+            bands=int(attributes["bands"]),
+            latest=attributes["latest"].casefold() == "yes",
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProviderContractChanged("EA aerial index feature schema changed") from exc
+    if (
+        not tile.filename.lower().endswith(".ecw")
+        or tile.imagery_type not in {"RGB", "RGBN"}
+        or tile.bands not in {3, 4}
+        or tile.resolution_metres <= 0
+        or not tile.survey_id
+        or not tile.download_grid_reference
+    ):
+        raise ProviderContractChanged("EA aerial index feature values are unsupported")
+    return tile
 
 
 @dataclass(frozen=True, slots=True)

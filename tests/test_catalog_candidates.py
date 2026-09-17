@@ -55,15 +55,15 @@ def test_implemented_global_dtm_coexists_with_ign_but_is_not_forced() -> None:
     assert candidates.recommended.product.id == "MDT02"
 
 
-def test_osni_stays_unselectable_without_product_specific_crs_evidence() -> None:
+def test_osni_is_available_alongside_the_global_fallback() -> None:
     candidates = discover_candidates(load_bundled_catalog(), BELFAST, DatasetKind.DTM)
     osni = next(
         candidate
-        for candidate in candidates.rejected
+        for candidate in candidates.valid
         if candidate.product.id == "GB_NIR_OSNI_10M_DTM"
     )
     assert osni.coverage.value == "potential"
-    assert osni.rejection_reasons == (RejectionReason.PRODUCT_UNAVAILABLE,)
+    assert not osni.rejection_reasons
     assert any("EPSG:29903" in limit for limit in osni.product.coverage.limitations)
     assert "GEDTM30_V11" in {candidate.product.id for candidate in candidates.valid}
 
@@ -160,7 +160,7 @@ def test_english_dtm_is_recommended_without_hiding_global_fallback() -> None:
         ),
         (CARDIFF, "GB_WLS_DMW_LIDAR_1M_32F_DTM", "GB_WLS_DMW_LIDAR_1M_32F_DSM"),
         (EDINBURGH, None, None),
-        (BELFAST, None, None),
+        (BELFAST, "GB_NIR_OSNI_10M_DTM", None),
     ],
 )
 def test_uk_roi_keeps_independent_official_and_global_choices(
@@ -182,7 +182,10 @@ def test_uk_roi_keeps_independent_official_and_global_choices(
             assert any(
                 candidate.product.jurisdiction == "GB-SCT" for candidate in candidates.valid
             )
-        assert not any(candidate.product.jurisdiction == "GB-NIR" for candidate in candidates.valid)
+        if roi != BELFAST:
+            assert not any(
+                candidate.product.jurisdiction == "GB-NIR" for candidate in candidates.valid
+            )
         assert all(candidate.product.selectable for candidate in candidates.valid)
 
 

@@ -73,7 +73,7 @@ def test_researched_products_are_not_selectable() -> None:
 
     assert {product.jurisdiction for product in researched} == {
         "CH",
-        "GB-NIR",
+        "GB-ENG",
         "GB-SCT",
     }
     assert researched
@@ -146,6 +146,7 @@ def test_uk_catalog_models_four_independent_authorities() -> None:
         "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
         "GB_SCT_SRSP_PHASE1_DSM",
         "GB_SCT_SRSP_PHASE1_DTM",
+        "GB_NIR_OSNI_10M_DTM",
         "GB_WLS_DMW_LIDAR_1M_32F_DTM",
         "GB_WLS_DMW_LIDAR_1M_32F_DSM",
     }

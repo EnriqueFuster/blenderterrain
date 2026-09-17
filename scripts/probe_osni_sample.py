@@ -1,4 +1,4 @@
-"""Inspect an official OSNI sample ZIP; do not infer its CRS from coordinates."""
+"""Inspect the structure and value range of an official OSNI sample ZIP."""
 
 import argparse
 import io
@@ -45,7 +45,7 @@ def main() -> None:
     for axis, values in (("x", sorted(x_values)), ("y", sorted(y_values))):
         step = min((right - left for left, right in pairwise(values)), default=0.0)
         print(f"minimum {axis} step={step:g} m")
-    print("horizontal CRS=UNVERIFIED; no georeferenced output created")
+    print("horizontal CRS=EPSG:29903 (TM75 / Irish Grid)")
 
 
 if __name__ == "__main__":

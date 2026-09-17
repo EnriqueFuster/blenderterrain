@@ -79,6 +79,34 @@ def test_reads_across_cached_http_blocks(tmp_path: Path) -> None:
     assert opener.calls == [(0, 15), (16, 31)]
 
 
+def test_stable_cache_key_reuses_blocks_across_signed_urls(tmp_path: Path) -> None:
+    payload = bytes(range(32))
+    first_opener = BytesRangeOpener(payload)
+    first = HttpRangeReader(
+        "https://data.example.test/global.tif?signature=first",
+        tmp_path,
+        allowed_hosts=frozenset({"data.example.test"}),
+        maximum_source_bytes=1_000,
+        block_bytes=16,
+        opener=first_opener,
+        cache_key="official-resource",
+    )
+    assert first.read(0, 16) == payload[:16]
+
+    second_opener = BytesRangeOpener(payload)
+    second = HttpRangeReader(
+        "https://data.example.test/global.tif?signature=second",
+        tmp_path,
+        allowed_hosts=frozenset({"data.example.test"}),
+        maximum_source_bytes=1_000,
+        block_bytes=16,
+        opener=second_opener,
+        cache_key="official-resource",
+    )
+    assert second.read(0, 16) == payload[:16]
+    assert second_opener.calls == [(0, 15)]
+
+
 def test_rejects_servers_that_ignore_range(tmp_path: Path) -> None:
     with pytest.raises(DownloadIntegrityError, match="did not honor"):
         HttpRangeReader(

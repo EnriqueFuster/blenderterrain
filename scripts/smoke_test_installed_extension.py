@@ -25,13 +25,19 @@ def main() -> None:
         assert properties.is_valid
         assert properties.product == "MDT02"
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
+        package_name = f"{module_name}.blender_terrain"
+        catalog = importlib.import_module(f"{package_name}.catalog")
+        registry = importlib.import_module(f"{package_name}.providers.registry")
+        osni = catalog.load_bundled_catalog().product("GB_NIR_OSNI_10M_DTM")
+        assert osni.selectable
+        assert "osni" in registry.build_raster_acquirers(("osni",))
         if len(arguments) > 2:
             from math import isclose
 
             from pyproj import __version__ as pyproj_version
 
             assert pyproj_version == "3.7.2"
-            british_grid = extension.blender_terrain.providers.british_grid
+            british_grid = importlib.import_module(f"{package_name}.providers.british_grid")
             easting, northing = british_grid.BritishGridTransform(
                 british_grid.bundled_ostn15_path()
             ).forward(-3.18, 51.48)

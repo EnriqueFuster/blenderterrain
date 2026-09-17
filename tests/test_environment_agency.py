@@ -16,12 +16,16 @@ from blender_terrain.catalog import (
 )
 from blender_terrain.core.delivery import TransferProgress
 from blender_terrain.core.roi import BBoxWGS84
+from blender_terrain.errors import ProviderContractChanged
 from blender_terrain.io.bigtiff_tiles import open_float_tile_reader
 from blender_terrain.io.http_download import DownloadedAsset
 from blender_terrain.providers.environment_agency import (
+    EnvironmentAgencyAerialTile,
     EnvironmentAgencyRequest,
     EnvironmentAgencyWCSAcquirer,
     EnvironmentAgencyWCSClient,
+    environment_agency_aerial_query_url,
+    parse_environment_agency_aerial_index,
     plan_environment_agency_requests,
 )
 from blender_terrain.providers.registry import build_raster_acquirers
@@ -121,6 +125,39 @@ def test_provider_registry_builds_environment_agency_adapter() -> None:
     adapters = build_raster_acquirers(("environment_agency",))
 
     assert isinstance(adapters["environment_agency"], EnvironmentAgencyWCSAcquirer)
+
+
+def test_builds_bounded_environment_agency_aerial_index_query() -> None:
+    url = environment_agency_aerial_query_url(BBoxWGS84(-0.15, 51.49, -0.10, 51.53))
+    query = parse_qs(urlsplit(url).query)
+
+    assert query["geometry"] == ["-0.15,51.49,-0.1,51.53"]
+    assert query["inSR"] == ["4326"]
+    assert query["returnGeometry"] == ["false"]
+    assert query["where"] == ["type IN ('RGB','RGBN')"]
+
+
+def test_parses_and_ranks_environment_agency_aerial_tiles() -> None:
+    payload = b"""{"features":[
+      {"attributes":{"filename":"old.ecw","polygon_id":"P1","os_ref":"TQ3280",
+       "os_ref_5k":"TQ3075","year":2008,"resolution":0.4,"type":"RGB","bands":"3","latest":"No"}},
+      {"attributes":{"filename":"latest.ecw","polygon_id":"P2","os_ref":"TQ3280",
+       "os_ref_5k":"TQ3075","year":2024,"resolution":0.1,"type":"RGBN","bands":"4","latest":"Yes"}}
+    ]}"""
+
+    assert parse_environment_agency_aerial_index(payload) == (
+        EnvironmentAgencyAerialTile(
+            "latest.ecw", "P2", "TQ3280", "TQ3075", 2024, 0.1, "RGBN", 4, True
+        ),
+        EnvironmentAgencyAerialTile(
+            "old.ecw", "P1", "TQ3280", "TQ3075", 2008, 0.4, "RGB", 3, False
+        ),
+    )
+
+
+def test_rejects_truncated_environment_agency_aerial_query() -> None:
+    with pytest.raises(ProviderContractChanged, match="exceeds 2000"):
+        parse_environment_agency_aerial_index(b'{"features":[],"exceededTransferLimit":true}')
 
 
 def _write_ea_layout(path: Path, values: np.ndarray) -> None:

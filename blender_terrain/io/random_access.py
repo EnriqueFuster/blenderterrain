@@ -111,6 +111,7 @@ class HttpRangeReader:
         block_bytes: int = 65_536,
         timeout_seconds: float = 30.0,
         opener: RangeOpener | None = None,
+        cache_key: str | None = None,
     ) -> None:
         parsed = urlsplit(url)
         if (
@@ -123,7 +124,11 @@ class HttpRangeReader:
         if maximum_source_bytes <= 0 or block_bytes <= 0 or timeout_seconds <= 0:
             raise ValueError("Remote random-access limits must be positive")
         self.url = url
-        self._cache_directory = cache_directory / hashlib.sha256(url.encode()).hexdigest()
+        if cache_key is not None and not cache_key:
+            raise ValueError("Remote random-access cache key cannot be empty")
+        self._cache_directory = (
+            cache_directory / hashlib.sha256((cache_key or url).encode()).hexdigest()
+        )
         self._maximum_source_bytes = maximum_source_bytes
         self._block_bytes = block_bytes
         self._timeout_seconds = timeout_seconds
