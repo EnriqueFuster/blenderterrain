@@ -28,7 +28,7 @@ evidence_urls = ["https://environment.data.gov.uk/dataset/dae203a8-ba24-4c54-bab
 reliability_score = 88
 network_cost_score = 70
 capabilities = { kind = "imagery", native_resolution_m = 0.1, semantics = "orthophoto", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
-coverage = { bounds = [[-5.7, 50.0, 1.8, 55.8]], requires_discovery = true, limitations = ["Project-based rather than seamless national coverage", "Resolution varies from 0.1 m to 0.5 m", "Survey dates vary by tile", "Official downloads are grouped 5 km ZIP files containing ECW rasters; decoding is not yet bundled"] }
+coverage = { bounds = [[-5.7, 50.0, 1.8, 55.8]], requires_discovery = true, limitations = ["Project-based rather than seamless national coverage", "Resolution varies from 0.1 m to 0.5 m", "Survey dates vary by tile", "Official downloads are grouped 5 km ZIP files containing ECW rasters", "The download endpoint does not support HTTP Range", "Blender and the bundled raster stack do not decode ECW; keep this product non-selectable until a redistributable decoder exists"] }
 license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Environment Agency copyright and/or database right 2022. All rights reserved." }
 
 [[products]]

@@ -80,6 +80,15 @@ def test_researched_products_are_not_selectable() -> None:
     assert not any(product.selectable for product in researched)
 
 
+def test_environment_agency_aerial_stays_disabled_without_ecw_decoder() -> None:
+    product = load_bundled_catalog().product("GB_ENG_EA_VERTICAL_AERIAL")
+
+    assert product.capabilities.kind is DatasetKind.IMAGERY
+    assert product.capabilities.native_resolution_m == 0.1
+    assert not product.selectable
+    assert any("ECW" in limitation for limitation in product.coverage.limitations)
+
+
 def test_french_products_declare_executable_wms_contracts() -> None:
     catalog = load_bundled_catalog()
     rge_alti = catalog.product("FR_RGE_ALTI_1M")
