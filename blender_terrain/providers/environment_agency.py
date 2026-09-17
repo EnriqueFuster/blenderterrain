@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from ..catalog import (
     Catalog,
@@ -31,6 +31,10 @@ EA_AERIAL_INDEX_URL = (
     "https://environment.data.gov.uk/KB6uNVj5ZcJr7jUP/ArcGIS/rest/services/"
     "Vertical_Aerial_Photography_Catalogues/FeatureServer/0/query"
 )
+EA_SURVEY_SEARCH_URL = (
+    "https://environment.data.gov.uk/backend/catalog/api/tiles/collections/survey/search"
+)
+EA_AERIAL_RGB_PRODUCT = "vertical_aerial_photography_tiles_rgb"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +50,91 @@ class EnvironmentAgencyAerialTile:
     imagery_type: str
     bands: int
     latest: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentAgencyAerialDownload:
+    """One downloadable 5 km RGB archive returned by the survey portal."""
+
+    year: int
+    resolution_metres: float
+    tile_id: str
+    tile_label: str
+    url: str
+
+
+def environment_agency_aerial_search_body(roi: BBoxWGS84) -> bytes:
+    """Build the GeoJSON polygon accepted by the official survey portal."""
+
+    coordinates = [
+        [roi.west, roi.south],
+        [roi.east, roi.south],
+        [roi.east, roi.north],
+        [roi.west, roi.north],
+        [roi.west, roi.south],
+    ]
+    return json.dumps(
+        {"type": "Polygon", "coordinates": [coordinates]},
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def parse_environment_agency_aerial_search(
+    payload: bytes,
+) -> tuple[EnvironmentAgencyAerialDownload, ...]:
+    """Extract RGB archive choices from a survey portal response."""
+
+    try:
+        document = json.loads(payload)
+        results = document["results"]
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ProviderContractChanged("EA survey search response schema changed") from exc
+    if not isinstance(results, list):
+        raise ProviderContractChanged("EA survey search response has no result list")
+    downloads = tuple(
+        download
+        for result in results
+        if (download := _parse_aerial_download(result)) is not None
+    )
+    return tuple(
+        sorted(
+            downloads,
+            key=lambda item: (-item.year, item.resolution_metres, item.tile_id),
+        )
+    )
+
+
+def _parse_aerial_download(result: Any) -> EnvironmentAgencyAerialDownload | None:
+    try:
+        if result["product"]["id"] != EA_AERIAL_RGB_PRODUCT:
+            return None
+        download = EnvironmentAgencyAerialDownload(
+            year=int(result["year"]["id"]),
+            resolution_metres=float(result["resolution"]["id"]),
+            tile_id=result["tile"]["id"],
+            tile_label=result["tile"]["label"],
+            url=result["uri"],
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProviderContractChanged("EA aerial download result schema changed") from exc
+    parsed_url = urlsplit(download.url)
+    if (
+        download.year < 2000
+        or not 0 < download.resolution_metres <= 1
+        or not download.tile_id
+        or not download.tile_label
+        or parsed_url.scheme != "https"
+        or parsed_url.hostname != "environment.data.gov.uk"
+    ):
+        raise ProviderContractChanged("EA aerial download result values are unsupported")
+    separator = "&" if parsed_url.query else "?"
+    return EnvironmentAgencyAerialDownload(
+        download.year,
+        download.resolution_metres,
+        download.tile_id,
+        download.tile_label,
+        f"{download.url}{separator}subscription-key=public",
+    )
 
 
 def environment_agency_aerial_query_url(roi: BBoxWGS84) -> str:

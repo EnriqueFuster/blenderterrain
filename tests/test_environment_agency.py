@@ -20,12 +20,16 @@ from blender_terrain.errors import ProviderContractChanged
 from blender_terrain.io.bigtiff_tiles import open_float_tile_reader
 from blender_terrain.io.http_download import DownloadedAsset
 from blender_terrain.providers.environment_agency import (
+    EA_SURVEY_SEARCH_URL,
+    EnvironmentAgencyAerialDownload,
     EnvironmentAgencyAerialTile,
     EnvironmentAgencyRequest,
     EnvironmentAgencyWCSAcquirer,
     EnvironmentAgencyWCSClient,
     environment_agency_aerial_query_url,
+    environment_agency_aerial_search_body,
     parse_environment_agency_aerial_index,
+    parse_environment_agency_aerial_search,
     plan_environment_agency_requests,
 )
 from blender_terrain.providers.registry import build_raster_acquirers
@@ -158,6 +162,53 @@ def test_parses_and_ranks_environment_agency_aerial_tiles() -> None:
 def test_rejects_truncated_environment_agency_aerial_query() -> None:
     with pytest.raises(ProviderContractChanged, match="exceeds 2000"):
         parse_environment_agency_aerial_index(b'{"features":[],"exceededTransferLimit":true}')
+
+
+def test_builds_environment_agency_aerial_search_polygon() -> None:
+    roi = BBoxWGS84(-0.13, 51.5, -0.129, 51.501)
+
+    body = environment_agency_aerial_search_body(roi)
+
+    assert EA_SURVEY_SEARCH_URL.endswith("/tiles/collections/survey/search")
+    assert body == (
+        b'{"type":"Polygon","coordinates":[[[-0.13,51.5],[-0.129,51.5],'
+        b'[-0.129,51.501],[-0.13,51.501],[-0.13,51.5]]]}'
+    )
+
+
+def test_parses_environment_agency_aerial_download_choices() -> None:
+    payload = b'''{"count":3,"results":[
+      {"product":{"id":"lidar_composite_dtm"},"year":{"id":"2022"},
+       "resolution":{"id":"1"},"tile":{"id":"TQ2575","label":"TQ27ne"},
+       "uri":"https://environment.data.gov.uk/tiles/ignored"},
+      {"product":{"id":"vertical_aerial_photography_tiles_rgb"},
+       "year":{"id":"2008"},"resolution":{"id":"0.4"},
+       "tile":{"id":"TQ2575","label":"TQ27ne"},
+       "uri":"https://environment.data.gov.uk/tiles/collections/survey/aerial/2008/0.4/TQ2575"},
+      {"product":{"id":"vertical_aerial_photography_tiles_rgb"},
+       "year":{"id":"2024"},"resolution":{"id":"0.2"},
+       "tile":{"id":"TQ3075","label":"TQ37nw"},
+       "uri":"https://environment.data.gov.uk/tiles/collections/survey/aerial/2024/0.2/TQ3075"}
+    ]}'''
+
+    assert parse_environment_agency_aerial_search(payload) == (
+        EnvironmentAgencyAerialDownload(
+            2024,
+            0.2,
+            "TQ3075",
+            "TQ37nw",
+            "https://environment.data.gov.uk/tiles/collections/survey/aerial/2024/0.2/"
+            "TQ3075?subscription-key=public",
+        ),
+        EnvironmentAgencyAerialDownload(
+            2008,
+            0.4,
+            "TQ2575",
+            "TQ27ne",
+            "https://environment.data.gov.uk/tiles/collections/survey/aerial/2008/0.4/"
+            "TQ2575?subscription-key=public",
+        ),
+    )
 
 
 def _write_ea_layout(path: Path, values: np.ndarray) -> None:
