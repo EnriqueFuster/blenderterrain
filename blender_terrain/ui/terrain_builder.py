@@ -521,7 +521,10 @@ def _create_imagery_material(
     links = material.node_tree.links
     output = nodes.new("ShaderNodeOutputMaterial")
     shader = nodes.new("ShaderNodeBsdfPrincipled")
-    shader.inputs["Roughness"].default_value = 0.8
+    shader.inputs["Roughness"].default_value = 1.0
+    specular = shader.inputs.get("Specular IOR Level")
+    if specular is not None:
+        specular.default_value = 0.0
     coordinates = nodes.new("ShaderNodeTexCoord")
     color_socket = None
     for index, (entry, transform) in enumerate(coverage):

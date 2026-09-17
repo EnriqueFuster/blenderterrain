@@ -4,11 +4,25 @@ import numpy as np
 import pytest
 
 from blender_terrain.core import BBoxWGS84, create_import_plan, geographic_source_bounds
-from blender_terrain.core.imagery_processing import process_worldcover_imagery
+from blender_terrain.core.imagery_processing import _worldcover_rgb, process_worldcover_imagery
 from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.imagery_window import write_imagery_window
 from blender_terrain.io.png_validation import validate_png
 from blender_terrain.models import ProjectedBounds
+
+
+def test_worldcover_uses_a_fixed_contrast_preserving_colour_stretch() -> None:
+    reflectance = np.array(
+        [[0.0, 0.02, 0.05], [0.10, 0.20, 0.40], [0.50, 0.50, 0.50]],
+        dtype=np.float32,
+    )
+
+    rgb = _worldcover_rgb(reflectance)
+
+    assert rgb.dtype == np.uint8
+    assert rgb[0].tolist() == [0, 0, 80]
+    assert rgb[1].tolist() == [126, 182, 255]
+    assert rgb[2].tolist() == [255, 255, 255]
 
 
 def test_reprojects_rgbnir_window_to_planned_png(tmp_path: Path) -> None:

@@ -18,6 +18,9 @@ from .imagery import plan_texture_tiles
 from .planning import ImportPlan
 from .projection import project_arrays_to_wgs84
 
+_WORLDCOVER_BLACK_REFLECTANCE = 0.02
+_WORLDCOVER_WHITE_REFLECTANCE = 0.40
+
 
 @dataclass(frozen=True, slots=True)
 class ProcessedImageryTile:
@@ -38,7 +41,7 @@ def process_worldcover_imagery(
     """Nearest-neighbour reproject RGB bands onto planned texture grids."""
 
     readers = tuple(ImageryWindowReader(path) for path in source_paths)
-    requests = plan_texture_tiles(plan, "worldcover")
+    requests = plan_texture_tiles(plan, "worldcover_v2")
     outputs: list[ProcessedImageryTile] = []
     if progress_callback is not None:
         progress_callback(0, len(requests))
@@ -115,9 +118,18 @@ def _reproject_request(
                 continue
             locations = np.flatnonzero(valid)[source_valid]
             rgb_linear = samples[source_valid][:, (2, 1, 0)]
-            rgb = np.power(np.clip(rgb_linear / 0.3, 0.0, 1.0), 1.0 / 2.2)
-            block.reshape(-1, 3)[locations] = np.rint(rgb * 255.0).astype(np.uint8)
+            block.reshape(-1, 3)[locations] = _worldcover_rgb(rgb_linear)
             block_covered.reshape(-1)[locations] = True
     if not covered.any():
         raise NoCoverageError("WorldCover does not cover this texture tile")
     return output
+
+
+def _worldcover_rgb(reflectance: NDArray[np.float32]) -> NDArray[np.uint8]:
+    """Apply one fixed natural-colour stretch without introducing tile seams."""
+
+    normalized = (reflectance - _WORLDCOVER_BLACK_REFLECTANCE) / (
+        _WORLDCOVER_WHITE_REFLECTANCE - _WORLDCOVER_BLACK_REFLECTANCE
+    )
+    srgb = np.power(np.clip(normalized, 0.0, 1.0), 1.0 / 2.2)
+    return np.rint(srgb * 255.0).astype(np.uint8)
