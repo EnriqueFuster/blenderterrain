@@ -47,6 +47,22 @@ coverage = { bounds = [[-180.0, -60.0, 180.0, 84.0]], requires_discovery = true,
 license = { identifier = "CC-BY-4.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021)" }
 
 [[products]]
+id = "SENTINEL2_L2A"
+provider_id = "sentinel2"
+name = "Copernicus Sentinel-2 L2A"
+jurisdiction = "global"
+implementation_status = "spike"
+version = "Collection 1"
+last_verified = "2026-09-19"
+endpoint = "https://earth-search.aws.element84.com/v1/collections/sentinel-2-c1-l2a"
+evidence_urls = ["https://registry.opendata.aws/sentinel-2-l2a-cogs/", "https://github.com/Element84/earth-search"]
+reliability_score = 88
+network_cost_score = 50
+capabilities = { kind = "imagery", native_resolution_m = 10.0, semantics = "satellite_surface_reflectance", authoritative = false, acquisition_mode = "stac", supports_roi_window = true, supports_http_range = true, requires_auth = false, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-180.0, -56.0, 180.0, 84.0]], requires_discovery = true, limitations = ["Scene availability and clouds vary by date", "L2A RGB bands have 10 m native resolution", "Dynamic imagery is not an aerial orthophoto"] }
+license = { identifier = "Copernicus Sentinel Data Legal Notice", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Contains modified Copernicus Sentinel data" }
+
+[[products]]
 id = "GEBCO_2026"
 provider_id = "gebco"
 name = "GEBCO 2026 Grid"

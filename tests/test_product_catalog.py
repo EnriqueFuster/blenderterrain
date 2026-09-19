@@ -56,6 +56,11 @@ def test_global_product_semantics_cannot_confuse_dtm_and_dsm() -> None:
     assert glo30.capabilities.semantics is SemanticConfidence.DSM
     assert worldcover.capabilities.kind is DatasetKind.IMAGERY
     assert worldcover.version == "2021"
+    sentinel = catalog.product("SENTINEL2_L2A")
+    assert sentinel.capabilities.kind is DatasetKind.IMAGERY
+    assert sentinel.capabilities.temporal is True
+    assert sentinel.capabilities.native_resolution_m == 10.0
+    assert not sentinel.selectable
     assert gebco.capabilities.kind is DatasetKind.BATHYMETRY
     assert gebco.capabilities.semantics is SemanticConfidence.BATHYMETRY
     assert gebco.capabilities.acquisition_mode.value == "opendap"
