@@ -179,6 +179,11 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         layout.prop(properties, "imagery_product")
         if properties.imagery_product in {"PNOA_MA", "FR_BD_ORTHO"}:
             layout.prop(properties, "imagery_gsd", text="Resolution")
+        elif properties.imagery_product == "SENTINEL2_L2A":
+            dates = layout.row(align=True)
+            dates.prop(properties, "sentinel2_start_date")
+            dates.prop(properties, "sentinel2_end_date")
+            layout.prop(properties, "sentinel2_max_cloud")
     if properties.is_valid:
         details = layout.box()
         details.label(text="Selected Data", icon="INFO")

@@ -7,7 +7,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 from typing import Any, Protocol
@@ -29,6 +29,7 @@ from ..errors import (
     ProviderContractChanged,
     ProviderUnavailableError,
     RasterFormatError,
+    UserInputError,
 )
 from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
 from ..io.imagery_window import imagery_window_is_valid, write_imagery_window
@@ -44,6 +45,36 @@ _MAXIMUM_RESPONSE_BYTES = 5 * 1024 * 1024
 _MAXIMUM_SOURCE_BYTES = 300_000_000
 _MAXIMUM_WINDOW_PIXELS = 16_777_216
 _GRID_CODE = re.compile(r"_T(?P<code>\d{2}[A-Z]{3})_")
+
+
+def sentinel2_temporal_policy(
+    start_date: str,
+    end_date: str,
+    maximum_cloud_percent: float,
+    *,
+    today: date | None = None,
+) -> str:
+    """Resolve UI dates into the immutable policy stored in an acquisition plan."""
+
+    if not 0 <= maximum_cloud_percent <= 100:
+        raise UserInputError("Sentinel-2 cloud cover must be between 0 and 100 percent")
+    if bool(start_date) != bool(end_date):
+        raise UserInputError("Provide both Sentinel-2 dates or leave both empty")
+    if start_date:
+        try:
+            start = date.fromisoformat(start_date)
+            end = date.fromisoformat(end_date)
+        except ValueError as exc:
+            raise UserInputError("Sentinel-2 dates must use YYYY-MM-DD") from exc
+    else:
+        end = today or datetime.now(UTC).date()
+        start = end - timedelta(days=365)
+    if start >= end:
+        raise UserInputError("Sentinel-2 start date must precede its end date")
+    return (
+        f"{start.isoformat()}T00:00:00Z/{end.isoformat()}T23:59:59Z;"
+        f"cloud={maximum_cloud_percent:g}"
+    )
 
 
 class _Response(Protocol):

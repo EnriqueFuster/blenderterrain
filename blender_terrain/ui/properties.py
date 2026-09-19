@@ -119,6 +119,11 @@ def _imagery_product_items(
     items = (
         ("PNOA_MA", "PNOA Maximum Actuality", "Official Spanish aerial orthophotography"),
         ("FR_BD_ORTHO", "BD ORTHO", "Official French aerial orthophotography"),
+        (
+            "SENTINEL2_L2A",
+            "Sentinel-2 L2A",
+            "Global dynamic 10 m imagery with date and cloud filtering",
+        ),
         ("ESA_WORLDCOVER_S2_2021", "ESA WorldCover 2021", "Global static 10 m imagery"),
     )
     _IMAGERY_ITEMS_CACHE[:] = [item for item in items if not available or item[0] in available]
@@ -481,6 +486,27 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         description="Choose an imagery product covering the ROI or disable imagery",
         items=_imagery_product_items,
         default=0,
+        update=_invalidate_validation,
+    )
+    sentinel2_start_date: StringProperty(
+        name="Start Date",
+        description="First acquisition date (YYYY-MM-DD); leave both dates empty for the last year",
+        default="",
+        update=_invalidate_validation,
+    )
+    sentinel2_end_date: StringProperty(
+        name="End Date",
+        description="Last acquisition date (YYYY-MM-DD); leave both dates empty for the last year",
+        default="",
+        update=_invalidate_validation,
+    )
+    sentinel2_max_cloud: IntProperty(
+        name="Maximum Cloud Cover",
+        description="Maximum scene cloud cover reported by Sentinel-2 metadata",
+        default=20,
+        min=0,
+        max=100,
+        subtype="PERCENTAGE",
         update=_invalidate_validation,
     )
     bathymetry_mode: EnumProperty(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +9,7 @@ import pytest
 
 from blender_terrain.catalog import DatasetKind, LayerRequest, ProductSelection, SelectionMode
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.errors import NoCoverageError, ProviderContractChanged
+from blender_terrain.errors import NoCoverageError, ProviderContractChanged, UserInputError
 from blender_terrain.io.bigtiff_tiles import GeoReference, TileLayout
 from blender_terrain.io.imagery_window import ImageryWindowReader
 from blender_terrain.models import ProjectedBounds
@@ -20,9 +21,21 @@ from blender_terrain.providers.sentinel2 import (
     parse_sentinel2_search,
     select_sentinel2_scenes,
     sentinel2_search_body,
+    sentinel2_temporal_policy,
 )
 
 HOST = "e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com"
+
+
+def test_resolves_explicit_and_automatic_temporal_policies() -> None:
+    assert sentinel2_temporal_policy("2026-06-01", "2026-09-01", 15) == (
+        "2026-06-01T00:00:00Z/2026-09-01T23:59:59Z;cloud=15"
+    )
+    assert sentinel2_temporal_policy("", "", 20, today=date(2026, 9, 19)) == (
+        "2025-09-19T00:00:00Z/2026-09-19T23:59:59Z;cloud=20"
+    )
+    with pytest.raises(UserInputError, match="both Sentinel-2 dates"):
+        sentinel2_temporal_policy("2026-06-01", "", 20)
 
 
 def test_registry_builds_sentinel2_only_when_requested() -> None:

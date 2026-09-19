@@ -45,6 +45,8 @@ from ..models import DatasetProduct
 from ..providers.copernicus_dem import GLO30_PRODUCT_ID, glo30_tiles_for_roi
 from ..providers.gebco import PRODUCT_ID as GEBCO_PRODUCT_ID
 from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
+from ..providers.sentinel2 import PRODUCT_ID as SENTINEL2_PRODUCT_ID
+from ..providers.sentinel2 import sentinel2_temporal_policy
 from ..providers.worldcover import PRODUCT_ID as WORLDCOVER_PRODUCT_ID
 
 _POLL_INTERVAL_SECONDS = 0.25
@@ -264,13 +266,26 @@ def _acquisition_plan_from_properties(properties: Any, region: RegionOfInterest)
         )
         candidate_sets.append(discover_candidates(catalog, region.bounds, DatasetKind.BATHYMETRY))
     if properties.imagery_product != "NONE":
-        is_global = properties.imagery_product == WORLDCOVER_PRODUCT_ID
+        is_worldcover = properties.imagery_product == WORLDCOVER_PRODUCT_ID
         imagery_product = catalog.product(properties.imagery_product)
+        temporal_policy = (
+            "2021"
+            if is_worldcover
+            else (
+                sentinel2_temporal_policy(
+                    properties.sentinel2_start_date,
+                    properties.sentinel2_end_date,
+                    properties.sentinel2_max_cloud,
+                )
+                if imagery_product.id == SENTINEL2_PRODUCT_ID
+                else None
+            )
+        )
         imagery_layer = LayerRequest(
             DatasetKind.IMAGERY,
             properties.selected_imagery_gsd
             or imagery_product.capabilities.native_resolution_m,
-            "2021" if is_global else None,
+            temporal_policy,
         )
         layers.append(imagery_layer)
         selections.append(
@@ -280,7 +295,7 @@ def _acquisition_plan_from_properties(properties: Any, region: RegionOfInterest)
                 DatasetKind.IMAGERY,
                 SelectionMode.MANUAL,
                 True,
-                "2021" if is_global else None,
+                temporal_policy,
             )
         )
         candidate_sets.append(discover_candidates(catalog, region.bounds, DatasetKind.IMAGERY))

@@ -91,12 +91,13 @@ def test_french_roi_exposes_national_and_global_dsm() -> None:
     assert candidates.recommended.product.id == "FR_MNS_CORREL_50CM"
 
 
-def test_french_roi_exposes_bd_ortho_and_worldcover() -> None:
+def test_french_roi_exposes_local_and_global_imagery() -> None:
     candidates = discover_candidates(load_bundled_catalog(), PARIS, DatasetKind.IMAGERY)
 
     assert [candidate.product.id for candidate in candidates.valid] == [
         "FR_BD_ORTHO",
         "ESA_WORLDCOVER_S2_2021",
+        "SENTINEL2_L2A",
     ]
     assert candidates.recommended is not None
     assert candidates.recommended.product.id == "FR_BD_ORTHO"
@@ -168,14 +169,18 @@ def test_uk_roi_keeps_independent_official_and_global_choices(
 ) -> None:
     catalog = load_bundled_catalog()
     expected = (
-        (DatasetKind.DTM, dtm_product, "GEDTM30_V11"),
-        (DatasetKind.DSM, dsm_product, "COPERNICUS_GLO30_2021"),
-        (DatasetKind.IMAGERY, None, "ESA_WORLDCOVER_S2_2021"),
+        (DatasetKind.DTM, dtm_product, ("GEDTM30_V11",)),
+        (DatasetKind.DSM, dsm_product, ("COPERNICUS_GLO30_2021",)),
+        (
+            DatasetKind.IMAGERY,
+            None,
+            ("SENTINEL2_L2A", "ESA_WORLDCOVER_S2_2021"),
+        ),
     )
-    for kind, official_id, global_id in expected:
+    for kind, official_id, global_ids in expected:
         candidates = discover_candidates(catalog, roi, kind)
         valid_ids = {candidate.product.id for candidate in candidates.valid}
-        assert global_id in valid_ids
+        assert set(global_ids) <= valid_ids
         if official_id is not None:
             assert official_id in valid_ids
         if roi == EDINBURGH and kind is not DatasetKind.IMAGERY:

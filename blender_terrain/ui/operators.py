@@ -407,6 +407,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         imagery_name = {
             "ESA_WORLDCOVER_S2_2021": "WorldCover",
             "FR_BD_ORTHO": "BD ORTHO",
+            "SENTINEL2_L2A": "Sentinel-2 L2A",
         }.get(properties.imagery_product, "PNOA")
         properties.imagery_summary = (
             "Imagery disabled"
@@ -475,9 +476,13 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
                     "FR_BD_ORTHO"
                     if "FR_BD_ORTHO" in imagery_ids
                     else (
-                        "ESA_WORLDCOVER_S2_2021"
-                        if "ESA_WORLDCOVER_S2_2021" in imagery_ids
-                        else "NONE"
+                        "SENTINEL2_L2A"
+                        if "SENTINEL2_L2A" in imagery_ids
+                        else (
+                            "ESA_WORLDCOVER_S2_2021"
+                            if "ESA_WORLDCOVER_S2_2021" in imagery_ids
+                            else "NONE"
+                        )
                     )
                 )
             )

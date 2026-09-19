@@ -70,6 +70,7 @@ def main() -> None:
         assert set(json.loads(properties.available_imagery_product_ids_json)) == {
             "PNOA_MA",
             "ESA_WORLDCOVER_S2_2021",
+            "SENTINEL2_L2A",
         }
         properties.imagery_product = "PNOA_MA"
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
@@ -168,6 +169,7 @@ def main() -> None:
         assert json.loads(properties.available_imagery_product_ids_json) == [
             "ESA_WORLDCOVER_S2_2021",
             "FR_BD_ORTHO",
+            "SENTINEL2_L2A",
         ]
         assert properties.imagery_product == "FR_BD_ORTHO"
         properties.product = "FR_RGE_ALTI_1M"
@@ -206,6 +208,11 @@ def main() -> None:
             "GEDTM30_V11",
         ]
         assert properties.product == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
+        assert {
+            "SENTINEL2_L2A",
+            "ESA_WORLDCOVER_S2_2021",
+        } <= set(json.loads(properties.available_imagery_product_ids_json))
+        assert properties.imagery_product == "SENTINEL2_L2A"
         assert properties.crs_summary == "EPSG:32630"
         assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
         assert "WCS windows required" in properties.discovery_summary
@@ -220,6 +227,11 @@ def main() -> None:
             .product_id
             == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
         )
+        sentinel_selection = english_plan.selections.for_kind(
+            extension.blender_terrain.catalog.DatasetKind.IMAGERY
+        )
+        assert sentinel_selection.product_id == "SENTINEL2_L2A"
+        assert sentinel_selection.temporal_policy.endswith(";cloud=20")
         properties.available_product_ids_json = "[]"
         properties.product = "MDT02"
         properties.imagery_product = "ESA_WORLDCOVER_S2_2021"
