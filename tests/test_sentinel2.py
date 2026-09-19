@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import numpy as np
 import pytest
 
+from blender_terrain.catalog import DatasetKind, LayerRequest, ProductSelection, SelectionMode
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import ProviderContractChanged
+from blender_terrain.io.bigtiff_tiles import GeoReference, TileLayout
+from blender_terrain.io.imagery_window import ImageryWindowReader
+from blender_terrain.models import ProjectedBounds
 from blender_terrain.providers.sentinel2 import (
+    Sentinel2Acquirer,
     Sentinel2CatalogClient,
+    Sentinel2Scene,
     parse_sentinel2_search,
     sentinel2_search_body,
 )
@@ -21,7 +29,11 @@ def _feature(scene_id: str, cloud: float, acquired: str) -> dict[str, object]:
         "type": "Feature",
         "id": scene_id,
         "bbox": [-1.56, 51.32, 0.08, 52.34],
-        "properties": {"datetime": acquired, "eo:cloud_cover": cloud},
+        "properties": {
+            "datetime": acquired,
+            "eo:cloud_cover": cloud,
+            "proj:epsg": 32630,
+        },
         "assets": {
             "red": {"href": f"{base}/B04.tif"},
             "green": {"href": f"{base}/B03.tif"},
@@ -100,3 +112,60 @@ def test_rejects_untrusted_assets_and_oversized_responses() -> None:
             "2026-09-01T00:00:00Z",
             15.0,
         )
+
+
+def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None:
+    scene = Sentinel2Scene(
+        "scene_1",
+        "2026-07-29T11:16:49Z",
+        1.0,
+        32630,
+        BBoxWGS84(-1.0, 51.0, 0.0, 52.0),
+        f"https://{HOST}/scene/B04.tif",
+        f"https://{HOST}/scene/B03.tif",
+        f"https://{HOST}/scene/B02.tif",
+        f"https://{HOST}/scene/SCL.tif",
+    )
+
+    class Catalog:
+        def search(self, *args, **kwargs):
+            return (scene,)
+
+    exact = ProjectedBounds(600_000.0, 5_700_000.0, 600_040.0, 5_700_040.0, 32630)
+
+    class Reader:
+        layout = TileLayout(4, 4, 4, 4, 0.0)
+        georeference = GeoReference(32630, 600_000.0, 5_700_040.0, 10.0, -10.0, 32630)
+        nodata = 0.0
+
+        def __init__(self, value: float, scl: bool = False) -> None:
+            self.value = value
+            self.scl = scl
+
+        def read_bounds(self, bounds: ProjectedBounds):
+            if self.scl:
+                return np.array([[4.0, 9.0], [4.0, 4.0]], np.float32), exact
+            return np.full((4, 4), self.value, np.float32), exact
+
+    def reader(url: str, cache: Path):
+        if url.endswith("SCL.tif"):
+            return Reader(0.0, True)
+        return Reader({"B04.tif": 0.3, "B03.tif": 0.2, "B02.tif": 0.1}[url[-7:]])
+
+    acquirer = Sentinel2Acquirer(Catalog(), reader)
+    policy = "2026-06-01T00:00:00Z/2026-09-01T00:00:00Z;cloud=20"
+    selection = ProductSelection(
+        "sentinel2", "SENTINEL2_L2A", DatasetKind.IMAGERY, SelectionMode.MANUAL, True, policy
+    )
+    result = acquirer.acquire(
+        selection,
+        LayerRequest(DatasetKind.IMAGERY, 10.0, policy),
+        BBoxWGS84(-0.15, 51.49, -0.14, 51.50),
+        tmp_path,
+    )
+
+    window = ImageryWindowReader(result.paths[0])
+    assert window.metadata.bands == ("B02", "B03", "B04", "SCL")
+    assert window.data.shape == (4, 4, 4)
+    assert window.data[0, 0].tolist() == pytest.approx([0.1, 0.2, 0.3, 4.0])
+    assert window.data[0, 3, 3] == 9.0

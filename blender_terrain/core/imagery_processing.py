@@ -38,10 +38,30 @@ def process_worldcover_imagery(
     progress_callback: Callable[[int, int], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
 ) -> tuple[ProcessedImageryTile, ...]:
-    """Nearest-neighbour reproject RGB bands onto planned texture grids."""
+    """Preserve the public WorldCover entry point and its cache filenames."""
+
+    return process_imagery_windows(
+        source_paths,
+        plan,
+        output_directory,
+        "worldcover_v2",
+        progress_callback,
+        cancellation_requested,
+    )
+
+
+def process_imagery_windows(
+    source_paths: tuple[Path, ...],
+    plan: ImportPlan,
+    output_directory: Path,
+    filename_prefix: str,
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancellation_requested: Callable[[], bool] = lambda: False,
+) -> tuple[ProcessedImageryTile, ...]:
+    """Reproject cached reflectance windows onto planned texture grids."""
 
     readers = tuple(ImageryWindowReader(path) for path in source_paths)
-    requests = plan_texture_tiles(plan, "worldcover_v2")
+    requests = plan_texture_tiles(plan, filename_prefix)
     outputs: list[ProcessedImageryTile] = []
     if progress_callback is not None:
         progress_callback(0, len(requests))
@@ -73,7 +93,7 @@ def process_worldcover_imagery(
         if progress_callback is not None:
             progress_callback(completed, len(requests))
     if not outputs:
-        raise NoCoverageError("WorldCover has no usable imagery for the texture grid")
+        raise NoCoverageError("Imagery source has no usable pixels for the texture grid")
     return tuple(outputs)
 
 
@@ -101,8 +121,9 @@ def _reproject_request(
         block_covered = covered[start:stop]
         for reader in readers:
             geo = reader.georeference
-            columns = np.rint((longitude - geo.origin_x) / geo.pixel_width - 0.5).astype(int)
-            rows = np.rint((geo.origin_y - latitude) / -geo.pixel_height - 0.5).astype(int)
+            source_x, source_y = _source_coordinates(longitude, latitude, geo.epsg)
+            columns = np.rint((source_x - geo.origin_x) / geo.pixel_width - 0.5).astype(int)
+            rows = np.rint((geo.origin_y - source_y) / -geo.pixel_height - 0.5).astype(int)
             valid = (
                 (rows >= 0)
                 & (columns >= 0)
@@ -113,16 +134,35 @@ def _reproject_request(
             if not valid.any():
                 continue
             samples = np.asarray(reader.data[rows[valid], columns[valid]], dtype=np.float32)
-            source_valid = np.any(samples != reader.metadata.nodata, axis=1)
+            bands = reader.metadata.bands
+            rgb_indices = tuple(bands.index(name) for name in ("B04", "B03", "B02"))
+            rgb_linear = samples[:, rgb_indices]
+            source_valid = np.any(rgb_linear != reader.metadata.nodata, axis=1)
+            if "SCL" in bands:
+                source_valid &= ~np.isin(
+                    np.rint(samples[:, bands.index("SCL")]).astype(np.int16),
+                    (0, 1, 3, 8, 9, 10, 11),
+                )
             if not source_valid.any():
                 continue
             locations = np.flatnonzero(valid)[source_valid]
-            rgb_linear = samples[source_valid][:, (2, 1, 0)]
-            block.reshape(-1, 3)[locations] = _worldcover_rgb(rgb_linear)
+            block.reshape(-1, 3)[locations] = _worldcover_rgb(rgb_linear[source_valid])
             block_covered.reshape(-1)[locations] = True
     if not covered.any():
         raise NoCoverageError("WorldCover does not cover this texture tile")
     return output
+
+
+def _source_coordinates(
+    longitude: NDArray[np.float64], latitude: NDArray[np.float64], epsg: int
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    if epsg == 4326:
+        return longitude, latitude
+    from pyproj import Transformer
+
+    transformer = Transformer.from_crs(4326, epsg, always_xy=True)
+    x, y = transformer.transform(longitude, latitude)
+    return np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
 
 
 def _worldcover_rgb(reflectance: NDArray[np.float32]) -> NDArray[np.uint8]:

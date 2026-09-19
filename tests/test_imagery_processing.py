@@ -99,5 +99,32 @@ def test_accepts_partial_worldcover_and_rejects_an_entirely_uncovered_grid(
         0.0,
         ("B02", "B03", "B04", "B08"),
     )
-    with pytest.raises(NoCoverageError, match="no usable imagery"):
+    with pytest.raises(NoCoverageError, match="no usable pixels"):
         process_worldcover_imagery((outside,), plan, tmp_path / "outside-output")
+
+
+def test_sentinel_scene_classification_masks_cloud_pixels(tmp_path: Path) -> None:
+    roi = BBoxWGS84(-0.01, 51.0, 0.01, 51.02)
+    plan = create_import_plan(
+        roi,
+        "GEDTM30_V11",
+        30.0,
+        True,
+        10.0,
+        native_resolution_override=30.0,
+        use_global_utm=True,
+    )
+    geographic_bounds = geographic_source_bounds(plan)
+    bounds = ProjectedBounds(
+        geographic_bounds.west,
+        geographic_bounds.south,
+        geographic_bounds.east,
+        geographic_bounds.north,
+        4326,
+    )
+    data = np.full((32, 32, 4), (0.1, 0.2, 0.3, 9.0), np.float32)
+    source = tmp_path / "sentinel.npy"
+    write_imagery_window(source, data, bounds, 0.0, ("B02", "B03", "B04", "SCL"))
+
+    with pytest.raises(NoCoverageError, match="no usable pixels"):
+        process_worldcover_imagery((source,), plan, tmp_path / "cloud-output")

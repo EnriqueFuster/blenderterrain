@@ -24,7 +24,11 @@ from .grid import (
 )
 from .heightmap import ElevationRange, calculate_elevation_range, normalize_heightmap
 from .imagery import ImageryTileRequest, plan_imagery_tiles, plan_texture_tiles
-from .imagery_processing import ProcessedImageryTile, process_worldcover_imagery
+from .imagery_processing import (
+    ProcessedImageryTile,
+    process_imagery_windows,
+    process_worldcover_imagery,
+)
 from .local_elevation import (
     LocalElevationInspection,
     inspect_local_elevation,
@@ -127,6 +131,7 @@ __all__ = [
     "plan_texture_tiles",
     "process_elevation_tiles",
     "process_gebco_tiles",
+    "process_imagery_windows",
     "process_worldcover_imagery",
     "project_arrays_to_wgs84",
     "project_to_wgs84",
