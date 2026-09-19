@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
@@ -41,6 +43,7 @@ _ASSET_HOST = "e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com"
 _MAXIMUM_RESPONSE_BYTES = 5 * 1024 * 1024
 _MAXIMUM_SOURCE_BYTES = 300_000_000
 _MAXIMUM_WINDOW_PIXELS = 16_777_216
+_GRID_CODE = re.compile(r"_T(?P<code>\d{2}[A-Z]{3})_")
 
 
 class _Response(Protocol):
@@ -66,6 +69,15 @@ class Sentinel2Scene:
     green_url: str
     blue_url: str
     scl_url: str
+
+    @property
+    def grid_code(self) -> str:
+        """Return the MGRS tile encoded in the official scene identifier."""
+
+        match = _GRID_CODE.search(self.id)
+        if match is None:
+            raise ProviderContractChanged("Sentinel-2 scene identifier has no grid code")
+        return match.group("code")
 
 
 def sentinel2_search_body(
@@ -121,6 +133,21 @@ def parse_sentinel2_search(payload: bytes) -> tuple[Sentinel2Scene, ...]:
             ),
         )
     )
+
+
+def select_sentinel2_scenes(
+    scenes: tuple[Sentinel2Scene, ...], roi: BBoxWGS84
+) -> tuple[Sentinel2Scene, ...]:
+    """Choose the clearest intersecting acquisition for each Sentinel grid tile."""
+
+    selected: dict[str, Sentinel2Scene] = {}
+    for scene in scenes:
+        if _intersection(scene.bounds, roi) is not None:
+            selected.setdefault(scene.grid_code, scene)
+    result = tuple(selected.values())
+    if not result or not _rectangles_cover(roi, tuple(scene.bounds for scene in result)):
+        raise NoCoverageError("Sentinel-2 scenes do not cover the complete ROI")
+    return result
 
 
 class Sentinel2CatalogClient:
@@ -179,6 +206,7 @@ def _parse_scene(feature: Any) -> Sentinel2Scene:
     _parse_datetime(scene.acquired_at)
     if (
         not scene.id
+        or not scene.grid_code
         or not 0 <= scene.cloud_cover_percent <= 100
         or not 32601 <= scene.epsg <= 32760
         or any(not _valid_asset_url(url) for url in _scene_urls(scene))
@@ -254,32 +282,38 @@ class Sentinel2Acquirer:
         ):
             raise ValueError("Sentinel-2 acquirer received an incompatible selection")
         start, end, cloud = _temporal_policy(selection.temporal_policy)
-        scenes = self._catalog.search(roi, start, end, cloud)
-        if not scenes:
+        search_results = self._catalog.search(roi, start, end, cloud)
+        if not search_results:
             raise NoCoverageError("Sentinel-2 has no scenes matching the temporal policy")
+        scenes = select_sentinel2_scenes(search_results, roi)
         key = hashlib.sha256(
-            f"window-v1|{roi.west},{roi.south},{roi.east},{roi.north}|{start}|{end}|{cloud}".encode()
+            f"window-v2|{roi.west},{roi.south},{roi.east},{roi.north}|{start}|{end}|{cloud}".encode()
         ).hexdigest()[:20]
         target = cache_directory / PROVIDER_ID / PRODUCT_ID / key
         paths: list[Path] = []
         cached_count = 0
-        # The clearest scene is enough for this first executable increment. Mosaicking
-        # multiple footprints is added when dynamic coverage discovery is introduced.
-        scene = scenes[0]
-        path = target / f"{_safe_scene_id(scene.id)}.npy"
-        if imagery_window_is_valid(path):
-            paths.append(path)
-            cached_count = 1
-            _report(progress_callback, 1, 1, path, True)
-        else:
+        for completed, scene in enumerate(scenes, start=1):
             if cancellation_requested():
                 raise JobCancelled("Sentinel-2 acquisition was cancelled")
-            data, bounds, nodata = self._read_scene(scene, roi, target / "ranges")
-            if data.shape[0] * data.shape[1] > _MAXIMUM_WINDOW_PIXELS:
-                raise RasterFormatError("Sentinel-2 source window exceeds the pixel limit")
-            write_imagery_window(path, data, bounds, nodata, ("B02", "B03", "B04", "SCL"))
+            path = target / f"{_safe_scene_id(scene.id)}.npy"
+            if imagery_window_is_valid(path):
+                cached_count += 1
+                cached = True
+            else:
+                scene_roi = _intersection(scene.bounds, roi)
+                if scene_roi is None:
+                    continue
+                data, bounds, nodata = self._read_scene(
+                    scene, scene_roi, target / "ranges" / _safe_scene_id(scene.id)
+                )
+                if data.shape[0] * data.shape[1] > _MAXIMUM_WINDOW_PIXELS:
+                    raise RasterFormatError("Sentinel-2 source window exceeds the pixel limit")
+                write_imagery_window(
+                    path, data, bounds, nodata, ("B02", "B03", "B04", "SCL")
+                )
+                cached = False
             paths.append(path)
-            _report(progress_callback, 1, 1, path, False)
+            _report(progress_callback, completed, len(scenes), path, cached)
         return AcquiredRasterLayer(
             PROVIDER_ID, PRODUCT_ID, DatasetKind.IMAGERY, tuple(paths), cached_count
         )
@@ -329,6 +363,44 @@ def _remote_reader(url: str, cache_directory: Path) -> BigTiffFloatTileReader:
             maximum_source_bytes=_MAXIMUM_SOURCE_BYTES,
         )
     )
+
+
+def _intersection(left: BBoxWGS84, right: BBoxWGS84) -> BBoxWGS84 | None:
+    west = max(left.west, right.west)
+    south = max(left.south, right.south)
+    east = min(left.east, right.east)
+    north = min(left.north, right.north)
+    return None if east <= west or north <= south else BBoxWGS84(west, south, east, north)
+
+
+def _rectangles_cover(roi: BBoxWGS84, rectangles: tuple[BBoxWGS84, ...]) -> bool:
+    clipped = tuple(
+        intersection
+        for rectangle in rectangles
+        if (intersection := _intersection(roi, rectangle)) is not None
+    )
+    x_edges = sorted(
+        {roi.west, roi.east, *(value for item in clipped for value in (item.west, item.east))}
+    )
+    for west, east in pairwise(x_edges):
+        if east <= west:
+            continue
+        midpoint = (west + east) / 2.0
+        intervals = sorted(
+            (item.south, item.north)
+            for item in clipped
+            if item.west <= midpoint <= item.east
+        )
+        covered_to = roi.south
+        for south, north in intervals:
+            if south > covered_to:
+                return False
+            covered_to = max(covered_to, north)
+            if covered_to >= roi.north:
+                break
+        if covered_to < roi.north:
+            return False
+    return True
 
 
 def _resample_nearest(

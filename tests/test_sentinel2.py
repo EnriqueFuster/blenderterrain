@@ -8,7 +8,7 @@ import pytest
 
 from blender_terrain.catalog import DatasetKind, LayerRequest, ProductSelection, SelectionMode
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.errors import ProviderContractChanged
+from blender_terrain.errors import NoCoverageError, ProviderContractChanged
 from blender_terrain.io.bigtiff_tiles import GeoReference, TileLayout
 from blender_terrain.io.imagery_window import ImageryWindowReader
 from blender_terrain.models import ProjectedBounds
@@ -18,6 +18,7 @@ from blender_terrain.providers.sentinel2 import (
     Sentinel2CatalogClient,
     Sentinel2Scene,
     parse_sentinel2_search,
+    select_sentinel2_scenes,
     sentinel2_search_body,
 )
 
@@ -72,22 +73,25 @@ def test_parses_and_orders_scenes_by_cloud_cover() -> None:
         {
             "type": "FeatureCollection",
             "features": [
-                _feature("cloudy", 12.5, "2026-08-01T10:00:00Z"),
-                _feature("clear", 1.25, "2026-07-29T11:16:49Z"),
+                _feature("S2A_T30UXC_20260801T100000_L2A", 12.5, "2026-08-01T10:00:00Z"),
+                _feature("S2A_T30UXC_20260729T111649_L2A", 1.25, "2026-07-29T11:16:49Z"),
             ],
         }
     ).encode()
 
     scenes = parse_sentinel2_search(payload)
 
-    assert [scene.id for scene in scenes] == ["clear", "cloudy"]
+    assert [scene.id for scene in scenes] == [
+        "S2A_T30UXC_20260729T111649_L2A",
+        "S2A_T30UXC_20260801T100000_L2A",
+    ]
     assert scenes[0].cloud_cover_percent == 1.25
     assert scenes[0].red_url.endswith("/B04.tif")
     assert scenes[0].scl_url.endswith("/SCL.tif")
 
 
 def test_rejects_untrusted_assets_and_oversized_responses() -> None:
-    feature = _feature("scene", 1.0, "2026-07-29T11:16:49Z")
+    feature = _feature("S2A_T30UXC_20260729T111649_L2A", 1.0, "2026-07-29T11:16:49Z")
     assets = feature["assets"]
     assert isinstance(assets, dict)
     red = assets["red"]
@@ -124,7 +128,7 @@ def test_rejects_untrusted_assets_and_oversized_responses() -> None:
 
 def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None:
     scene = Sentinel2Scene(
-        "scene_1",
+        "S2A_T30UXC_20260729T111649_L2A",
         "2026-07-29T11:16:49Z",
         1.0,
         32630,
@@ -177,3 +181,32 @@ def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None
     assert window.data.shape == (4, 4, 4)
     assert window.data[0, 0].tolist() == pytest.approx([0.1, 0.2, 0.3, 4.0])
     assert window.data[0, 3, 3] == 9.0
+
+
+def test_selects_one_clear_scene_per_grid_tile_and_requires_full_coverage() -> None:
+    def scene(scene_id: str, cloud: float, bounds: BBoxWGS84) -> Sentinel2Scene:
+        base = f"https://{HOST}/{scene_id}"
+        return Sentinel2Scene(
+            scene_id,
+            "2026-07-29T11:16:49Z",
+            cloud,
+            32630,
+            bounds,
+            f"{base}/B04.tif",
+            f"{base}/B03.tif",
+            f"{base}/B02.tif",
+            f"{base}/SCL.tif",
+        )
+
+    left = scene("S2A_T30UXC_20260729T111649_L2A", 1.0, BBoxWGS84(0.0, 0.0, 1.0, 1.0))
+    left_cloudy = scene(
+        "S2A_T30UXC_20260730T111649_L2A", 12.0, BBoxWGS84(0.0, 0.0, 1.0, 1.0)
+    )
+    right = scene("S2A_T30UXD_20260729T111649_L2A", 2.0, BBoxWGS84(1.0, 0.0, 2.0, 1.0))
+    roi = BBoxWGS84(0.25, 0.25, 1.75, 0.75)
+
+    selected = select_sentinel2_scenes((left, right, left_cloudy), roi)
+
+    assert selected == (left, right)
+    with pytest.raises(NoCoverageError, match="complete ROI"):
+        select_sentinel2_scenes((left,), roi)
