@@ -14,6 +14,7 @@ from .gedtm30 import Gedtm30Acquirer
 from .geopf_wms import GeopfWMSAcquirer
 from .osni import OsniAcquirer
 from .scottish_lidar import ScottishLidarAcquirer
+from .sentinel2 import Sentinel2Acquirer
 from .worldcover import WorldCoverAcquirer
 
 
@@ -32,6 +33,7 @@ def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcqui
         "datamap_wales": DataMapWalesAcquirer,
         "scottish_remote_sensing": ScottishLidarAcquirer,
         "osni": OsniAcquirer,
+        "sentinel2": Sentinel2Acquirer,
     }
     return {
         provider_id: factories[provider_id]()

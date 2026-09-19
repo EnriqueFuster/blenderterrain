@@ -12,6 +12,7 @@ from blender_terrain.errors import ProviderContractChanged
 from blender_terrain.io.bigtiff_tiles import GeoReference, TileLayout
 from blender_terrain.io.imagery_window import ImageryWindowReader
 from blender_terrain.models import ProjectedBounds
+from blender_terrain.providers.registry import build_raster_acquirers
 from blender_terrain.providers.sentinel2 import (
     Sentinel2Acquirer,
     Sentinel2CatalogClient,
@@ -21,6 +22,13 @@ from blender_terrain.providers.sentinel2 import (
 )
 
 HOST = "e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com"
+
+
+def test_registry_builds_sentinel2_only_when_requested() -> None:
+    adapters = build_raster_acquirers(("sentinel2",))
+
+    assert set(adapters) == {"sentinel2"}
+    assert isinstance(adapters["sentinel2"], Sentinel2Acquirer)
 
 
 def _feature(scene_id: str, cloud: float, acquired: str) -> dict[str, object]:

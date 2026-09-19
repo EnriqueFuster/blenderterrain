@@ -8,6 +8,7 @@ from uuid import uuid4
 import numpy as np
 
 from blender_terrain.catalog import (
+    AcquisitionPlan,
     AcquisitionRequest,
     Catalog,
     DatasetKind,
@@ -658,3 +659,71 @@ def test_worker_uses_projected_bd_ortho_without_reprojection(tmp_path: Path) -> 
     assert prepared.tiles[0].path == tmp_path / "ortho.png"
     assert prepared.tiles[0].bounds.epsg == 2154
     assert prepared.tiles[0].gsd_metres == 5.0
+
+
+def test_worker_prepares_confirmed_sentinel2_imagery(tmp_path: Path) -> None:
+    catalog = load_bundled_catalog()
+    roi = BBoxWGS84(-0.151, 51.499, -0.149, 51.501)
+    policy = "2026-06-01T00:00:00Z/2026-09-01T00:00:00Z;cloud=20"
+    request = AcquisitionRequest(
+        roi, (LayerRequest(DatasetKind.IMAGERY, 10.0, policy),)
+    )
+    selection = ProductSelection(
+        "sentinel2",
+        "SENTINEL2_L2A",
+        DatasetKind.IMAGERY,
+        SelectionMode.MANUAL,
+        True,
+        policy,
+    )
+    plan = AcquisitionPlan(request, SelectionBundle((selection,)))
+    import_plan = create_import_plan(
+        roi,
+        "COPERNICUS_GLO30_2021",
+        30.0,
+        True,
+        10.0,
+        native_resolution_override=30.0,
+        use_global_utm=True,
+    )
+
+    class FakeSentinel2Acquirer:
+        def acquire(
+            self,
+            selection,
+            request,
+            roi,
+            cache_directory,
+            progress_callback=None,
+            cancellation_requested=lambda: False,
+        ):
+            path = cache_directory / "sentinel2.npy"
+            data = np.empty((32, 32, 4), dtype=np.float32)
+            data[:, :, :3] = (0.10, 0.20, 0.30)
+            data[:, :, 3] = 4.0
+            write_imagery_window(
+                path,
+                data,
+                ProjectedBounds(roi.west, roi.south, roi.east, roi.north, 4326),
+                0.0,
+                ("B02", "B03", "B04", "SCL"),
+            )
+            return AcquiredRasterLayer(
+                "sentinel2", "SENTINEL2_L2A", DatasetKind.IMAGERY, (path,)
+            )
+
+    prepared = prepare_confirmed_imagery(
+        plan,
+        catalog,
+        import_plan,
+        tmp_path,
+        tmp_path / "processed",
+        acquirer_factory=lambda provider_ids: {
+            "sentinel2": FakeSentinel2Acquirer()
+        },
+    )
+
+    assert prepared is not None
+    assert prepared.acquired.provider_id == "sentinel2"
+    assert prepared.tiles
+    assert all(tile.path.name.startswith("sentinel2_l2a_") for tile in prepared.tiles)

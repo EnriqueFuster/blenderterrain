@@ -20,6 +20,7 @@ from ..core import (
     ProcessedImageryTile,
     TransferProgress,
     geographic_source_bounds,
+    process_imagery_windows,
     process_worldcover_imagery,
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
@@ -74,7 +75,11 @@ def prepare_confirmed_imagery(
             cancellation_requested,
             pnoa_factory(),
         )
-    if product.id not in {"ESA_WORLDCOVER_S2_2021", "FR_BD_ORTHO"}:
+    if product.id not in {
+        "ESA_WORLDCOVER_S2_2021",
+        "FR_BD_ORTHO",
+        "SENTINEL2_L2A",
+    }:
         raise UserInputError("Selected imagery product is not supported by this worker")
     imagery_plan = AcquisitionPlan(
         AcquisitionRequest(plan.request.roi, (request,), plan.request.license_profile),
@@ -91,6 +96,16 @@ def prepare_confirmed_imagery(
     )[0]
     if product.id == "FR_BD_ORTHO":
         return PreparedImagery(acquired, _projected_wms_imagery_tiles(acquired))
+    if product.id == "SENTINEL2_L2A":
+        tiles = process_imagery_windows(
+            acquired.paths,
+            import_plan,
+            output_directory,
+            "sentinel2_l2a",
+            processing_callback,
+            cancellation_requested,
+        )
+        return PreparedImagery(acquired, tiles)
     tiles = process_worldcover_imagery(
         acquired.paths,
         import_plan,
