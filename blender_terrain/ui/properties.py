@@ -177,6 +177,7 @@ def _invalidate_validation(properties: object, context: bpy.types.Context) -> No
     properties.local_native_resolution = 0.0
     properties.local_imagery_summary = ""
     properties.selected_imagery_gsd = 0.0
+    properties.unavailable_imagery_json = "[]"
 
 
 def _data_source_changed(properties: object, context: bpy.types.Context) -> None:
@@ -410,6 +411,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     internal_update: BoolProperty(default=False, options={"HIDDEN"})
     available_product_ids_json: StringProperty(default="[]", options={"HIDDEN"})
     available_imagery_product_ids_json: StringProperty(default="[]", options={"HIDDEN"})
+    unavailable_imagery_json: StringProperty(default="[]", options={"HIDDEN"})
     product: EnumProperty(
         name="Elevation Product",
         items=_product_items,

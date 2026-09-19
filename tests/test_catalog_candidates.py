@@ -103,6 +103,20 @@ def test_french_roi_exposes_local_and_global_imagery() -> None:
     assert candidates.recommended.product.id == "FR_BD_ORTHO"
 
 
+def test_english_roi_exposes_blocked_local_imagery_without_selecting_it() -> None:
+    candidates = discover_candidates(load_bundled_catalog(), LONDON, DatasetKind.IMAGERY)
+
+    assert {candidate.product.id for candidate in candidates.unavailable} == {
+        "GB_ENG_EA_VERTICAL_AERIAL",
+        "GB_NNRCMP_ORTHO_AERIAL",
+    }
+    assert all(candidate not in candidates.valid for candidate in candidates.unavailable)
+    assert {candidate.product.id for candidate in candidates.valid} >= {
+        "SENTINEL2_L2A",
+        "ESA_WORLDCOVER_S2_2021",
+    }
+
+
 def test_layer_kinds_are_resolved_independently() -> None:
     catalog = load_bundled_catalog()
 

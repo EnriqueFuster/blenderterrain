@@ -212,6 +212,15 @@ def main() -> None:
             "SENTINEL2_L2A",
             "ESA_WORLDCOVER_S2_2021",
         } <= set(json.loads(properties.available_imagery_product_ids_json))
+        unavailable_imagery = json.loads(properties.unavailable_imagery_json)
+        assert {entry["name"] for entry in unavailable_imagery} == {
+            "Environment Agency Vertical Aerial Photography",
+            "NNRCMP Ortho-rectified Aerial Photography",
+        }
+        assert {entry["reason"] for entry in unavailable_imagery} == {
+            "ECW decoder unavailable",
+            "Provider account required",
+        }
         assert properties.imagery_product == "SENTINEL2_L2A"
         assert properties.crs_summary == "EPSG:32630"
         sentinel_plan = job_controller._acquisition_plan_from_properties(

@@ -9,7 +9,7 @@ from typing import ClassVar
 import bpy
 from bpy.props import StringProperty
 
-from ..catalog import DatasetKind, discover_candidates, load_bundled_catalog
+from ..catalog import DatasetKind, ProductRecord, discover_candidates, load_bundled_catalog
 from ..core import (
     RESOURCE_PROFILES,
     BBoxWGS84,
@@ -434,10 +434,19 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
     }
     if not valid_ids:
         raise UserInputError("No implemented elevation product covers this ROI")
+    imagery_candidates = discover_candidates(catalog, bounds, DatasetKind.IMAGERY)
     imagery_ids = {
         candidate.product.id
-        for candidate in discover_candidates(catalog, bounds, DatasetKind.IMAGERY).valid
+        for candidate in imagery_candidates.valid
     }
+    unavailable_imagery = [
+        {
+            "name": candidate.product.name,
+            "coverage": candidate.coverage.value,
+            "reason": _imagery_unavailable_reason(candidate.product),
+        }
+        for candidate in imagery_candidates.unavailable
+    ]
     current = properties.product
     ordered_ids = [
         product_id
@@ -468,6 +477,7 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
         properties.available_product_ids_json = json.dumps(ordered_ids)
         properties.product = current if current in valid_ids else ordered_ids[0]
         properties.available_imagery_product_ids_json = json.dumps(sorted(imagery_ids))
+        properties.unavailable_imagery_json = json.dumps(unavailable_imagery)
         if properties.imagery_product not in imagery_ids | {"NONE"}:
             properties.imagery_product = (
                 "PNOA_MA"
@@ -488,6 +498,14 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
             )
     finally:
         properties.internal_update = False
+
+
+def _imagery_unavailable_reason(product: ProductRecord) -> str:
+    if product.capabilities.requires_auth:
+        return "Provider account required"
+    if any("ECW" in limitation for limitation in product.coverage.limitations):
+        return "ECW decoder unavailable"
+    return "Provider integration unavailable"
 
 
 class BLENDERTERRAIN_OT_check_product_availability(bpy.types.Operator):

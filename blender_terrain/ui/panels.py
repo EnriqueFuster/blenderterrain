@@ -184,6 +184,15 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             dates.prop(properties, "sentinel2_start_date")
             dates.prop(properties, "sentinel2_end_date")
             layout.prop(properties, "sentinel2_max_cloud")
+        unavailable = _unavailable_imagery_entries(properties.unavailable_imagery_json)
+        if unavailable:
+            alternatives = layout.box()
+            alternatives.label(text="Unavailable Local Imagery", icon="INFO")
+            for name, coverage, reason in unavailable:
+                alternatives.label(
+                    text=f"{name} ({coverage} coverage): {reason}",
+                    icon="LOCKED",
+                )
     if properties.is_valid:
         details = layout.box()
         details.label(text="Selected Data", icon="INFO")
@@ -469,6 +478,25 @@ def _availability_entries(serialized: str) -> tuple[tuple[str, str, int], ...]:
         file_count = value.get("file_count", 0)
         if isinstance(product, str) and isinstance(status, str) and isinstance(file_count, int):
             entries.append((product, status, file_count))
+    return tuple(entries)
+
+
+def _unavailable_imagery_entries(
+    serialized: str,
+) -> tuple[tuple[str, str, str], ...]:
+    try:
+        values = json.loads(serialized)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(values, list):
+        return ()
+    entries: list[tuple[str, str, str]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        fields = (value.get("name"), value.get("coverage"), value.get("reason"))
+        if all(isinstance(field, str) for field in fields):
+            entries.append((fields[0], fields[1], fields[2]))
     return tuple(entries)
 
 

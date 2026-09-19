@@ -54,6 +54,17 @@ class CandidateSet:
         if self.recommended is not None and self.recommended not in self.valid:
             raise ValueError("Recommended candidate must belong to the valid candidates")
 
+    @property
+    def unavailable(self) -> tuple[ProductCandidate, ...]:
+        """Products near the ROI that exist in the catalog but cannot be selected."""
+
+        return tuple(
+            candidate
+            for candidate in self.rejected
+            if candidate.coverage is not CoverageMatch.NONE
+            and RejectionReason.PRODUCT_UNAVAILABLE in candidate.rejection_reasons
+        )
+
 
 def discover_candidates(
     catalog: Catalog,
