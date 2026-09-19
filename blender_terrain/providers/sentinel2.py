@@ -444,9 +444,9 @@ class Sentinel2Acquirer:
             | (green == readers["B03"].nodata)
             | (blue == readers["B02"].nodata)
         )
-        red = red * scene.red_scale + scene.red_offset
-        green = green * scene.green_scale + scene.green_offset
-        blue = blue * scene.blue_scale + scene.blue_offset
+        # BandReader returns physical sample values. The shared TIFF reader applies
+        # the embedded GDAL scale/offset, which mirrors the STAC raster metadata.
+        # Applying the STAC transform here would scale Earth Search COGs twice.
         nodata = -9999.0
         red[invalid] = nodata
         green[invalid] = nodata

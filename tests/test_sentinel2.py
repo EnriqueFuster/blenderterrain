@@ -197,7 +197,7 @@ def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None
     window = ImageryWindowReader(result.paths[0])
     assert window.metadata.bands == ("B02", "B03", "B04", "SCL")
     assert window.data.shape == (4, 4, 4)
-    assert window.data[0, 0].tolist() == pytest.approx([0.4, 0.6, 0.7, 4.0])
+    assert window.data[0, 0].tolist() == pytest.approx([0.1, 0.2, 0.3, 4.0])
     assert window.data[0, 3, 3] == 9.0
     manifest = json.loads(result.auxiliary_paths[0].read_text(encoding="utf-8"))
     assert manifest["temporal_policy"] == policy
