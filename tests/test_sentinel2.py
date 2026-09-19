@@ -57,9 +57,9 @@ def _feature(scene_id: str, cloud: float, acquired: str) -> dict[str, object]:
             "proj:epsg": 32630,
         },
         "assets": {
-            "red": {"href": f"{base}/B04.tif"},
-            "green": {"href": f"{base}/B03.tif"},
-            "blue": {"href": f"{base}/B02.tif"},
+            "red": {"href": f"{base}/B04.tif", "raster:bands": [{"scale": 0.0001, "offset": 0}]},
+            "green": {"href": f"{base}/B03.tif", "raster:bands": [{"scale": 0.0001, "offset": 0}]},
+            "blue": {"href": f"{base}/B02.tif", "raster:bands": [{"scale": 0.0001, "offset": 0}]},
             "scl": {"href": f"{base}/SCL.tif"},
         },
     }
@@ -101,6 +101,7 @@ def test_parses_and_orders_scenes_by_cloud_cover() -> None:
     assert scenes[0].cloud_cover_percent == 1.25
     assert scenes[0].red_url.endswith("/B04.tif")
     assert scenes[0].scl_url.endswith("/SCL.tif")
+    assert scenes[0].red_scale == 0.0001
 
 
 def test_rejects_untrusted_assets_and_oversized_responses() -> None:
@@ -150,6 +151,10 @@ def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None
         f"https://{HOST}/scene/B03.tif",
         f"https://{HOST}/scene/B02.tif",
         f"https://{HOST}/scene/SCL.tif",
+        red_scale=2.0,
+        red_offset=0.1,
+        green_scale=3.0,
+        blue_scale=4.0,
     )
 
     class Catalog:
@@ -192,11 +197,14 @@ def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None
     window = ImageryWindowReader(result.paths[0])
     assert window.metadata.bands == ("B02", "B03", "B04", "SCL")
     assert window.data.shape == (4, 4, 4)
-    assert window.data[0, 0].tolist() == pytest.approx([0.1, 0.2, 0.3, 4.0])
+    assert window.data[0, 0].tolist() == pytest.approx([0.4, 0.6, 0.7, 4.0])
     assert window.data[0, 3, 3] == 9.0
+    manifest = json.loads(result.auxiliary_paths[0].read_text(encoding="utf-8"))
+    assert manifest["temporal_policy"] == policy
+    assert manifest["scenes"][0]["id"] == scene.id
 
 
-def test_selects_one_clear_scene_per_grid_tile_and_requires_full_coverage() -> None:
+def test_selects_two_clear_scenes_per_grid_tile_and_requires_full_coverage() -> None:
     def scene(scene_id: str, cloud: float, bounds: BBoxWGS84) -> Sentinel2Scene:
         base = f"https://{HOST}/{scene_id}"
         return Sentinel2Scene(
@@ -220,6 +228,6 @@ def test_selects_one_clear_scene_per_grid_tile_and_requires_full_coverage() -> N
 
     selected = select_sentinel2_scenes((left, right, left_cloudy), roi)
 
-    assert selected == (left, right)
+    assert selected == (left, right, left_cloudy)
     with pytest.raises(NoCoverageError, match="complete ROI"):
         select_sentinel2_scenes((left,), roi)

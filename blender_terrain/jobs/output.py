@@ -169,7 +169,7 @@ def build_result_payload(
 
 def _source_payload(layer: AcquiredRasterLayer, catalog: Catalog) -> dict[str, object]:
     product = catalog.product(layer.product_id)
-    return {
+    payload: dict[str, object] = {
         "provider_id": layer.provider_id,
         "product_id": layer.product_id,
         "kind": layer.kind.value,
@@ -178,6 +178,24 @@ def _source_payload(layer: AcquiredRasterLayer, catalog: Catalog) -> dict[str, o
         "paths": [str(path) for path in layer.paths],
         "auxiliary_paths": [str(path) for path in layer.auxiliary_paths],
     }
+    manifest = _source_manifest(layer)
+    if manifest is not None:
+        payload["manifest"] = manifest
+    return payload
+
+
+def _source_manifest(acquired: AcquiredRasterLayer) -> dict[str, object] | None:
+    path = next(
+        (path for path in acquired.auxiliary_paths if path.name == "source_manifest.json"),
+        None,
+    )
+    if path is None:
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _uncertainty_summary(acquired: AcquiredRasterLayer) -> dict[str, object] | None:

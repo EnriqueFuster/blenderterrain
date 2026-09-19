@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
+from ..io.atomic import finalize_part
 from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
 from ..io.imagery_window import imagery_window_is_valid, write_imagery_window
 from ..io.random_access import HttpRangeReader
@@ -44,6 +46,7 @@ _ASSET_HOST = "e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com"
 _MAXIMUM_RESPONSE_BYTES = 5 * 1024 * 1024
 _MAXIMUM_SOURCE_BYTES = 300_000_000
 _MAXIMUM_WINDOW_PIXELS = 16_777_216
+_SCENES_PER_GRID = 2
 _GRID_CODE = re.compile(r"_T(?P<code>\d{2}[A-Z]{3})_")
 
 
@@ -100,6 +103,12 @@ class Sentinel2Scene:
     green_url: str
     blue_url: str
     scl_url: str
+    red_scale: float = 1.0
+    red_offset: float = 0.0
+    green_scale: float = 1.0
+    green_offset: float = 0.0
+    blue_scale: float = 1.0
+    blue_offset: float = 0.0
 
     @property
     def grid_code(self) -> str:
@@ -169,13 +178,17 @@ def parse_sentinel2_search(payload: bytes) -> tuple[Sentinel2Scene, ...]:
 def select_sentinel2_scenes(
     scenes: tuple[Sentinel2Scene, ...], roi: BBoxWGS84
 ) -> tuple[Sentinel2Scene, ...]:
-    """Choose the clearest intersecting acquisition for each Sentinel grid tile."""
+    """Choose up to two clear acquisitions per grid tile for cloud filling."""
 
-    selected: dict[str, Sentinel2Scene] = {}
+    counts: dict[str, int] = {}
+    selected: list[Sentinel2Scene] = []
     for scene in scenes:
         if _intersection(scene.bounds, roi) is not None:
-            selected.setdefault(scene.grid_code, scene)
-    result = tuple(selected.values())
+            count = counts.get(scene.grid_code, 0)
+            if count < _SCENES_PER_GRID:
+                selected.append(scene)
+                counts[scene.grid_code] = count + 1
+    result = tuple(selected)
     if not result or not _rectangles_cover(roi, tuple(scene.bounds for scene in result)):
         raise NoCoverageError("Sentinel-2 scenes do not cover the complete ROI")
     return result
@@ -235,6 +248,9 @@ def _parse_scene(feature: Any) -> Sentinel2Scene:
         properties = feature["properties"]
         assets = feature["assets"]
         bbox = feature["bbox"]
+        red_scale, red_offset = _asset_transform(assets["red"])
+        green_scale, green_offset = _asset_transform(assets["green"])
+        blue_scale, blue_offset = _asset_transform(assets["blue"])
         scene = Sentinel2Scene(
             id=feature["id"],
             acquired_at=properties["datetime"],
@@ -245,6 +261,12 @@ def _parse_scene(feature: Any) -> Sentinel2Scene:
             green_url=assets["green"]["href"],
             blue_url=assets["blue"]["href"],
             scl_url=assets["scl"]["href"],
+            red_scale=red_scale,
+            red_offset=red_offset,
+            green_scale=green_scale,
+            green_offset=green_offset,
+            blue_scale=blue_scale,
+            blue_offset=blue_offset,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ProviderContractChanged("Sentinel-2 STAC item schema changed") from exc
@@ -258,6 +280,27 @@ def _parse_scene(feature: Any) -> Sentinel2Scene:
     ):
         raise ProviderContractChanged("Sentinel-2 STAC item values are unsupported")
     return scene
+
+
+def _asset_transform(asset: object) -> tuple[float, float]:
+    if not isinstance(asset, dict):
+        raise ProviderContractChanged("Sentinel-2 band metadata is invalid")
+    bands = asset.get("raster:bands", asset.get("bands"))
+    if not isinstance(bands, list) or not bands or not isinstance(bands[0], dict):
+        raise ProviderContractChanged("Sentinel-2 band scale or offset is missing")
+    try:
+        band = bands[0]
+        raw_scale = band.get("scale", band.get("raster:scale"))
+        raw_offset = band.get("offset", band.get("raster:offset", 0.0))
+        if raw_scale is None or raw_offset is None:
+            raise TypeError
+        scale = float(raw_scale)
+        offset = float(raw_offset)
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError) as exc:
+        raise ProviderContractChanged("Sentinel-2 band scale or offset is missing") from exc
+    if not np.isfinite(scale) or scale <= 0 or not np.isfinite(offset):
+        raise ProviderContractChanged("Sentinel-2 band scale or offset is invalid")
+    return scale, offset
 
 
 def _scene_urls(scene: Sentinel2Scene) -> tuple[str, ...]:
@@ -329,7 +372,7 @@ class Sentinel2Acquirer:
         start, end, cloud = _temporal_policy(selection.temporal_policy)
         scenes = discover_sentinel2_scenes(roi, selection.temporal_policy, self._catalog)
         key = hashlib.sha256(
-            f"window-v2|{roi.west},{roi.south},{roi.east},{roi.north}|{start}|{end}|{cloud}".encode()
+            f"window-v3|{roi.west},{roi.south},{roi.east},{roi.north}|{start}|{end}|{cloud}".encode()
         ).hexdigest()[:20]
         target = cache_directory / PROVIDER_ID / PRODUCT_ID / key
         paths: list[Path] = []
@@ -356,8 +399,15 @@ class Sentinel2Acquirer:
                 cached = False
             paths.append(path)
             _report(progress_callback, completed, len(scenes), path, cached)
+        manifest = target / "source_manifest.json"
+        _write_scene_manifest(manifest, selection.temporal_policy, scenes)
         return AcquiredRasterLayer(
-            PROVIDER_ID, PRODUCT_ID, DatasetKind.IMAGERY, tuple(paths), cached_count
+            PROVIDER_ID,
+            PRODUCT_ID,
+            DatasetKind.IMAGERY,
+            tuple(paths),
+            cached_count,
+            (manifest,),
         )
 
     def _read_scene(
@@ -389,10 +439,22 @@ class Sentinel2Acquirer:
         classification = _resample_nearest(
             scl, scl_bounds, exact, (red.shape[0], red.shape[1])
         )
+        invalid = (
+            (red == readers["B04"].nodata)
+            | (green == readers["B03"].nodata)
+            | (blue == readers["B02"].nodata)
+        )
+        red = red * scene.red_scale + scene.red_offset
+        green = green * scene.green_scale + scene.green_offset
+        blue = blue * scene.blue_scale + scene.blue_offset
+        nodata = -9999.0
+        red[invalid] = nodata
+        green[invalid] = nodata
+        blue[invalid] = nodata
         return (
             np.stack((blue, green, red, classification), axis=2).astype(np.float32),
             exact,
-            readers["B04"].nodata,
+            nodata,
         )
 
 
@@ -405,6 +467,50 @@ def _remote_reader(url: str, cache_directory: Path) -> BigTiffFloatTileReader:
             maximum_source_bytes=_MAXIMUM_SOURCE_BYTES,
         )
     )
+
+
+def _write_scene_manifest(
+    path: Path, temporal_policy: str | None, scenes: tuple[Sentinel2Scene, ...]
+) -> None:
+    payload = {
+        "provider_id": PROVIDER_ID,
+        "product_id": PRODUCT_ID,
+        "temporal_policy": temporal_policy,
+        "scenes": [
+            {
+                "id": scene.id,
+                "grid_code": scene.grid_code,
+                "acquired_at": scene.acquired_at,
+                "cloud_cover_percent": scene.cloud_cover_percent,
+                "epsg": scene.epsg,
+                "rgb_scale": [scene.red_scale, scene.green_scale, scene.blue_scale],
+                "rgb_offset": [scene.red_offset, scene.green_offset, scene.blue_offset],
+                "bounds_wgs84": [
+                    scene.bounds.west,
+                    scene.bounds.south,
+                    scene.bounds.east,
+                    scene.bounds.north,
+                ],
+            }
+            for scene in scenes
+        ],
+    }
+    encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if path.is_file():
+        if path.read_bytes() != encoded:
+            raise RasterFormatError("Cached Sentinel-2 provenance does not match its scenes")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")
+    try:
+        with part.open("xb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        finalize_part(part, path)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
 
 
 def _intersection(left: BBoxWGS84, right: BBoxWGS84) -> BBoxWGS84 | None:

@@ -4,7 +4,11 @@ import numpy as np
 import pytest
 
 from blender_terrain.core import BBoxWGS84, create_import_plan, geographic_source_bounds
-from blender_terrain.core.imagery_processing import _worldcover_rgb, process_worldcover_imagery
+from blender_terrain.core.imagery_processing import (
+    _worldcover_rgb,
+    process_imagery_windows,
+    process_worldcover_imagery,
+)
 from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.imagery_window import write_imagery_window
 from blender_terrain.io.png_validation import validate_png
@@ -128,3 +132,14 @@ def test_sentinel_scene_classification_masks_cloud_pixels(tmp_path: Path) -> Non
 
     with pytest.raises(NoCoverageError, match="no usable pixels"):
         process_worldcover_imagery((source,), plan, tmp_path / "cloud-output")
+
+    clear = tmp_path / "sentinel-clear.npy"
+    clear_data = np.full((32, 32, 4), (0.1, 0.2, 0.3, 4.0), np.float32)
+    write_imagery_window(clear, clear_data, bounds, 0.0, ("B02", "B03", "B04", "SCL"))
+
+    outputs = process_imagery_windows(
+        (source, clear), plan, tmp_path / "filled-output", "sentinel2_l2a"
+    )
+
+    assert outputs
+    assert all(output.path.is_file() for output in outputs)
