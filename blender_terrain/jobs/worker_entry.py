@@ -18,6 +18,7 @@ def main() -> int:
         run_cnig_availability_job,
         run_cnig_discovery_job,
     )
+    from blender_terrain.jobs.imagery_discovery import run_imagery_discovery_job
     from blender_terrain.jobs.local import (
         run_local_delivery_job,
         run_local_discovery_job,
@@ -27,6 +28,8 @@ def main() -> int:
     job_path = Path(arguments[0]).resolve()
     if len(arguments) == 2 and arguments[1] == "acquisition":
         run_confirmed_acquisition_job(job_path)
+    elif len(arguments) == 2 and arguments[1] == "imagery_discovery":
+        run_imagery_discovery_job(job_path)
     elif len(arguments) == 2 and arguments[1] == "cnig_availability":
         run_cnig_availability_job(job_path)
     elif len(arguments) == 2 and arguments[1] == "local_discovery":

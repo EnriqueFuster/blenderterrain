@@ -677,9 +677,14 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
         self.report(
             {"INFO"},
             (
-                "Source windows estimated; coverage checked during download"
-                if load_bundled_catalog().product(properties.product).provider_id != "ign_cnig"
-                else "Source discovery started in the background"
+                "Source discovery started in the background"
+                if properties.job_active
+                else (
+                    "Source windows estimated; coverage checked during download"
+                    if load_bundled_catalog().product(properties.product).provider_id
+                    != "ign_cnig"
+                    else "Source discovery started in the background"
+                )
             ),
         )
         return {"FINISHED"}

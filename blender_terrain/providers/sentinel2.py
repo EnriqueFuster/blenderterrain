@@ -216,6 +216,20 @@ class Sentinel2CatalogClient:
         return parse_sentinel2_search(payload)
 
 
+def discover_sentinel2_scenes(
+    roi: BBoxWGS84,
+    temporal_policy: str | None,
+    catalog: Sentinel2CatalogClient | None = None,
+) -> tuple[Sentinel2Scene, ...]:
+    """Resolve a policy and return the selected scenes that cover the ROI."""
+
+    start, end, cloud = _temporal_policy(temporal_policy)
+    scenes = (catalog or Sentinel2CatalogClient()).search(roi, start, end, cloud)
+    if not scenes:
+        raise NoCoverageError("Sentinel-2 has no scenes matching the temporal policy")
+    return select_sentinel2_scenes(scenes, roi)
+
+
 def _parse_scene(feature: Any) -> Sentinel2Scene:
     try:
         properties = feature["properties"]
@@ -313,10 +327,7 @@ class Sentinel2Acquirer:
         ):
             raise ValueError("Sentinel-2 acquirer received an incompatible selection")
         start, end, cloud = _temporal_policy(selection.temporal_policy)
-        search_results = self._catalog.search(roi, start, end, cloud)
-        if not search_results:
-            raise NoCoverageError("Sentinel-2 has no scenes matching the temporal policy")
-        scenes = select_sentinel2_scenes(search_results, roi)
+        scenes = discover_sentinel2_scenes(roi, selection.temporal_policy, self._catalog)
         key = hashlib.sha256(
             f"window-v2|{roi.west},{roi.south},{roi.east},{roi.north}|{start}|{end}|{cloud}".encode()
         ).hexdigest()[:20]

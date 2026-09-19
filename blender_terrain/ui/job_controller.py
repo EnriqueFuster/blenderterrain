@@ -100,7 +100,7 @@ def recover_interrupted_jobs() -> int:
         properties.job_state = JobState.INVALID_DATA.value
         properties.job_progress = 1.0
         properties.job_message = "Previous background task was interrupted; retry when ready"
-        if mode in {"cnig_discovery", "local_discovery"}:
+        if mode in {"cnig_discovery", "local_discovery", "imagery_discovery"}:
             properties.discovery_ready = False
             properties.discovery_summary = ""
         elif mode == "cnig_availability":
@@ -143,6 +143,9 @@ def start_discovery(context: bpy.types.Context) -> None:
             "local_discovery",
             "Starting local raster validation",
         )
+        return
+    if properties.imagery_product == SENTINEL2_PRODUCT_ID:
+        _start_imagery_discovery_worker(context, properties)
         return
     product = load_bundled_catalog().product(properties.product)
     if product.provider_id != "ign_cnig":
@@ -198,34 +201,63 @@ def _start_acquisition_worker(context: bpy.types.Context, properties: Any) -> No
         raise UserInputError("Another BlenderTerrain job is already running")
     if not bpy.app.online_access:
         raise UserInputError("Blender online access is disabled in Preferences")
-    region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
-    plan = _acquisition_plan_from_properties(properties, region)
-    product = load_bundled_catalog().product(properties.product)
     cache_directory = configured_cache_directory(context)
     task_id = str(uuid4())
     if not properties.import_id:
         properties.import_id = str(uuid4())
     job_directory = cache_directory / "jobs" / task_id
-    elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
     write_acquisition_job(
         job_directory / "job.json",
-        AcquisitionJob(
-            task_id,
-            properties.import_id,
-            plan,
-            elevation_limit,
-            region,
-            properties.manual_tile_rows if properties.tiling_mode == "MANUAL" else None,
-            properties.manual_tile_columns if properties.tiling_mode == "MANUAL" else None,
-            imagery_limit,
-        ),
+        _acquisition_job_from_properties(properties, task_id),
     )
     _launch_worker(
         context,
         properties,
         "acquisition",
-        f"Starting {product.name} acquisition",
+        f"Starting {properties.product} acquisition",
         job_directory,
+    )
+
+
+def _start_imagery_discovery_worker(context: bpy.types.Context, properties: Any) -> None:
+    """Launch dynamic imagery discovery without blocking Blender's UI."""
+
+    global _active_job
+    if _active_job is not None:
+        raise UserInputError("Another BlenderTerrain job is already running")
+    if not bpy.app.online_access:
+        raise UserInputError("Blender online access is disabled in Preferences")
+    cache_directory = configured_cache_directory(context)
+    task_id = str(uuid4())
+    if not properties.import_id:
+        properties.import_id = str(uuid4())
+    job_directory = cache_directory / "jobs" / task_id
+    write_acquisition_job(
+        job_directory / "job.json",
+        _acquisition_job_from_properties(properties, task_id),
+    )
+    _launch_worker(
+        context,
+        properties,
+        "imagery_discovery",
+        "Searching Sentinel-2 scenes",
+        job_directory,
+    )
+
+
+def _acquisition_job_from_properties(properties: Any, task_id: str) -> AcquisitionJob:
+    region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
+    plan = _acquisition_plan_from_properties(properties, region)
+    elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
+    return AcquisitionJob(
+        task_id,
+        properties.import_id,
+        plan,
+        elevation_limit,
+        region,
+        properties.manual_tile_rows if properties.tiling_mode == "MANUAL" else None,
+        properties.manual_tile_columns if properties.tiling_mode == "MANUAL" else None,
+        imagery_limit,
     )
 
 
@@ -359,11 +391,12 @@ def retry_last_job(context: bpy.types.Context) -> None:
         "cnig_discovery",
         "cnig_availability",
         "acquisition",
+        "imagery_discovery",
         "local_discovery",
         "local_delivery",
     }:
         raise UserInputError("The previous job mode cannot be retried")
-    if mode == "acquisition":
+    if mode in {"acquisition", "imagery_discovery"}:
         previous_acquisition = read_acquisition_job(resolved_previous)
         if not bpy.app.online_access:
             raise UserInputError("Blender online access is disabled in Preferences")
@@ -460,7 +493,7 @@ def _launch_worker(
     properties.job_event_history = json.dumps([{"message": message, "progress": 0.0}])
     properties.last_job_path = str(job_path)
     properties.last_job_mode = mode
-    if mode in {"cnig_discovery", "local_discovery"}:
+    if mode in {"cnig_discovery", "local_discovery", "imagery_discovery"}:
         properties.discovery_summary = ""
     if not bpy.app.timers.is_registered(_poll_active_job):
         bpy.app.timers.register(_poll_active_job, first_interval=_POLL_INTERVAL_SECONDS)
@@ -628,6 +661,25 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
                 str(warnings[0]) if warnings else "Product availability check completed"
             )
             return
+        if active.mode == "imagery_discovery":
+            sentinel = result.get("sentinel2", {})
+            if not isinstance(sentinel, dict):
+                sentinel = {}
+            count = int(sentinel.get("scene_count", 0) or 0)
+            earliest = str(sentinel.get("earliest_acquisition", ""))[:10]
+            latest = str(sentinel.get("latest_acquisition", ""))[:10]
+            minimum_cloud = float(sentinel.get("minimum_cloud_percent", 0.0) or 0.0)
+            maximum_cloud = float(sentinel.get("maximum_cloud_percent", 0.0) or 0.0)
+            properties.discovered_file_count = count
+            properties.discovery_summary = (
+                f"{properties.product} elevation; Sentinel-2: {count} scene(s), "
+                f"{earliest} to {latest}, cloud {minimum_cloud:g}-{maximum_cloud:g}%"
+            )
+            if properties.bathymetry_mode == "GEBCO":
+                properties.discovery_summary += "; GEBCO bathymetry"
+            properties.discovery_ready = True
+            properties.job_message = "Sentinel-2 coverage confirmed for the ROI"
+            return
         if active.mode in {"acquisition", "local_delivery"}:
             elevation_count = len(result.get("elevation_paths", []))
             imagery_count = len(result.get("imagery_paths", []))
@@ -683,7 +735,7 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
         properties.discovery_ready = True
         properties.job_message = "Source discovery completed"
     else:
-        if active.mode in {"cnig_discovery", "local_discovery"}:
+        if active.mode in {"cnig_discovery", "local_discovery", "imagery_discovery"}:
             properties.discovery_summary = ""
             properties.discovery_ready = False
         elif active.mode == "cnig_availability":
