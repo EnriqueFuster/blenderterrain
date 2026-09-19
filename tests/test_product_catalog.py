@@ -90,8 +90,21 @@ def test_environment_agency_aerial_stays_disabled_without_ecw_decoder() -> None:
 
     assert product.capabilities.kind is DatasetKind.IMAGERY
     assert product.capabilities.native_resolution_m == 0.1
+    assert not product.capabilities.supports_roi_window
+    assert not product.capabilities.supports_http_range
     assert not product.selectable
     assert any("ECW" in limitation for limitation in product.coverage.limitations)
+
+
+def test_nnrcmp_aerial_records_verified_access_constraints() -> None:
+    product = load_bundled_catalog().product("GB_NNRCMP_ORTHO_AERIAL")
+
+    assert product.capabilities.kind is DatasetKind.IMAGERY
+    assert product.capabilities.semantics is SemanticConfidence.ORTHOPHOTO
+    assert product.capabilities.requires_auth
+    assert product.coverage.requires_discovery
+    assert not product.selectable
+    assert any("session-bound" in item for item in product.coverage.limitations)
 
 
 def test_french_products_declare_executable_wms_contracts() -> None:
@@ -152,6 +165,7 @@ def test_uk_catalog_models_four_independent_authorities() -> None:
     assert {product.provider_id for product in uk} == {
         "datamap_wales",
         "environment_agency",
+        "nnrcmp",
         "osni",
         "scottish_remote_sensing",
     }

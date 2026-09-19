@@ -22,14 +22,30 @@ name = "Environment Agency Vertical Aerial Photography"
 jurisdiction = "GB-ENG"
 implementation_status = "researched"
 version = "survey archive 2006-present"
-last_verified = "2026-09-17"
+last_verified = "2026-09-19"
 endpoint = "https://environment.data.gov.uk/KB6uNVj5ZcJr7jUP/ArcGIS/rest/services/Vertical_Aerial_Photography_Catalogues/FeatureServer/0"
 evidence_urls = ["https://environment.data.gov.uk/dataset/dae203a8-ba24-4c54-bab0-866b9faadb58", "https://environment.data.gov.uk/KB6uNVj5ZcJr7jUP/ArcGIS/rest/services/Vertical_Aerial_Photography_Catalogues/FeatureServer/0"]
 reliability_score = 88
 network_cost_score = 70
 capabilities = { kind = "imagery", native_resolution_m = 0.1, semantics = "orthophoto", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = false, uncertainty_available = false, temporal = true }
-coverage = { bounds = [[-5.7, 50.0, 1.8, 55.8]], requires_discovery = true, limitations = ["Project-based rather than seamless national coverage", "Resolution varies from 0.1 m to 0.5 m", "Survey dates vary by tile", "Official downloads are grouped 5 km ZIP files containing ECW rasters", "The download endpoint does not support HTTP Range", "Blender and the bundled raster stack do not decode ECW; keep this product non-selectable until a redistributable decoder exists"] }
+coverage = { bounds = [[-5.7, 50.0, 1.8, 55.8]], requires_discovery = true, limitations = ["Project-based rather than seamless national coverage", "Resolution varies from 0.1 m to 0.5 m", "Survey dates vary by tile", "Official downloads are generated 5 km ZIP files containing ECW rasters and may exceed hundreds of MiB", "The ZIP response has no declared content length and does not support efficient raster window reads", "Rasterio 1.5.1 in the distributed runtime has JP2OpenJPEG but no ECW driver", "Keep this product non-selectable until a redistributable ECW decoder or an official open alternative exists"] }
 license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Environment Agency copyright and/or database right 2022. All rights reserved." }
+
+[[products]]
+id = "GB_NNRCMP_ORTHO_AERIAL"
+provider_id = "nnrcmp"
+name = "NNRCMP Ortho-rectified Aerial Photography"
+jurisdiction = "GB-ENG"
+implementation_status = "researched"
+version = "survey archive"
+last_verified = "2026-09-19"
+endpoint = "https://data.coastalmonitoring.org/cco/"
+evidence_urls = ["https://data.coastalmonitoring.org/", "https://data.coastalmonitoring.org/ccoresources/wms/", "https://data.channelcoast.org/ccoresources/"]
+reliability_score = 78
+network_cost_score = 70
+capabilities = { kind = "imagery", native_resolution_m = 0.2, semantics = "orthophoto", authoritative = true, acquisition_mode = "catalog_tiles", supports_roi_window = false, supports_http_range = false, requires_auth = true, uncertainty_available = false, temporal = true }
+coverage = { bounds = [[-6.5, 49.8, 2.0, 55.9]], requires_discovery = true, limitations = ["Coastal surveys only; the bounding envelope is not a coverage footprint", "Resolution and acquisition date vary by survey", "The catalogue advertises ECW and JP2 imagery plus georeferencing sidecars", "WMS access requires a registered NNRCMP account", "The public map viewer uses session-bound internal requests rather than a documented spatial catalogue API", "Keep this product non-selectable until authenticated discovery and one real download are validated"] }
+license = { identifier = "OGL-UK-3.0", commercial_use = true, derivatives = true, redistribution = true, share_alike = false, attribution_required = true, attribution_text = "Acknowledge the copyright owner and Regional Coastal Monitoring Programme stated in the downloaded asset metadata." }
 
 [[products]]
 id = "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN"
