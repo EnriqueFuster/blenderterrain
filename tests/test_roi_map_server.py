@@ -22,13 +22,13 @@ def test_map_server_returns_config_and_accepts_one_polygon() -> None:
             config = json.load(response)
         assert config["mode"] == "POLYGON"
         assert config["bounds"]["west"] == -4
-        assert config["default_layer"] == "PNOA"
+        assert config["default_layer"] == "WORLD_IMAGERY"
         assert [layer["id"] for layer in config["layers"]] == [
-            "PNOA",
-            "RELIEF",
-            "IGN_BASE",
+            "WORLD_IMAGERY",
             "OSM",
         ]
+        assert config["layers"][0]["max_zoom"] == 19
+        assert all(layer["max_zoom"] >= 18 for layer in config["layers"])
 
         geometry = {
             "type": "Polygon",

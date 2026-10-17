@@ -19,37 +19,15 @@ MAX_MAP_RESULT_BYTES = 2 * 1024 * 1024
 _ASSET_DIRECTORY = Path(__file__).parents[1] / "assets"
 _MAP_LAYERS = (
     {
-        "id": "PNOA",
-        "name": "PNOA Orthophoto (Aerial)",
+        "id": "WORLD_IMAGERY",
+        "name": "World Imagery",
         "url": (
-            "https://www.ign.es/wmts/pnoa-ma?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
-            "&LAYER=OI.OrthoimageCoverage&STYLE=default&FORMAT=image/jpeg"
-            "&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            "World_Imagery/MapServer/tile/{z}/{y}/{x}"
         ),
-        "attribution": "© Instituto Geográfico Nacional",
-        "attribution_url": "https://www.ign.es/",
-    },
-    {
-        "id": "RELIEF",
-        "name": "IGN Physical Relief",
-        "url": (
-            "https://servicios.idee.es/wmts/mdt?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
-            "&LAYER=Relieve&STYLE=Default&FORMAT=image/jpeg"
-            "&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"
-        ),
-        "attribution": "© Instituto Geográfico Nacional",
-        "attribution_url": "https://www.ign.es/",
-    },
-    {
-        "id": "IGN_BASE",
-        "name": "IGN Topographic Map",
-        "url": (
-            "https://www.ign.es/wmts/ign-base?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
-            "&LAYER=IGNBaseTodo&STYLE=default&FORMAT=image/jpeg"
-            "&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"
-        ),
-        "attribution": "© Instituto Geográfico Nacional",
-        "attribution_url": "https://www.ign.es/",
+        "attribution": "Sources: Esri, Maxar, Earthstar Geographics, GIS User Community",
+        "attribution_url": "https://www.esri.com/",
+        "max_zoom": 19,
     },
     {
         "id": "OSM",
@@ -57,6 +35,7 @@ _MAP_LAYERS = (
         "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         "attribution": "© OpenStreetMap contributors",
         "attribution_url": "https://www.openstreetmap.org/copyright",
+        "max_zoom": 19,
     },
 )
 
@@ -130,7 +109,7 @@ def _handler_for(session: ROIMapSession) -> type[BaseHTTPRequestHandler]:
                             "east": session.initial_bounds.east,
                             "north": session.initial_bounds.north,
                         },
-                        "default_layer": "PNOA",
+                        "default_layer": "WORLD_IMAGERY",
                         "layers": _MAP_LAYERS,
                     }
                 )
@@ -183,8 +162,8 @@ def _handler_for(session: ROIMapSession) -> type[BaseHTTPRequestHandler]:
             self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'self'; img-src https://tile.openstreetmap.org https://www.ign.es "
-                "https://servicios.idee.es data:; "
+                "default-src 'self'; img-src https://tile.openstreetmap.org "
+                "https://server.arcgisonline.com data:; "
                 "style-src 'self' 'unsafe-inline'",
             )
             self.end_headers()

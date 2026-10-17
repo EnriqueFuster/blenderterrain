@@ -15,41 +15,47 @@ function latToWorld(lat) {
 function worldToLon(x) { return x * 360 - 180; }
 function worldToLat(y) { return Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI; }
 function scale() { return 256 * 2 ** state.zoom; }
+function viewWidth() { return canvas.clientWidth; }
+function viewHeight() { return canvas.clientHeight; }
 function screenToGeo(x, y) {
-  return [worldToLon(state.centerX + (x - canvas.width / 2) / scale()),
-    worldToLat(state.centerY + (y - canvas.height / 2) / scale())];
+  return [worldToLon(state.centerX + (x - viewWidth() / 2) / scale()),
+    worldToLat(state.centerY + (y - viewHeight() / 2) / scale())];
 }
 function geoToScreen(point) {
-  return [(lonToWorld(point[0]) - state.centerX) * scale() + canvas.width / 2,
-    (latToWorld(point[1]) - state.centerY) * scale() + canvas.height / 2];
+  return [(lonToWorld(point[0]) - state.centerX) * scale() + viewWidth() / 2,
+    (latToWorld(point[1]) - state.centerY) * scale() + viewHeight() / 2];
 }
 
 function resize() {
-  canvas.width = innerWidth * devicePixelRatio;
-  canvas.height = innerHeight * devicePixelRatio;
+  const ratio = Math.max(1, devicePixelRatio || 1);
+  canvas.width = Math.round(innerWidth * ratio);
+  canvas.height = Math.round(innerHeight * ratio);
   canvas.style.width = `${innerWidth}px`; canvas.style.height = `${innerHeight}px`;
-  context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-  canvas.width = innerWidth; canvas.height = innerHeight; draw();
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  draw();
 }
 
 function draw() {
-  context.fillStyle = "#c9d2d8"; context.fillRect(0, 0, canvas.width, canvas.height);
+  const width = viewWidth(), height = viewHeight();
+  context.fillStyle = "#c9d2d8"; context.fillRect(0, 0, width, height);
   if (!state.activeLayer) return;
-  const count = 2 ** state.zoom, tileSize = 256;
-  const worldLeft = state.centerX - canvas.width / 2 / scale();
-  const worldTop = state.centerY - canvas.height / 2 / scale();
+  const retinaOffset = devicePixelRatio > 1 ? 1 : 0;
+  const tileZoom = Math.min(state.zoom + retinaOffset, state.activeLayer.max_zoom);
+  const count = 2 ** tileZoom, tileSize = scale() / count;
+  const worldLeft = state.centerX - width / 2 / scale();
+  const worldTop = state.centerY - height / 2 / scale();
   const firstX = Math.floor(worldLeft * count), firstY = Math.floor(worldTop * count);
-  const lastX = Math.ceil((worldLeft + canvas.width / scale()) * count);
-  const lastY = Math.ceil((worldTop + canvas.height / scale()) * count);
+  const lastX = Math.ceil((worldLeft + width / scale()) * count);
+  const lastY = Math.ceil((worldTop + height / scale()) * count);
   for (let y = firstY; y <= lastY; y++) for (let x = firstX; x <= lastX; x++) {
     if (y < 0 || y >= count) continue;
     const wrappedX = ((x % count) + count) % count;
-    const key = `${state.activeLayer.id}/${state.zoom}/${wrappedX}/${y}`;
+    const key = `${state.activeLayer.id}/${tileZoom}/${wrappedX}/${y}`;
     let image = state.tiles.get(key);
     if (!image) {
       image = new Image(); image.referrerPolicy = "no-referrer";
       image.onload = draw; image.src = state.activeLayer.url
-        .replace("{z}", state.zoom).replace("{x}", wrappedX).replace("{y}", y);
+        .replace("{z}", tileZoom).replace("{x}", wrappedX).replace("{y}", y);
       state.tiles.set(key, image);
     }
     if (image.complete && image.naturalWidth) {
@@ -118,7 +124,9 @@ canvas.addEventListener("pointerup", event => {
 canvas.addEventListener("contextmenu", event => event.preventDefault());
 canvas.addEventListener("wheel", event => { event.preventDefault(); zoom(event.deltaY < 0 ? 1 : -1); }, {passive: false});
 
-function zoom(delta) { state.zoom = Math.max(3, Math.min(18, state.zoom + delta)); draw(); }
+function zoom(delta) {
+  state.zoom = Math.max(3, Math.min(state.activeLayer.max_zoom, state.zoom + delta)); draw();
+}
 document.getElementById("zoom-in").onclick = () => zoom(1);
 document.getElementById("zoom-out").onclick = () => zoom(-1);
 document.getElementById("undo").onclick = () => { state.points.pop(); updateControls(); draw(); };
@@ -149,6 +157,7 @@ fetch(`/config?token=${encodeURIComponent(token)}`).then(response => response.js
   }
   selector.onchange = () => {
     state.activeLayer = state.layers.find(layer => layer.id === selector.value);
+    state.zoom = Math.min(state.zoom, state.activeLayer.max_zoom);
     updateAttribution(); draw();
   };
   updateAttribution();
@@ -156,7 +165,8 @@ fetch(`/config?token=${encodeURIComponent(token)}`).then(response => response.js
   state.centerX = lonToWorld((bounds.west + bounds.east) / 2);
   state.centerY = latToWorld((bounds.south + bounds.north) / 2);
   const span = Math.max(bounds.east - bounds.west, bounds.north - bounds.south);
-  state.zoom = Math.max(3, Math.min(16, Math.floor(Math.log2(300 / Math.max(span, 0.001)))));
+  state.zoom = Math.max(3, Math.min(state.activeLayer.max_zoom,
+    Math.floor(Math.log2(300 / Math.max(span, 0.001)))));
   document.getElementById("help").textContent = state.mode === "RECTANGLE"
     ? "Drag to draw a rectangle. Hold Shift and drag to pan; use the wheel to zoom."
     : "Click to add polygon vertices. Use Undo for the last point; hold Shift and drag to pan.";
