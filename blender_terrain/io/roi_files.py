@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
-from ..core.crs import CRSInfo
-from ..core.projection import ProjectedPoint, project_utm_to_wgs84
+from pyproj import CRS, Transformer
+from pyproj.exceptions import CRSError, ProjError
+
 from ..core.roi import PolygonWGS84, RegionOfInterest, closed_ring
 from ..errors import UserInputError
 from .geopackage import read_geopackage_roi
@@ -232,50 +233,27 @@ def _find_projection_file(source: Path) -> Path | None:
 
 
 def _shapefile_coordinate_converter(wkt: str) -> Callable[[float, float], tuple[float, float]]:
-    normalized = wkt.upper()
-    authority_codes = {
-        int(value)
-        for value in re.findall(
+    try:
+        source = CRS.from_wkt(wkt)
+    except CRSError:
+        matches = re.findall(
             r'(?:AUTHORITY|ID)\s*\[\s*["\']EPSG["\']\s*,\s*["\']?(\d+)',
-            normalized,
+            wkt,
+            re.IGNORECASE,
         )
-    }
-    geographic = 4326 in authority_codes or 4258 in authority_codes
-    if not authority_codes:
-        geographic = "WGS_1984" in normalized or (
-            "ETRS_1989" in normalized and "PROJCS" not in normalized
-        )
-    if geographic:
+        if not matches:
+            raise UserInputError("Shapefile CRS has no recognized EPSG identifier") from None
+        source = CRS.from_epsg(int(matches[-1]))
+    if source.to_epsg() == 4326:
         return lambda x, y: (x, y)
-
-    epsg_to_zone = {
-        4083: 28,
-        25828: 28,
-        25829: 29,
-        25830: 30,
-        25831: 31,
-        32628: 28,
-        32629: 29,
-        32630: 30,
-        32631: 31,
-    }
-    selected = next((code for code in authority_codes if code in epsg_to_zone), None)
-    if selected is None:
-        match = re.search(r"UTM[^\d]*(?:ZONE[^\d]*)?(2[89]|3[01])\s*N?", normalized)
-        if match:
-            zone = int(match.group(1))
-            selected = 25800 + zone
-        else:
-            raise UserInputError(
-                "Unsupported Shapefile CRS; export as EPSG:4326, 4258, 4083, "
-                "25828-25831, or 32628-32631"
-            )
-    zone = epsg_to_zone.get(selected, selected - 25800)
-    crs = CRSInfo(selected, f"Imported UTM zone {zone}N", "Imported", zone)
+    transformer = Transformer.from_crs(source, 4326, always_xy=True)
 
     def convert(easting: float, northing: float) -> tuple[float, float]:
-        point = project_utm_to_wgs84(ProjectedPoint(easting, northing, selected), crs)
-        return point.longitude, point.latitude
+        try:
+            longitude, latitude = transformer.transform(easting, northing, errcheck=True)
+        except ProjError as exc:
+            raise UserInputError("Shapefile coordinate cannot be transformed") from exc
+        return float(longitude), float(latitude)
 
     return convert
 

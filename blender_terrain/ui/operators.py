@@ -29,7 +29,7 @@ from ..core.cache_inventory import clear_cache, inspect_cache
 from ..errors import BlenderTerrainError, UserInputError
 from ..io.roi_files import read_roi_file
 from ..io.roi_map_server import ROIMapSession
-from ..providers.registry import projected_work_areas
+from ..providers.registry import projected_work_areas, supports_catalog_availability
 from . import job_controller
 from .terrain_bake import bake_and_merge_terrain
 from .terrain_builder import (
@@ -273,13 +273,12 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     )
             else:
                 bounds = _bounds_from_properties(properties, store_derived=True)
-            if properties.elevation_source == "CNIG":
+            if properties.elevation_source == "ONLINE":
                 _refresh_available_products(properties, bounds)
             catalog_product = load_bundled_catalog().product(properties.product)
-            portable_product = catalog_product.provider_id != "ign_cnig"
             if (
-                properties.elevation_source == "CNIG"
-                and not portable_product
+                properties.elevation_source == "ONLINE"
+                and supports_catalog_availability(catalog_product.provider_id)
                 and _product_availability_status(properties, properties.product) == "NO_COVERAGE"
             ):
                 raise UserInputError(
@@ -296,7 +295,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 ),
                 use_imagery=(
                     properties.imagery_product != "NONE"
-                    and properties.elevation_source == "CNIG"
+                    and properties.elevation_source == "ONLINE"
                 ),
                 imagery_gsd_metres=(
                     None
@@ -398,11 +397,11 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
         # if properties.resource_profile == "LARGE":
         #     warnings.append("Large profile can exhaust system or GPU memory")
         properties.planning_warning = " | ".join(warnings)
-        imagery_name = {
-            "ESA_WORLDCOVER_S2_2021": "WorldCover",
-            "FR_BD_ORTHO": "BD ORTHO",
-            "SENTINEL2_L2A": "Sentinel-2 L2A",
-        }.get(properties.imagery_product, "PNOA")
+        imagery_name = (
+            ""
+            if properties.imagery_product == "NONE"
+            else load_bundled_catalog().product(properties.imagery_product).name
+        )
         properties.imagery_summary = (
             "Imagery disabled"
             if plan.imagery is None
@@ -421,11 +420,12 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
     """Restrict the online product selector to catalog candidates covering the ROI."""
 
     catalog = load_bundled_catalog()
-    valid_ids = {
-        candidate.product.id
+    elevation_candidates = tuple(
+        candidate
         for kind in (DatasetKind.DTM, DatasetKind.DSM)
         for candidate in discover_candidates(catalog, bounds, kind).valid
-    }
+    )
+    valid_ids = {candidate.product.id for candidate in elevation_candidates}
     if not valid_ids:
         raise UserInputError("No implemented elevation product covers this ROI")
     imagery_candidates = discover_candidates(catalog, bounds, DatasetKind.IMAGERY)
@@ -442,30 +442,7 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
         for candidate in imagery_candidates.unavailable
     ]
     current = properties.product
-    ordered_ids = [
-        product_id
-        for product_id in (
-            "MDT02",
-            "MDT50CM",
-            "MDT05",
-            "MDT25",
-            "MDT200",
-            "MDS50CM",
-            "MDS02",
-            "MDS05",
-            "FR_RGE_ALTI_1M",
-            "FR_MNS_CORREL_50CM",
-            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
-            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
-            "GB_WLS_DMW_LIDAR_1M_32F_DTM",
-            "GB_WLS_DMW_LIDAR_1M_32F_DSM",
-            "GB_SCT_SRSP_PHASE1_DTM",
-            "GB_SCT_SRSP_PHASE1_DSM",
-            "COPERNICUS_GLO30_2021",
-            "GEDTM30_V11",
-        )
-        if product_id in valid_ids
-    ]
+    ordered_ids = list(dict.fromkeys(item.product.id for item in elevation_candidates))
     properties.internal_update = True
     try:
         properties.available_product_ids_json = json.dumps(ordered_ids)
@@ -474,21 +451,9 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
         properties.unavailable_imagery_json = json.dumps(unavailable_imagery)
         if properties.imagery_product not in imagery_ids | {"NONE"}:
             properties.imagery_product = (
-                "PNOA_MA"
-                if "PNOA_MA" in imagery_ids
-                else (
-                    "FR_BD_ORTHO"
-                    if "FR_BD_ORTHO" in imagery_ids
-                    else (
-                        "SENTINEL2_L2A"
-                        if "SENTINEL2_L2A" in imagery_ids
-                        else (
-                            "ESA_WORLDCOVER_S2_2021"
-                            if "ESA_WORLDCOVER_S2_2021" in imagery_ids
-                            else "NONE"
-                        )
-                    )
-                )
+                "NONE"
+                if imagery_candidates.recommended is None
+                else imagery_candidates.recommended.product.id
             )
     finally:
         properties.internal_update = False
@@ -693,8 +658,9 @@ class BLENDERTERRAIN_OT_discover_sources(bpy.types.Operator):
                 if properties.job_active
                 else (
                     "Source windows estimated; coverage checked during download"
-                    if load_bundled_catalog().product(properties.product).provider_id
-                    != "ign_cnig"
+                    if not supports_catalog_availability(
+                        load_bundled_catalog().product(properties.product).provider_id
+                    )
                     else "Source discovery started in the background"
                 )
             ),

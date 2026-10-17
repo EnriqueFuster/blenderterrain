@@ -39,13 +39,25 @@ class UTMSelectionTests(unittest.TestCase):
 
         self.assertEqual(len(work_areas), 1)
         self.assertEqual(work_areas[0].crs.epsg, 32631)
-        self.assertEqual(work_areas[0].crs.datum, "WGS84")
+        self.assertEqual(work_areas[0].crs.datum, "World Geodetic System 1984 ensemble")
 
     def test_selects_native_crs_for_mainland_balearic_and_canary_bounds(self) -> None:
         examples = (
-            (BBoxWGS84(-3.8, 40.3, -3.6, 40.5), 25830, "ETRS89"),
-            (BBoxWGS84(2.5, 39.4, 2.8, 39.7), 25831, "ETRS89"),
-            (BBoxWGS84(-16.7, 28.0, -16.4, 28.3), 4083, "REGCAN95"),
+            (
+                BBoxWGS84(-3.8, 40.3, -3.6, 40.5),
+                25830,
+                "European Terrestrial Reference System 1989 ensemble",
+            ),
+            (
+                BBoxWGS84(2.5, 39.4, 2.8, 39.7),
+                25831,
+                "European Terrestrial Reference System 1989 ensemble",
+            ),
+            (
+                BBoxWGS84(-16.7, 28.0, -16.4, 28.3),
+                4083,
+                "Red Geodesica de Canarias 1995",
+            ),
         )
         for bounds, epsg, datum in examples:
             with self.subTest(epsg=epsg):

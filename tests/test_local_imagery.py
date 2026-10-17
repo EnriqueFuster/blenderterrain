@@ -5,6 +5,7 @@ import zlib
 from pathlib import Path
 
 import pytest
+from pyproj import CRS
 
 from blender_terrain.core import inspect_local_imagery
 from blender_terrain.errors import UserInputError
@@ -28,6 +29,22 @@ def test_inspects_georeferenced_local_png(tmp_path: Path) -> None:
     assert inspection.height == 3
     assert inspection.gsd_metres == 1.0
     assert inspection.bounds == ProjectedBounds(100.0, 198.0, 102.0, 201.0, 25830)
+
+
+def test_accepts_projected_crs_outside_original_country_support(tmp_path: Path) -> None:
+    path = tmp_path / "uk_ortho.png"
+    path.write_bytes(_png_file(2, 2))
+    path.with_suffix(".pgw").write_text(
+        "1\n0\n0\n-1\n530000.5\n180000.5\n", encoding="utf-8"
+    )
+    path.with_suffix(".prj").write_text(CRS.from_epsg(27700).to_wkt(), encoding="utf-8")
+
+    inspection = inspect_local_imagery(path)
+
+    assert inspection.bounds.epsg == 27700
+    assert inspection.bounds == ProjectedBounds(
+        530000.0, 179999.0, 530002.0, 180001.0, 27700
+    )
 
 
 def test_requires_world_and_projection_sidecars(tmp_path: Path) -> None:

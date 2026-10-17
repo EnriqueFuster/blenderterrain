@@ -11,8 +11,6 @@ from ..catalog.models import Catalog, DatasetKind
 from ..catalog.selection import (
     AcquisitionPlan,
     AcquisitionRequest,
-    LayerRequest,
-    ProductSelection,
     SelectionBundle,
 )
 from ..core import (
@@ -24,12 +22,10 @@ from ..core import (
     process_worldcover_imagery,
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
-from ..errors import JobCancelled, RasterFormatError, UserInputError
+from ..errors import RasterFormatError, UserInputError
 from ..io.png_validation import validate_png
 from ..models import ProjectedBounds
-from ..providers.pnoa_planning import plan_pnoa_tiles
-from ..providers.pnoa_wms import PNOAWMSClient
-from ..providers.registry import build_raster_acquirers
+from ..providers.registry import build_raster_acquirers, direct_imagery_preparer
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +46,6 @@ def prepare_confirmed_imagery(
     acquirer_factory: Callable[[tuple[str, ...]], dict[str, RasterAcquirer]] = (
         build_raster_acquirers
     ),
-    pnoa_factory: Callable[[], PNOAWMSClient] = PNOAWMSClient,
 ) -> PreparedImagery | None:
     """Acquire and project the explicitly confirmed imagery selection, if any."""
 
@@ -64,8 +59,9 @@ def prepare_confirmed_imagery(
     ):
         raise UserInputError("Selected imagery product is not supported by this worker")
     request = plan.request.layer(DatasetKind.IMAGERY)
-    if product.id == "PNOA_MA":
-        return _prepare_pnoa_imagery(
+    direct_preparer = direct_imagery_preparer(product.id)
+    if direct_preparer is not None:
+        acquired, tiles = direct_preparer(
             selection,
             request,
             import_plan,
@@ -73,8 +69,8 @@ def prepare_confirmed_imagery(
             transfer_callback,
             processing_callback,
             cancellation_requested,
-            pnoa_factory(),
         )
+        return PreparedImagery(acquired, tiles)
     if product.id not in {
         "ESA_WORLDCOVER_S2_2021",
         "FR_BD_ORTHO",
@@ -152,89 +148,3 @@ def _projected_wms_imagery_tiles(
             )
         )
     return tuple(outputs)
-
-
-def _prepare_pnoa_imagery(
-    selection: ProductSelection,
-    request: LayerRequest,
-    import_plan: ImportPlan,
-    output_directory: Path,
-    transfer_callback: Callable[[TransferProgress], None] | None,
-    processing_callback: Callable[[int, int], None] | None,
-    cancellation_requested: Callable[[], bool],
-    client: PNOAWMSClient,
-) -> PreparedImagery:
-    """Download already-projected PNOA tiles for one confirmed imagery selection."""
-
-    if request.kind is not DatasetKind.IMAGERY:
-        raise UserInputError("PNOA requires an imagery layer request")
-    requests = plan_pnoa_tiles(import_plan)
-    output_directory.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
-    cached_count = 0
-    if processing_callback is not None:
-        processing_callback(0, len(requests))
-    for index, tile in enumerate(requests):
-        if cancellation_requested():
-            raise JobCancelled("Imagery acquisition was cancelled")
-        path = output_directory / tile.filename
-        if path.is_file():
-            validate_png(path, tile.width, tile.height)
-            cached_count += 1
-            if transfer_callback is not None:
-                size = path.stat().st_size
-                transfer_callback(
-                    TransferProgress(
-                        DatasetKind.IMAGERY.value,
-                        index,
-                        len(requests),
-                        tile.filename,
-                        size,
-                        size,
-                        cached=True,
-                    )
-                )
-        else:
-
-            def report_download(
-                written: int,
-                expected: int | None,
-                *,
-                file_index: int = index,
-                filename: str = tile.filename,
-            ) -> None:
-                if transfer_callback is not None:
-                    transfer_callback(
-                        TransferProgress(
-                            DatasetKind.IMAGERY.value,
-                            file_index,
-                            len(requests),
-                            filename,
-                            written,
-                            expected,
-                        )
-                    )
-
-            path = client.download_png(
-                tile.bounds,
-                tile.width,
-                tile.height,
-                output_directory,
-                tile.filename,
-                progress_callback=(None if transfer_callback is None else report_download),
-            )
-        paths.append(path)
-        if processing_callback is not None:
-            processing_callback(len(paths), len(requests))
-    acquired = AcquiredRasterLayer(
-        selection.provider_id,
-        selection.product_id,
-        DatasetKind.IMAGERY,
-        tuple(paths),
-        cached_count,
-    )
-    tiles = tuple(
-        ProcessedImageryTile(path, tile.bounds, tile.width, tile.height, tile.gsd_metres)
-        for path, tile in zip(paths, requests, strict=True)
-    )
-    return PreparedImagery(acquired, tiles)

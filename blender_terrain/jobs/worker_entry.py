@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -14,32 +15,27 @@ def main() -> int:
         raise RuntimeError("Expected a job.json path and optional worker mode after --")
     if __package__ in (None, ""):
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from blender_terrain.jobs.cnig import (
-        run_cnig_availability_job,
-        run_cnig_discovery_job,
-    )
     from blender_terrain.jobs.imagery_discovery import run_imagery_discovery_job
     from blender_terrain.jobs.local import (
         run_local_delivery_job,
         run_local_discovery_job,
     )
     from blender_terrain.jobs.worker import run_confirmed_acquisition_job
+    from blender_terrain.providers.registry import provider_job_runners
 
     job_path = Path(arguments[0]).resolve()
-    if len(arguments) == 2 and arguments[1] == "acquisition":
-        run_confirmed_acquisition_job(job_path)
-    elif len(arguments) == 2 and arguments[1] == "imagery_discovery":
-        run_imagery_discovery_job(job_path)
-    elif len(arguments) == 2 and arguments[1] == "cnig_availability":
-        run_cnig_availability_job(job_path)
-    elif len(arguments) == 2 and arguments[1] == "local_discovery":
-        run_local_discovery_job(job_path)
-    elif len(arguments) == 2 and arguments[1] == "local_delivery":
-        run_local_delivery_job(job_path)
-    elif len(arguments) == 2 and arguments[1] == "cnig_discovery":
-        run_cnig_discovery_job(job_path)
-    else:
+    runners: dict[str, Callable[[Path], object]] = {
+        "acquisition": run_confirmed_acquisition_job,
+        "imagery_discovery": run_imagery_discovery_job,
+        "local_discovery": run_local_discovery_job,
+        "local_delivery": run_local_delivery_job,
+        **provider_job_runners(),
+    }
+    mode = arguments[1] if len(arguments) == 2 else ""
+    runner = runners.get(mode)
+    if runner is None:
         raise RuntimeError(f"Unsupported worker mode: {arguments[1]}")
+    runner(job_path)
     return 0
 
 

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from pathlib import Path
+from typing import Protocol
 
 from ..catalog.models import ProductRecord
-from ..core.acquisition import RasterAcquirer
+from ..catalog.selection import LayerRequest, ProductSelection
+from ..core import ImportPlan, ProcessedImageryTile, TransferProgress
+from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer
 from ..core.crs import ProjectedWorkArea
 from ..core.roi import BBoxWGS84
 from .cnig_acquisition import CnigElevationAcquirer
@@ -20,6 +24,21 @@ from .scottish_lidar import ScottishLidarAcquirer
 from .sentinel2 import Sentinel2Acquirer
 from .spain_crs import split_spain_bbox_by_utm_zone
 from .worldcover import WorldCoverAcquirer
+
+
+class DirectImageryPreparer(Protocol):
+    """Prepare imagery whose provider already returns the destination grid."""
+
+    def __call__(
+        self,
+        selection: ProductSelection,
+        request: LayerRequest,
+        import_plan: ImportPlan,
+        output_directory: Path,
+        transfer_callback: Callable[[TransferProgress], None] | None,
+        processing_callback: Callable[[int, int], None] | None,
+        cancellation_requested: Callable[[], bool],
+    ) -> tuple[AcquiredRasterLayer, tuple[ProcessedImageryTile, ...]]: ...
 
 
 def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcquirer]:
@@ -54,3 +73,30 @@ def projected_work_areas(
     if product.provider_id == "ign_cnig":
         return split_spain_bbox_by_utm_zone(roi)
     return None
+
+
+def direct_imagery_preparer(product_id: str) -> DirectImageryPreparer | None:
+    """Return the provider implementation for directly projected imagery."""
+
+    if product_id == "PNOA_MA":
+        from .pnoa_imagery import prepare_pnoa_imagery
+
+        return prepare_pnoa_imagery
+    return None
+
+
+def supports_catalog_availability(provider_id: str) -> bool:
+    """Return whether a provider implements the legacy availability probe."""
+
+    return provider_id == "ign_cnig"
+
+
+def provider_job_runners() -> dict[str, Callable[[Path], object]]:
+    """Return provider-owned legacy worker modes for the shared entry point."""
+
+    from .cnig_jobs import run_cnig_availability_job, run_cnig_discovery_job
+
+    return {
+        "provider_availability": run_cnig_availability_job,
+        "provider_discovery": run_cnig_discovery_job,
+    }

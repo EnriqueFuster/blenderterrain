@@ -4,7 +4,7 @@ import unittest
 
 from blender_terrain.core import BBoxWGS84
 from blender_terrain.core import create_import_plan as _create_import_plan
-from blender_terrain.errors import NoCoverageError, PlanningLimitExceeded, UserInputError
+from blender_terrain.errors import PlanningLimitExceeded, UserInputError
 from blender_terrain.models import ProjectedBounds
 from blender_terrain.providers.cnig_models import DatasetProduct
 from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
@@ -261,17 +261,18 @@ class ImportPlanningTests(unittest.TestCase):
         self.assertEqual([grid.bounds.epsg for grid in plan.grids], [2154])
         self.assertFalse(plan.crosses_utm_zones)
 
-    def test_rejects_lambert93_outside_metropolitan_envelope(self) -> None:
-        with self.assertRaisesRegex(NoCoverageError, "metropolitan France"):
-            create_import_plan(
-                BBoxWGS84(-61.6, 16.1, -61.5, 16.2),
-                "FR_RGE_ALTI_1M",
-                10.0,
-                False,
-                None,
-                native_resolution_override=1.0,
-                working_crs_epsg=2154,
-            )
+    def test_accepts_a_provider_selected_projected_crs_worldwide(self) -> None:
+        plan = create_import_plan(
+            BBoxWGS84(-61.6, 16.1, -61.5, 16.2),
+            "PROVIDER_PRODUCT",
+            10.0,
+            False,
+            None,
+            native_resolution_override=1.0,
+            working_crs_epsg=32620,
+        )
+
+        self.assertEqual(plan.work_areas[0].crs.epsg, 32620)
 
     def test_imagery_cannot_be_requested_finer_than_source(self) -> None:
         with self.assertRaisesRegex(UserInputError, "finer than the source"):

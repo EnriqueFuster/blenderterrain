@@ -10,7 +10,7 @@ from ..errors import RasterFormatError, UserInputError
 from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
 from ..models import ProjectedBounds
 from .crs import crs_from_epsg
-from .projection import GeographicPoint, ProjectedPoint, project_utm_to_wgs84
+from .projection import GeographicPoint, ProjectedPoint, project_to_wgs84
 from .roi import BBoxWGS84
 from .texture_mapping import bounds_fully_covered
 
@@ -75,7 +75,7 @@ def inspect_local_elevation(paths: tuple[Path, ...]) -> LocalElevationInspection
         resolutions.add(reference.pixel_width)
         total_pixels += reader.layout.width * reader.layout.height
         geographic_points.extend(
-            project_utm_to_wgs84(ProjectedPoint(easting, northing, reference.epsg), crs)
+            project_to_wgs84(ProjectedPoint(easting, northing, reference.epsg), crs)
             for easting, northing in (
                 (west, south),
                 (west, north),

@@ -6,6 +6,9 @@ import json
 
 import bpy
 
+from ..catalog.loader import load_bundled_catalog
+from ..catalog.models import AcquisitionMode
+from ..providers.registry import supports_catalog_availability
 from .terrain_controls import (
     has_selected_terrain_objects,
     import_native_subdivision_level,
@@ -28,7 +31,7 @@ class BLENDERTERRAIN_PT_main(bpy.types.Panel):
             (
                 "show_acquisition_section",
                 "1. Data Acquisition",
-                "WORLD_DATA" if properties.elevation_source == "CNIG" else "FILE_FOLDER",
+                "WORLD_DATA" if properties.elevation_source == "ONLINE" else "FILE_FOLDER",
                 _draw_data_section,
             ),
             (
@@ -142,19 +145,8 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         products_loaded = properties.available_product_ids_json != "[]"
         if products_loaded:
             layout.prop(properties, "product")
-        cnig_product = properties.product not in {
-            "COPERNICUS_GLO30_2021",
-            "GEDTM30_V11",
-            "FR_RGE_ALTI_1M",
-            "FR_MNS_CORREL_50CM",
-            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
-            "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
-            "GB_WLS_DMW_LIDAR_1M_32F_DTM",
-            "GB_WLS_DMW_LIDAR_1M_32F_DSM",
-            "GB_SCT_SRSP_PHASE1_DTM",
-            "GB_SCT_SRSP_PHASE1_DSM",
-        }
-        if products_loaded and cnig_product:
+        product = load_bundled_catalog().product(properties.product)
+        if products_loaded and supports_catalog_availability(product.provider_id):
             layout.operator("blender_terrain.check_product_availability", icon="WORLD_DATA")
         if properties.product_availability_summary:
             availability_box = layout.box()
@@ -177,7 +169,15 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         _draw_elevation_output_settings(layout, properties)
     else:
         layout.prop(properties, "imagery_product")
-        if properties.imagery_product in {"PNOA_MA", "FR_BD_ORTHO"}:
+        imagery_product = (
+            None
+            if properties.imagery_product == "NONE"
+            else load_bundled_catalog().product(properties.imagery_product)
+        )
+        if (
+            imagery_product is not None
+            and imagery_product.capabilities.acquisition_mode is AcquisitionMode.WMS
+        ):
             layout.prop(properties, "imagery_gsd", text="Resolution")
         elif properties.imagery_product == "SENTINEL2_L2A":
             dates = layout.row(align=True)
@@ -258,7 +258,7 @@ def _draw_elevation_output_settings(layout: bpy.types.UILayout, properties: obje
         row = layout.row(align=True)
         row.prop(properties, "manual_tile_rows")
         row.prop(properties, "manual_tile_columns")
-    if properties.elevation_source == "CNIG":
+    if properties.elevation_source == "ONLINE":
         layout.prop(properties, "bathymetry_mode")
 
 
@@ -289,7 +289,7 @@ def _draw_acquisition_controls(layout: bpy.types.UILayout, properties: object) -
         ),
         icon="IMPORT",
     )
-    if not bpy.app.online_access and properties.elevation_source == "CNIG":
+    if not bpy.app.online_access and properties.elevation_source == "ONLINE":
         layout.label(text="Online access is disabled in Preferences", icon="ERROR")
 
 
@@ -423,20 +423,11 @@ def _job_state_label(state: str) -> str:
 
 
 def _elevation_product_label(product_id: str) -> str:
-    return {
-        "COPERNICUS_GLO30_2021": "Copernicus GLO-30 DSM",
-        "GEDTM30_V11": "GEDTM30 v1.1 modelled DTM",
-        "FR_RGE_ALTI_1M": "RGE ALTI 1 m DTM",
-        "FR_MNS_CORREL_50CM": "MNS-Correl 50 cm DSM",
-        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM": "EA LiDAR Composite 1 m DTM",
-        "GB_WLS_DMW_LIDAR_1M_32F_DTM": "DataMapWales 1 m DTM",
-        "GB_WLS_DMW_LIDAR_1M_32F_DSM": "DataMapWales 1 m DSM",
-        "GB_SCT_SRSP_PHASE1_DTM": "Scottish LiDAR Phase 1, 1 m DTM",
-        "GB_SCT_SRSP_PHASE1_DSM": "Scottish LiDAR Phase 1, 1 m DSM",
-        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN": (
-            "EA LiDAR Composite 1 m DSM"
-        ),
-    }.get(product_id, product_id)
+    try:
+        product = load_bundled_catalog().product(product_id)
+    except KeyError:
+        return product_id
+    return f"{product.name} {product.capabilities.kind.value.upper()}"
 
 
 def _job_history(serialized: str) -> tuple[tuple[str, float | None], ...]:

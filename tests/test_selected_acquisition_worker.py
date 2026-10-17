@@ -530,7 +530,7 @@ def test_worker_prepares_confirmed_bathymetry_without_changing_provider(
 
 
 def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
     catalog = load_bundled_catalog()
     roi = BBoxWGS84(-0.381, 39.469, -0.379, 39.471)
@@ -573,13 +573,16 @@ def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
                 progress_callback(path.stat().st_size, path.stat().st_size)
             return path
 
+    monkeypatch.setattr(
+        "blender_terrain.providers.pnoa_imagery.PNOAWMSClient", FakePnoaClient
+    )
+
     prepared = prepare_confirmed_imagery(
         plan,
         catalog,
         import_plan,
         tmp_path,
         tmp_path / "imagery",
-        pnoa_factory=FakePnoaClient,
     )
 
     assert prepared is not None

@@ -209,8 +209,6 @@ def run_local_delivery_job(
                     "data_policy_url": None,
                     "license": None,
                     "retrieved_at_utc": datetime.now(UTC).isoformat(),
-                    "pnoa_wms_url": None,
-                    "pnoa_layer": None,
                 },
                 "elevation_paths": [str(path) for path in inspection.paths],
                 "imagery_paths": [] if imagery is None else [str(imagery.path)],

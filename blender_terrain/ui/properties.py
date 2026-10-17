@@ -8,94 +8,14 @@ from pathlib import Path
 import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
+from ..catalog.loader import load_bundled_catalog
+from ..catalog.models import DatasetKind, ProductRecord
 from ..errors import BlenderTerrainError
 
 _IMPORT_ITEMS_CACHE: list[tuple[str, str, str]] = []
 _GPKG_LAYER_ITEMS_CACHE: list[tuple[str, str, str]] = []
 _PRODUCT_ITEMS_CACHE: list[tuple[str, str, str, int, int]] = []
-_IMAGERY_ITEMS_CACHE: list[tuple[str, str, str]] = []
-_PRODUCT_ITEMS = (
-    ("MDT02", "DTM (MDT02, 2nd)", "2 m bare-earth terrain", 0, 1),
-    ("MDT50CM", "DTM (MDT50 cm, 3rd)", "0.5 m terrain; coverage is incomplete", 0, 2),
-    ("MDT05", "DTM (MDT05, 1st)", "5 m bare-earth terrain", 0, 3),
-    ("MDT25", "DTM (MDT25, 2nd)", "25 m bare-earth terrain", 0, 4),
-    ("MDT200", "DTM (MDT200, 2nd)", "200 m bare-earth terrain", 0, 5),
-    ("MDS50CM", "DSM (MDS50 cm, 3rd)", "0.5 m surface; coverage is incomplete", 0, 6),
-    ("MDS02", "DSM (MDS02, 2nd)", "2 m buildings and vegetation", 0, 7),
-    ("MDS05", "DSM (MDS05, 1st)", "5 m buildings and vegetation", 0, 8),
-    (
-        "COPERNICUS_GLO30_2021",
-        "DSM (Copernicus GLO-30, Global)",
-        "30 m global surface model; not a bare-earth DTM",
-        0,
-        9,
-    ),
-    (
-        "GEDTM30_V11",
-        "DTM (GEDTM30 v1.1, Global)",
-        "30 m modelled bare-earth terrain with uncertainty",
-        0,
-        10,
-    ),
-    (
-        "FR_RGE_ALTI_1M",
-        "DTM (RGE ALTI 1 m, France)",
-        "Official French derived terrain model",
-        0,
-        11,
-    ),
-    (
-        "FR_MNS_CORREL_50CM",
-        "DSM (MNS-Correl 50 cm, France)",
-        "Official French surface model with heterogeneous coverage",
-        0,
-        12,
-    ),
-    (
-        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
-        "DTM (EA LiDAR Composite 1 m, England)",
-        "Official English terrain composite; approximately 99% coverage",
-        0,
-        13,
-    ),
-    (
-        "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
-        "DSM (EA LiDAR Composite 1 m, England)",
-        "Official English last-return surface composite",
-        0,
-        14,
-    ),
-    (
-        "GB_WLS_DMW_LIDAR_1M_32F_DTM",
-        "DTM (DataMapWales 1 m, Wales)",
-        "Official Welsh terrain mosaic",
-        0,
-        15,
-    ),
-    (
-        "GB_WLS_DMW_LIDAR_1M_32F_DSM",
-        "DSM (DataMapWales 1 m, Wales)",
-        "Official Welsh surface mosaic",
-        0,
-        16,
-    ),
-    (
-        "GB_SCT_SRSP_PHASE1_DTM",
-        "DTM (Scottish LiDAR Phase 1, 1 m)",
-        "Official historic terrain tiles with sparse Scottish coverage",
-        0,
-        17,
-    ),
-    (
-        "GB_SCT_SRSP_PHASE1_DSM",
-        "DSM (Scottish LiDAR Phase 1, 1 m)",
-        "Official historic surface tiles with sparse Scottish coverage",
-        0,
-        18,
-    ),
-)
-
-
+_IMAGERY_ITEMS_CACHE: list[tuple[str, str, str, int, int]] = []
 def _product_items(
     properties: object, context: bpy.types.Context
 ) -> list[tuple[str, str, str, int, int]]:
@@ -103,32 +23,53 @@ def _product_items(
         available = set(json.loads(properties.available_product_ids_json))
     except (json.JSONDecodeError, TypeError):
         available = set()
+    products = (
+        (index, product)
+        for index, product in enumerate(load_bundled_catalog().products, start=1)
+        if product.selectable
+        and product.capabilities.kind in {DatasetKind.DTM, DatasetKind.DSM}
+        and (not available or product.id in available)
+    )
     _PRODUCT_ITEMS_CACHE[:] = [
-        item for item in _PRODUCT_ITEMS if not available or item[0] in available
+        (
+            product.id,
+            f"{product.capabilities.kind.value.upper()} ({product.name})",
+            _product_description(product),
+            0,
+            index,
+        )
+        for index, product in products
     ]
     return _PRODUCT_ITEMS_CACHE
 
 
 def _imagery_product_items(
     properties: object, context: bpy.types.Context
-) -> list[tuple[str, str, str]]:
+) -> list[tuple[str, str, str, int, int]]:
     try:
         available = set(json.loads(properties.available_imagery_product_ids_json))
     except (json.JSONDecodeError, TypeError):
         available = set()
-    items = (
-        ("PNOA_MA", "PNOA Maximum Actuality", "Official Spanish aerial orthophotography"),
-        ("FR_BD_ORTHO", "BD ORTHO", "Official French aerial orthophotography"),
-        (
-            "SENTINEL2_L2A",
-            "Sentinel-2 L2A",
-            "Global dynamic 10 m imagery with date and cloud filtering",
-        ),
-        ("ESA_WORLDCOVER_S2_2021", "ESA WorldCover 2021", "Global static 10 m imagery"),
+    items = tuple(
+        (product.id, product.name, _product_description(product), 0, index)
+        for index, product in enumerate(load_bundled_catalog().products, start=1)
+        if product.selectable
+        and product.capabilities.kind is DatasetKind.IMAGERY
     )
     _IMAGERY_ITEMS_CACHE[:] = [item for item in items if not available or item[0] in available]
-    _IMAGERY_ITEMS_CACHE.append(("NONE", "No Imagery", "Create terrain without imagery"))
+    _IMAGERY_ITEMS_CACHE.append(
+        ("NONE", "No Imagery", "Create terrain without imagery", 0, 10_000)
+    )
     return _IMAGERY_ITEMS_CACHE
+
+
+def _product_description(product: ProductRecord) -> str:
+    capabilities = product.capabilities
+    authority = "authoritative" if capabilities.authoritative else "non-authoritative"
+    return (
+        f"{capabilities.native_resolution_m:g} m; {authority}; "
+        f"{product.jurisdiction}; {product.license.identifier}"
+    )
 
 
 def _terrain_import_items(
@@ -279,7 +220,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         name="Data Source",
         items=(
             (
-                "CNIG",
+                "ONLINE",
                 "Download Official Data",
                 "Define an area and download compatible products available for the ROI",
             ),
@@ -289,7 +230,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
                 "Prepare compatible raster files already stored on this computer",
             ),
         ),
-        default="CNIG",
+        default="ONLINE",
         update=_data_source_changed,
     )
     local_elevation_path: StringProperty(

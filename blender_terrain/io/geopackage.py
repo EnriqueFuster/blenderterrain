@@ -9,8 +9,9 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.crs import CRSInfo
-from ..core.projection import ProjectedPoint, project_utm_to_wgs84
+from pyproj import Transformer
+from pyproj.exceptions import CRSError, ProjError
+
 from ..core.roi import PolygonWGS84, RegionOfInterest, closed_ring
 from ..errors import UserInputError
 
@@ -116,29 +117,24 @@ def _geopackage_converter(
         raise UserInputError(f"GeoPackage CRS definition is missing for SRS {srs_id}")
     organization, organization_code, _definition = row
     epsg = int(organization_code) if str(organization).upper() == "EPSG" else None
-    if epsg in {4326, 4258}:
+    if epsg == 4326:
         return lambda x, y: (x, y)
-    zones = {
-        4083: 28,
-        25828: 28,
-        25829: 29,
-        25830: 30,
-        25831: 31,
-        32628: 28,
-        32629: 29,
-        32630: 30,
-        32631: 31,
-    }
-    if epsg not in zones:
+    if epsg is None:
         raise UserInputError(
             f"Unsupported GeoPackage CRS {organization}:{organization_code}; "
-            "export as EPSG:4326, 4258, 4083, 25828-25831, or 32628-32631"
+            "use a CRS with an EPSG identifier"
         )
-    crs = CRSInfo(epsg, f"Imported UTM zone {zones[epsg]}N", "Imported", zones[epsg])
+    try:
+        transformer = Transformer.from_crs(epsg, 4326, always_xy=True)
+    except CRSError as exc:
+        raise UserInputError(f"Unsupported GeoPackage CRS EPSG:{epsg}") from exc
 
     def convert(easting: float, northing: float) -> tuple[float, float]:
-        point = project_utm_to_wgs84(ProjectedPoint(easting, northing, epsg), crs)
-        return point.longitude, point.latitude
+        try:
+            longitude, latitude = transformer.transform(easting, northing, errcheck=True)
+        except ProjError as exc:
+            raise UserInputError("GeoPackage coordinate cannot be transformed") from exc
+        return float(longitude), float(latitude)
 
     return convert
 

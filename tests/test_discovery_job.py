@@ -14,10 +14,6 @@ import numpy as np
 from blender_terrain.core import BBoxWGS84, ProcessedElevationTile, create_import_plan
 from blender_terrain.core.grid import tile_grid
 from blender_terrain.errors import CatalogContractChanged, ProviderUnavailableError
-from blender_terrain.jobs.cnig import (
-    run_cnig_availability_job as run_availability_job,
-)
-from blender_terrain.jobs.cnig import run_cnig_discovery_job as run_discovery_job
 from blender_terrain.jobs.local import run_local_delivery_job
 from blender_terrain.jobs.models import DiscoveryJob, JobState
 from blender_terrain.jobs.storage import (
@@ -27,6 +23,10 @@ from blender_terrain.jobs.storage import (
     write_discovery_job,
 )
 from blender_terrain.models import ProjectedBounds
+from blender_terrain.providers.cnig_jobs import (
+    run_cnig_availability_job as run_availability_job,
+)
+from blender_terrain.providers.cnig_jobs import run_cnig_discovery_job as run_discovery_job
 from blender_terrain.providers.cnig_models import CatalogItem, CatalogPage, DatasetProduct
 from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 

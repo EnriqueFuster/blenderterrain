@@ -17,18 +17,18 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
-from ..providers.cnig_discovery import CatalogDiscoveryProvider, discover_sources
-from ..providers.cnig_models import CnigProduct
-from ..providers.cnig_portal import CNIGPortalClient
-from ..providers.spain_crs import split_spain_bbox_by_utm_zone
-from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
-from .storage import (
+from ..jobs.models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
+from ..jobs.storage import (
     append_progress_event,
     finish_job_error,
     is_cancellation_requested,
     read_discovery_job,
     write_result,
 )
+from .cnig_discovery import CatalogDiscoveryProvider, discover_sources
+from .cnig_models import CnigProduct
+from .cnig_portal import CNIGPortalClient
+from .spain_crs import split_spain_bbox_by_utm_zone
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
 ELEVATION_PRODUCTS = tuple(

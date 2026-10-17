@@ -534,7 +534,7 @@ def _create_imagery_material(
         mapping.inputs[2].default_value = (transform.offset_u, transform.offset_v, 0.0)
         links.new(coordinates.outputs["Generated"], mapping.inputs[0])
         texture = nodes.new("ShaderNodeTexImage")
-        texture.name = f"PNOA_{index:03d}"
+        texture.name = f"BlenderTerrain_Imagery_{index:03d}"
         texture.image = bpy.data.images.load(str(entry.path), check_existing=True)
         texture.image.colorspace_settings.name = "sRGB"
         texture.extension = "CLIP"

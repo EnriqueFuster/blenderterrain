@@ -7,9 +7,13 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from pyproj import CRS
+from pyproj.exceptions import CRSError
+
 from ..errors import UserInputError
 from ..io.png_validation import read_png_dimensions, validate_png
 from ..models import ProjectedBounds
+from .crs import crs_from_epsg
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,20 +88,19 @@ def _world_values(path: Path) -> tuple[float, float, float, float, float, float]
 
 def _projected_epsg(path: Path) -> int:
     try:
-        wkt = path.read_text(encoding="utf-8-sig").upper()
+        wkt = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError) as exc:
         raise UserInputError("Local imagery projection file cannot be read") from exc
-    codes = {
-        int(value)
-        for value in re.findall(
-            r'(?:AUTHORITY|ID)\s*\[\s*["\']EPSG["\']\s*,\s*["\']?(\d+)', wkt
+    try:
+        epsg = CRS.from_wkt(wkt).to_epsg()
+    except CRSError:
+        matches = re.findall(
+            r'(?:AUTHORITY|ID)\s*\[\s*["\']EPSG["\']\s*,\s*["\']?(\d+)',
+            wkt,
+            re.IGNORECASE,
         )
-    }
-    canonical = {3040: 25828, 3041: 25829, 3042: 25830, 3043: 25831}
-    supported = {4083, 25829, 25830, 25831, *canonical}
-    selected = next((code for code in codes if code in supported), None)
-    if selected is None:
-        raise UserInputError(
-            "Local imagery CRS must be EPSG:4083 or ETRS89 UTM 25829-25831"
-        )
-    return canonical.get(selected, selected)
+        epsg = int(matches[-1]) if matches else None
+    if epsg is None:
+        raise UserInputError("Local imagery CRS has no recognized EPSG identifier")
+    crs_from_epsg(epsg)
+    return epsg

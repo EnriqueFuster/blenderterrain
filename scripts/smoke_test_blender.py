@@ -288,7 +288,7 @@ def main() -> None:
         } <= set(json.loads(properties.available_product_ids_json))
         properties.elevation_source = "LOCAL"
         assert properties.elevation_source == "LOCAL"
-        properties.elevation_source = "CNIG"
+        properties.elevation_source = "ONLINE"
         extension.unregister()
         assert not any(class_type.is_registered for class_type in classes)
         assert not hasattr(bpy.types.Scene, "blender_terrain_roi")

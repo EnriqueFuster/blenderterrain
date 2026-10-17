@@ -1,8 +1,13 @@
-"""Selection of projected coordinate systems for terrain processing."""
+"""Provider-neutral coordinate reference systems for terrain processing."""
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
+from functools import lru_cache
+
+from pyproj import CRS
+from pyproj.exceptions import CRSError
 
 from ..errors import NoCoverageError, UserInputError
 from .roi import BBoxWGS84
@@ -29,33 +34,47 @@ class ProjectedWorkArea:
 UTMWorkArea = ProjectedWorkArea
 
 
-_SUPPORTED_CRS = {
-    28: CRSInfo(4083, "REGCAN95 / UTM zone 28N", "REGCAN95", 28),
-    29: CRSInfo(25829, "ETRS89 / UTM zone 29N", "ETRS89", 29),
-    30: CRSInfo(25830, "ETRS89 / UTM zone 30N", "ETRS89", 30),
-    31: CRSInfo(25831, "ETRS89 / UTM zone 31N", "ETRS89", 31),
-}
-LAMBERT93 = CRSInfo(2154, "RGF93 v1 / Lambert-93", "RGF93 v1", None)
-_FRANCE_METROPOLITAN_ENVELOPE = BBoxWGS84(-5.5, 41.0, 10.0, 51.5)
-
+@lru_cache(maxsize=128)
 def crs_from_epsg(epsg: int) -> CRSInfo:
-    """Return a supported projected CRS by canonical EPSG code."""
+    """Resolve any projected metric EPSG coordinate system."""
 
-    if epsg == LAMBERT93.epsg:
-        return LAMBERT93
-    for crs in _SUPPORTED_CRS.values():
-        if crs.epsg == epsg:
-            return crs
-    raise UserInputError(f"Local raster CRS EPSG:{epsg} is not supported")
+    try:
+        crs = CRS.from_epsg(epsg)
+    except CRSError as exc:
+        raise UserInputError(f"Unknown coordinate reference system EPSG:{epsg}") from exc
+    if not crs.is_projected:
+        raise UserInputError(f"EPSG:{epsg} is not a projected coordinate system")
+    if not crs.axis_info or any(
+        axis.unit_conversion_factor is None
+        or abs(axis.unit_conversion_factor - 1.0) > 1e-12
+        for axis in crs.axis_info[:2]
+    ):
+        raise UserInputError(f"EPSG:{epsg} must use metre-based horizontal axes")
+    datum = crs.datum.name if crs.datum is not None else "Unknown"
+    return CRSInfo(epsg, crs.name, datum, _utm_zone(crs.utm_zone))
 
 
 def work_area_for_crs(bounds: BBoxWGS84, epsg: int) -> ProjectedWorkArea:
-    """Create one work area for a CRS whose supported extent contains the ROI."""
+    """Create one work area using a provider-selected projected CRS."""
 
-    crs = crs_from_epsg(epsg)
-    if epsg == LAMBERT93.epsg and not _contains(_FRANCE_METROPOLITAN_ENVELOPE, bounds):
-        raise NoCoverageError("EPSG:2154 processing is limited to metropolitan France and Corsica")
-    return ProjectedWorkArea(bounds, crs)
+    return ProjectedWorkArea(bounds, crs_from_epsg(epsg))
+
+
+@lru_cache(maxsize=128)
+def canonical_xy_epsg(declared_epsg: int) -> int:
+    """Return an equivalent EPSG whose projected axes are easting then northing."""
+
+    try:
+        crs = CRS.from_epsg(declared_epsg)
+    except CRSError:
+        return declared_epsg
+    directions = tuple(axis.direction.lower() for axis in crs.axis_info[:2])
+    if directions != ("north", "east"):
+        return declared_epsg
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        equivalent = CRS.from_proj4(crs.to_proj4()).to_epsg()
+    return declared_epsg if equivalent is None else equivalent
 
 
 def split_bbox_by_wgs84_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
@@ -86,20 +105,14 @@ def split_bbox_by_wgs84_utm_zone(bounds: BBoxWGS84) -> tuple[UTMWorkArea, ...]:
             if north <= south:
                 continue
             epsg = (32600 if northern else 32700) + zone
-            hemisphere = "N" if northern else "S"
             work_areas.append(
-                UTMWorkArea(
-                    BBoxWGS84(west, south, east, north),
-                    CRSInfo(epsg, f"WGS 84 / UTM zone {zone}{hemisphere}", "WGS84", zone),
-                )
+                UTMWorkArea(BBoxWGS84(west, south, east, north), crs_from_epsg(epsg))
             )
     return tuple(work_areas)
 
 
-def _contains(container: BBoxWGS84, candidate: BBoxWGS84) -> bool:
-    return (
-        container.west <= candidate.west
-        and container.south <= candidate.south
-        and container.east >= candidate.east
-        and container.north >= candidate.north
-    )
+def _utm_zone(value: str | None) -> int | None:
+    if not value:
+        return None
+    digits = "".join(character for character in value if character.isdigit())
+    return int(digits) if digits else None

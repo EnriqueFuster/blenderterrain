@@ -19,6 +19,7 @@ from typing import Final
 import numpy as np
 from numpy.typing import NDArray
 
+from ..core.crs import canonical_xy_epsg
 from ..errors import RasterFormatError
 from ..models import ProjectedBounds
 from .random_access import LocalRandomAccessReader, RandomAccessReader
@@ -141,21 +142,15 @@ class BigTiffFloatTileReader:
     """Read supported compressed numeric samples as Float32 values."""
 
     def __init__(self, path: Path | RandomAccessReader) -> None:
-        self._source = (
-            LocalRandomAccessReader.open(path) if isinstance(path, Path) else path
-        )
+        self._source = LocalRandomAccessReader.open(path) if isinstance(path, Path) else path
         self._file_size = self._source.size
         self._byte_order, first_ifd_offset = self._read_header()
         tags = self._read_first_directory(first_ifd_offset)
         self._predictor = _single_value_or_default(tags, _PREDICTOR, 1)
         self._compression = _single_value(tags, _COMPRESSION)
         self._samples_per_pixel = _single_value(tags, _SAMPLES_PER_PIXEL)
-        self._bits_per_sample = _uniform_value(
-            tags, _BITS_PER_SAMPLE, self._samples_per_pixel
-        )
-        self._sample_format = _uniform_value(
-            tags, _SAMPLE_FORMAT, self._samples_per_pixel
-        )
+        self._bits_per_sample = _uniform_value(tags, _BITS_PER_SAMPLE, self._samples_per_pixel)
+        self._sample_format = _uniform_value(tags, _SAMPLE_FORMAT, self._samples_per_pixel)
         self._scale, self._offset = _parse_gdal_scale_offset(tags)
         self.layout = self._validate_layout(tags)
         self.georeference = _parse_georeference(tags)
@@ -181,9 +176,7 @@ class BigTiffFloatTileReader:
     def read_tile(self, row: int, column: int) -> NDArray[np.float32]:
         """Return one image tile cropped to valid pixels at its outer edges."""
 
-        if not (
-            0 <= row < self.layout.tile_rows and 0 <= column < self.layout.tile_columns
-        ):
+        if not (0 <= row < self.layout.tile_rows and 0 <= column < self.layout.tile_columns):
             raise IndexError("Tile coordinates are outside the image")
         index = row * self.layout.tile_columns + column
         offset = self._tile_offsets[index]
@@ -221,9 +214,7 @@ class BigTiffFloatTileReader:
                 self.layout.tile_width,
                 self._samples_per_pixel,
             )
-            cumulative_type = {8: np.uint8, 16: np.uint16, 32: np.uint32}[
-                self._bits_per_sample
-            ]
+            cumulative_type = {8: np.uint8, 16: np.uint16, 32: np.uint32}[self._bits_per_sample]
             reconstructed = np.cumsum(differences, axis=1, dtype=cumulative_type)
             if self._sample_format == 3:
                 tile = reconstructed.view(np.dtype(f"{self._byte_order}f4"))
@@ -244,9 +235,7 @@ class BigTiffFloatTileReader:
                 (2, 32): "i4",
                 (3, 32): "f4",
             }[(self._sample_format, self._bits_per_sample)]
-            tile = np.frombuffer(
-                raw, dtype=np.dtype(f"{self._byte_order}{sample_type}")
-            ).reshape(
+            tile = np.frombuffer(raw, dtype=np.dtype(f"{self._byte_order}{sample_type}")).reshape(
                 self.layout.tile_height,
                 self.layout.tile_width,
                 self._samples_per_pixel,
@@ -265,9 +254,7 @@ class BigTiffFloatTileReader:
             result += self._offset
         return result
 
-    def read_window(
-        self, row: int, column: int, height: int, width: int
-    ) -> NDArray[np.float32]:
+    def read_window(self, row: int, column: int, height: int, width: int) -> NDArray[np.float32]:
         """Return a pixel window by decoding only the tiles that intersect it."""
 
         if row < 0 or column < 0 or height <= 0 or width <= 0:
@@ -321,9 +308,7 @@ class BigTiffFloatTileReader:
 
         return self.georeference.enclosing_window(bounds)
 
-    def read_bounds(
-        self, bounds: ProjectedBounds
-    ) -> tuple[NDArray[np.float32], ProjectedBounds]:
+    def read_bounds(self, bounds: ProjectedBounds) -> tuple[NDArray[np.float32], ProjectedBounds]:
         """Read enclosing pixels and return their exact projected outer bounds."""
 
         window = self.window_for_bounds(bounds)
@@ -467,9 +452,7 @@ def open_float_tile_reader(
     raise RasterFormatError("TIFF header version is unsupported")
 
 
-def _decode_value(
-    value_type: int, count: int, encoded: bytes, byte_order: str = "<"
-) -> TagValue:
+def _decode_value(value_type: int, count: int, encoded: bytes, byte_order: str = "<") -> TagValue:
     if value_type == 2:
         return encoded.decode("ascii", errors="strict")
     return struct.unpack(f"{byte_order}{count}{_NUMERIC_FORMATS[value_type]}", encoded)
@@ -477,11 +460,7 @@ def _decode_value(
 
 def _single_value(tags: dict[int, TagValue], tag: int) -> int:
     values = tags.get(tag)
-    if (
-        not isinstance(values, tuple)
-        or len(values) != 1
-        or not isinstance(values[0], int)
-    ):
+    if not isinstance(values, tuple) or len(values) != 1 or not isinstance(values[0], int):
         raise RasterFormatError(f"BigTIFF required tag {tag} is missing or invalid")
     return values[0]
 
@@ -508,9 +487,7 @@ def _parse_gdal_scale_offset(tags: dict[int, TagValue]) -> tuple[float, float]:
         return 1.0, 0.0
 
     def value(name: str, default: float) -> float:
-        match = re.search(
-            rf'<Item\s+name="{name}"[^>]*>([^<]+)</Item>', metadata, re.IGNORECASE
-        )
+        match = re.search(rf'<Item\s+name="{name}"[^>]*>([^<]+)</Item>', metadata, re.IGNORECASE)
         if match is None:
             return default
         parsed = float(match.group(1))
@@ -537,7 +514,7 @@ def _parse_georeference(tags: dict[int, TagValue]) -> GeoReference:
     declared_epsg = keys.get(crs_key)
     if declared_epsg is None or declared_epsg == 32767:
         raise RasterFormatError("GeoTIFF has no directly encoded projected EPSG code")
-    epsg = _canonical_xy_epsg(declared_epsg)
+    epsg = canonical_xy_epsg(declared_epsg)
 
     origin_x, origin_y, pixel_width, pixel_height = _parse_affine_transform(tags)
     if raster_type == 2:
@@ -674,9 +651,7 @@ def _decompress_lzw(compressed: bytes, expected_size: int) -> bytes:
 def _decompress_zstd(compressed: bytes, expected_size: int) -> bytes:
     try:
         module = importlib.import_module("zstandard")
-        raw = module.ZstdDecompressor().decompress(
-            compressed, max_output_size=expected_size
-        )
+        raw = module.ZstdDecompressor().decompress(compressed, max_output_size=expected_size)
     except (ImportError, ModuleNotFoundError) as exc:
         raise RasterFormatError("Zstandard support is unavailable in this Python runtime") from exc
     if not isinstance(raw, bytes) or len(raw) != expected_size:
@@ -704,9 +679,3 @@ def _floor_grid_coordinate(value: float) -> int:
 def _ceil_grid_coordinate(value: float) -> int:
     nearest = round(value)
     return nearest if abs(value - nearest) <= 1e-9 else math.ceil(value)
-
-
-def _canonical_xy_epsg(declared_epsg: int) -> int:
-    if declared_epsg == 3042:
-        return 25830
-    return declared_epsg
