@@ -9,7 +9,7 @@ from ..errors import DownloadIntegrityError
 
 
 def normalized_server_filename(filename: str) -> str:
-    """Normalize observed case and separator differences between CNIG systems."""
+    """Normalize observed case and separator differences between remote systems."""
 
     return filename.replace("_", "-").casefold()
 

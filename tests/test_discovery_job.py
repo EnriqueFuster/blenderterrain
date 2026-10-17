@@ -26,7 +26,8 @@ from blender_terrain.jobs.storage import (
     request_cancellation,
     write_discovery_job,
 )
-from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct, ProjectedBounds
+from blender_terrain.models import ProjectedBounds
+from blender_terrain.providers.cnig_models import CatalogItem, CatalogPage, DatasetProduct
 from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 

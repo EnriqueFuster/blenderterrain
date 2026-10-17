@@ -15,18 +15,18 @@ from ..core.planning import create_import_plan
 from ..core.roi import BBoxWGS84
 from ..errors import JobCancelled
 from ..io.tiff_validation import validate_tiff_header
-from ..models import CatalogItem, CatalogPage, DatasetProduct
 from .cnig_discovery import discover_sources
+from .cnig_models import CnigCatalogItem, CnigCatalogPage, CnigProduct
 from .cnig_portal import CNIGPortalClient
 from .spain_crs import split_spain_bbox_by_utm_zone
 
 
 class _CnigClient(Protocol):
-    def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage: ...
+    def discover_all(self, product: CnigProduct, bbox: BBoxWGS84) -> CnigCatalogPage: ...
 
     def download_item(
         self,
-        item: CatalogItem,
+        item: CnigCatalogItem,
         cache_directory: Path,
         maximum_bytes: int = 1_073_741_824,
         progress_callback: Callable[[int, int | None], None] | None = None,
@@ -61,7 +61,7 @@ class CnigElevationAcquirer:
         } or request.kind is not selection.kind:
             raise ValueError("CNIG acquirer received an incompatible selection")
         try:
-            product = DatasetProduct(selection.product_id)
+            product = CnigProduct(selection.product_id)
         except ValueError as exc:
             raise ValueError("CNIG selection contains an unknown elevation product") from exc
         plan = create_import_plan(

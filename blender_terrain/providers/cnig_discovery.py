@@ -7,21 +7,26 @@ from typing import Protocol
 from ..core.planning import ImportPlan
 from ..core.roi import BBoxWGS84
 from ..errors import CatalogContractChanged, NoCoverageError
-from ..models import CatalogItem, CatalogPage, DatasetProduct, DiscoveryResult
+from .cnig_models import (
+    CnigCatalogItem,
+    CnigCatalogPage,
+    CnigDiscoveryResult,
+    CnigProduct,
+)
 
 
 class CatalogDiscoveryProvider(Protocol):
     """CNIG catalog capability required for source discovery."""
 
-    def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
+    def discover_all(self, product: CnigProduct, bbox: BBoxWGS84) -> CnigCatalogPage:
         """Return every catalog page for a product and ROI."""
 
 
-def select_catalog_items(plan: ImportPlan, catalog: CatalogPage) -> DiscoveryResult:
+def select_catalog_items(plan: ImportPlan, catalog: CnigCatalogPage) -> CnigDiscoveryResult:
     """Select matching CNIG native UTM files for an import plan."""
 
     expected_zones = {area.crs.utm_zone for area in plan.work_areas}
-    selected: list[CatalogItem] = []
+    selected: list[CnigCatalogItem] = []
     seen_ids: set[str] = set()
     for item in catalog.items:
         if item.product != plan.product or not item.is_native_projected_variant:
@@ -40,7 +45,7 @@ def select_catalog_items(plan: ImportPlan, catalog: CatalogPage) -> DiscoveryRes
     if not selected:
         raise NoCoverageError("CNIG catalog returned no native UTM elevation files for the ROI")
     selected.sort(key=lambda item: (item.native_utm_zone or 0, item.filename, item.sequential_id))
-    return DiscoveryResult(
+    return CnigDiscoveryResult(
         items=tuple(selected),
         advertised_items=catalog.total_items,
         ignored_items=len(catalog.items) - len(selected),
@@ -49,10 +54,10 @@ def select_catalog_items(plan: ImportPlan, catalog: CatalogPage) -> DiscoveryRes
 
 def discover_sources(
     plan: ImportPlan, provider: CatalogDiscoveryProvider
-) -> DiscoveryResult:
+) -> CnigDiscoveryResult:
     """Discover CNIG rows and reduce them to sources required by the plan."""
 
-    if not isinstance(plan.product, DatasetProduct):
+    if not isinstance(plan.product, CnigProduct):
         raise ValueError("CNIG catalog discovery requires a CNIG product")
     catalog = provider.discover_all(plan.product, plan.bounds)
     return select_catalog_items(plan, catalog)

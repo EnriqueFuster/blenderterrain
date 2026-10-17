@@ -4,8 +4,8 @@ from pathlib import Path
 
 from blender_terrain.catalog import DatasetKind, LayerRequest, ProductSelection, SelectionMode
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.models import CatalogItem, CatalogPage, DatasetProduct
 from blender_terrain.providers.cnig_acquisition import CnigElevationAcquirer
+from blender_terrain.providers.cnig_models import CatalogItem, CatalogPage, DatasetProduct
 
 
 class FakeCnigClient:

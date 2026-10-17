@@ -7,7 +7,7 @@ from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from ..errors import CatalogContractChanged
-from ..models import CatalogItem, CatalogPage, DatasetProduct, ProductPage
+from .cnig_models import CnigCatalogItem, CnigCatalogPage, CnigProduct, CnigProductPage
 
 
 def _attributes(attributes: list[tuple[str, str | None]]) -> dict[str, str]:
@@ -57,11 +57,11 @@ class _CatalogResultsParser(HTMLParser):
         "Tamaño\xa0(MB)": "MB",
     }
 
-    def __init__(self, product: DatasetProduct) -> None:
+    def __init__(self, product: CnigProduct) -> None:
         super().__init__(convert_charrefs=True)
         self.product = product
         self.total_items: int | None = None
-        self.items: list[CatalogItem] = []
+        self.items: list[CnigCatalogItem] = []
         self._in_result_row = False
         self._current_cells: dict[str, list[str]] = {}
         self._current_cell: str | None = None
@@ -117,7 +117,7 @@ class _CatalogResultsParser(HTMLParser):
             value = value[len(prefix) :].strip()
         return value or None
 
-    def _build_item(self) -> CatalogItem:
+    def _build_item(self) -> CnigCatalogItem:
         filename = self._cell("Nombre")
         file_format = self._cell("Formato")
         if not filename or not file_format or not self._sequential_id:
@@ -132,7 +132,7 @@ class _CatalogResultsParser(HTMLParser):
         except ValueError as exc:
             raise CatalogContractChanged("Catalog row contains an invalid file size") from exc
 
-        return CatalogItem(
+        return CnigCatalogItem(
             product=self.product,
             filename=filename,
             file_format=file_format,
@@ -143,7 +143,7 @@ class _CatalogResultsParser(HTMLParser):
         )
 
 
-def parse_product_page(html: str, expected_catalog_series: str) -> ProductPage:
+def parse_product_page(html: str, expected_catalog_series: str) -> CnigProductPage:
     """Parse dynamic discovery fields from one CNIG product page."""
 
     parser = _ProductPageParser()
@@ -164,7 +164,7 @@ def parse_product_page(html: str, expected_catalog_series: str) -> ProductPage:
     except ValueError as exc:
         raise CatalogContractChanged("Product total is not an integer") from exc
 
-    return ProductPage(
+    return CnigProductPage(
         catalog_group=parser.hidden_fields["codAgr"],
         catalog_series=parser.hidden_fields["codSerie"],
         advertised_total=total,
@@ -173,7 +173,7 @@ def parse_product_page(html: str, expected_catalog_series: str) -> ProductPage:
     )
 
 
-def parse_catalog_page(html: str, product: DatasetProduct) -> CatalogPage:
+def parse_catalog_page(html: str, product: CnigProduct) -> CnigCatalogPage:
     """Parse one HTML result page and reject ambiguous structural changes."""
 
     parser = _CatalogResultsParser(product)
@@ -182,4 +182,4 @@ def parse_catalog_page(html: str, product: DatasetProduct) -> CatalogPage:
         raise CatalogContractChanged("Catalog response is missing totalArchivos")
     if parser.total_items > 0 and not parser.items:
         raise CatalogContractChanged("Catalog response advertises items but has no parseable rows")
-    return CatalogPage(total_items=parser.total_items, items=tuple(parser.items))
+    return CnigCatalogPage(total_items=parser.total_items, items=tuple(parser.items))

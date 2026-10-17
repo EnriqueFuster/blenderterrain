@@ -15,8 +15,14 @@ from ..core import (
     process_elevation_tiles,
 )
 from ..errors import JobCancelled, JobFormatError, RasterFormatError, UserInputError
-from ..models import CatalogItem, DiscoveryResult
-from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
+from .models import (
+    RESULT_SCHEMA_VERSION,
+    DiscoveredSource,
+    DiscoveryJob,
+    JobState,
+    ProgressEvent,
+    SourceDiscovery,
+)
 from .output import write_processed_tiles
 from .storage import (
     append_progress_event,
@@ -68,7 +74,18 @@ def run_local_discovery_job(job_path: Path) -> JobState:
                 "advertised_items": discovery.advertised_items,
                 "ignored_items": discovery.ignored_items,
                 "estimated_download_mb": discovery.estimated_download_mb,
-                "items": [asdict(item) for item in discovery.items],
+                "items": [
+                    {
+                        "product": item.product_id,
+                        "filename": item.filename,
+                        "file_format": item.file_format,
+                        "sequential_id": item.source_id,
+                        "date": item.date,
+                        "resolution": item.resolution,
+                        "size_mb": item.size_mb,
+                    }
+                    for item in discovery.items
+                ],
             },
         )
         emit(JobState.COMPLETE, 1.0, f"Validated {len(discovery.items)} local source file(s)")
@@ -167,7 +184,7 @@ def run_local_delivery_job(
                     "roi_geometry_wgs84": (
                         None if job.region is None else job.region.to_geojson_geometry()
                     ),
-                    "product": job.product.value,
+                    "product": job.product,
                     "elevation_resolution_metres": plan.elevation_resolution_metres,
                     "use_imagery": imagery is not None,
                     "imagery_gsd_metres": None if imagery is None else imagery.gsd_metres,
@@ -177,7 +194,7 @@ def run_local_delivery_job(
                 "crs": [asdict(work_area.crs) for work_area in plan.work_areas],
                 "sources": [
                     {
-                        "product": job.product.value,
+                        "product": job.product,
                         "filename": path.name,
                         "format": "LOCAL_COG",
                         "sequential_id": f"local-{index}",
@@ -241,13 +258,13 @@ def create_local_import_plan(job: DiscoveryJob) -> ImportPlan:
     )
 
 
-def discover_local_sources(job: DiscoveryJob) -> DiscoveryResult:
+def discover_local_sources(job: DiscoveryJob) -> SourceDiscovery:
     """Validate local files and expose them through the source result contract."""
 
     paths = tuple(Path(value) for value in job.local_elevation_paths)
     inspection = inspect_local_elevation(paths)
     items = tuple(
-        CatalogItem(
+        DiscoveredSource(
             job.product,
             path.name,
             "LOCAL_COG",
@@ -256,4 +273,4 @@ def discover_local_sources(job: DiscoveryJob) -> DiscoveryResult:
         )
         for index, path in enumerate(inspection.paths)
     )
-    return DiscoveryResult(items, len(items), 0)
+    return SourceDiscovery(items, len(items), 0)

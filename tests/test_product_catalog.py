@@ -15,7 +15,7 @@ from blender_terrain.catalog import (
 )
 from blender_terrain.catalog.loader import load_catalog_documents
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.models import DatasetProduct
+from blender_terrain.providers.cnig_models import DatasetProduct
 
 
 def test_catalog_contains_existing_spanish_products() -> None:

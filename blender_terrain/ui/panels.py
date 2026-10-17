@@ -234,7 +234,6 @@ def _draw_local_settings(layout: bpy.types.UILayout, properties: object) -> None
     elevation = layout.box()
     elevation.label(text="Elevation Raster (Required)", icon="IMAGE_DATA")
     elevation.prop(properties, "local_elevation_path", text="File or Folder")
-    elevation.label(text="Compatible CNIG Float32 TIFF or TIFF folder", icon="INFO")
     if properties.local_elevation_summary:
         elevation.label(text=properties.local_elevation_summary, icon="CHECKMARK")
     elevation.prop(properties, "product", text="Elevation Model")

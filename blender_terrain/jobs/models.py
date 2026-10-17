@@ -10,7 +10,7 @@ from uuid import UUID
 
 from ..core.roi import BBoxWGS84, RegionOfInterest
 from ..errors import JobFormatError, UserInputError
-from ..models import DatasetProduct, ProjectedBounds
+from ..models import ProjectedBounds
 
 JOB_SCHEMA_VERSION = 7
 SUPPORTED_JOB_SCHEMA_VERSIONS = frozenset({6, JOB_SCHEMA_VERSION})
@@ -36,12 +36,12 @@ class JobState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryJob:
-    """Inputs needed to reconstruct an offline plan and discover CNIG sources."""
+    """Inputs for the legacy provider discovery and local-raster worker contract."""
 
     task_id: str
     import_id: str
     bounds: BBoxWGS84
-    product: DatasetProduct
+    product: str
     elevation_resolution_metres: float | None
     use_imagery: bool
     imagery_gsd_metres: float | None
@@ -62,6 +62,8 @@ class DiscoveryJob:
             UUID(self.import_id)
         except ValueError as exc:
             raise JobFormatError("Task and import identifiers must be UUIDs") from exc
+        if not self.product:
+            raise JobFormatError("Product identifier must not be empty")
         if self.region is not None and self.region.bounds != self.bounds:
             raise JobFormatError("ROI geometry bounds do not match the job bounds")
         if any(not path for path in self.local_elevation_paths):
@@ -96,7 +98,7 @@ class DiscoveryJob:
             "task_id": self.task_id,
             "import_id": self.import_id,
             "bounds": asdict(self.bounds),
-            "product": self.product.value,
+            "product": self.product,
             "elevation_resolution_metres": self.elevation_resolution_metres,
             "use_imagery": self.use_imagery,
             "imagery_gsd_metres": self.imagery_gsd_metres,
@@ -135,7 +137,9 @@ class DiscoveryJob:
                 float(raw_bounds["east"]),
                 float(raw_bounds["north"]),
             )
-            product = DatasetProduct(payload["product"])
+            product = payload["product"]
+            if not isinstance(product, str) or not product:
+                raise TypeError
             elevation_resolution = _optional_finite_float(
                 payload.get("elevation_resolution_metres")
             )
@@ -202,6 +206,34 @@ class DiscoveryJob:
             maximum_elevation_samples=maximum_elevation_samples,
             maximum_imagery_pixels=maximum_imagery_pixels,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredSource:
+    """Provider-neutral source file exposed by a discovery worker."""
+
+    product_id: str
+    filename: str
+    file_format: str
+    source_id: str
+    date: str | None = None
+    resolution: str | None = None
+    size_mb: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDiscovery:
+    """Provider-neutral collection of source files selected for processing."""
+
+    items: tuple[DiscoveredSource, ...]
+    advertised_items: int
+    ignored_items: int
+
+    @property
+    def estimated_download_mb(self) -> float | None:
+        if any(item.size_mb is None for item in self.items):
+            return None
+        return sum(item.size_mb or 0.0 for item in self.items)
 
 
 @dataclass(frozen=True, slots=True)

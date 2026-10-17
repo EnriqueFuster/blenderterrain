@@ -1,4 +1,4 @@
-"""Constrained BigTIFF tile reading for the verified CNIG elevation layout.
+"""Constrained BigTIFF tile reading for supported tiled-raster layouts.
 
 This module intentionally supports the little-endian tiled layouts verified in
 the current elevation, quality-mask, and RGBNIR providers.

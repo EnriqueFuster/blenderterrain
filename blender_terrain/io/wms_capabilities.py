@@ -1,4 +1,4 @@
-"""Parse the small portion of WMS 1.3 capabilities required by PNOA."""
+"""Parse the small portion of WMS 1.3 capabilities used by raster providers."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def parse_wms_capabilities(
         raise ProviderContractChanged("WMS capabilities root element is unsupported")
     version = root.attrib.get("version")
     if version != "1.3.0":
-        raise ProviderContractChanged("PNOA requires the verified WMS 1.3.0 contract")
+        raise ProviderContractChanged("The provider requires the verified WMS 1.3.0 contract")
 
     get_map = root.find("wms:Capability/wms:Request/wms:GetMap", namespace)
     formats = tuple(

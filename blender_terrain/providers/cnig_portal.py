@@ -24,9 +24,9 @@ from ..io.atomic import (
     normalized_server_filename,
     safe_destination,
 )
-from ..io.html_catalog_parser import parse_catalog_page, parse_product_page
 from ..io.tiff_validation import validate_tiff_header
-from ..models import CatalogItem, CatalogPage, DatasetProduct, ProductPage
+from .cnig_html import parse_catalog_page, parse_product_page
+from .cnig_models import CnigCatalogItem, CnigCatalogPage, CnigProduct, CnigProductPage
 
 BASE_URL = "https://centrodedescargas.cnig.es/CentroDescargas/"
 USER_AGENT = "BlenderTerrain/0.3.0 (+https://github.com/EnriqueFuster/blenderterrain)"
@@ -40,25 +40,25 @@ class _ProductContract:
 
 
 PRODUCT_CONTRACTS = {
-    DatasetProduct.MDT50CM: _ProductContract("modelo-digital-terreno-mdt50cm", "MDT01"),
-    DatasetProduct.MDT02: _ProductContract(
+    CnigProduct.MDT50CM: _ProductContract("modelo-digital-terreno-mdt50cm", "MDT01"),
+    CnigProduct.MDT02: _ProductContract(
         "modelo-digital-terreno-mdt02-segunda-cobertura", "MDT02"
     ),
-    DatasetProduct.MDT05: _ProductContract(
+    CnigProduct.MDT05: _ProductContract(
         "modelo-digital-terreno-mdt05-primera-cobertura", "MDT05"
     ),
-    DatasetProduct.MDT25: _ProductContract("mdt25-segunda-cobertura", "T25C2"),
-    DatasetProduct.MDT200: _ProductContract("mdt200-segunda-cobertura", "T2002"),
-    DatasetProduct.MDS50CM: _ProductContract(
+    CnigProduct.MDT25: _ProductContract("mdt25-segunda-cobertura", "T25C2"),
+    CnigProduct.MDT200: _ProductContract("mdt200-segunda-cobertura", "T2002"),
+    CnigProduct.MDS50CM: _ProductContract(
         "modelo-digital-superficies-mds50cm-tercera-cobertura", "MDS50"
     ),
-    DatasetProduct.MDS02: _ProductContract(
+    CnigProduct.MDS02: _ProductContract(
         "modelo-digital-superficies-mds02-segunda-cobertura", "MDS02"
     ),
-    DatasetProduct.MDS05: _ProductContract(
+    CnigProduct.MDS05: _ProductContract(
         "modelo-digital-superficies-mds05-primera-cobertura", "MDS05"
     ),
-    DatasetProduct.PNOA_MA: _ProductContract("ortofoto-pnoa-maxima-actualidad", "02211"),
+    CnigProduct.PNOA_MA: _ProductContract("ortofoto-pnoa-maxima-actualidad", "02211"),
 }
 DOWNLOAD_INITIALIZATION_MAXIMUM_BYTES = 4_096
 MAX_CATALOG_PAGES = 1_000
@@ -113,17 +113,17 @@ class CNIGPortalClient:
             HTTPCookieProcessor(self._cookie_jar), _NoRedirectHandler()
         )
 
-    def discover(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
+    def discover(self, product: CnigProduct, bbox: BBoxWGS84) -> CnigCatalogPage:
         """Discover the first page of COG resources intersecting a WGS84 bbox."""
 
         page_url, product_page = self._prepare_discovery(product)
         return self._request_catalog_page(product, bbox, page_url, product_page, 1)
 
-    def discover_all(self, product: DatasetProduct, bbox: BBoxWGS84) -> CatalogPage:
+    def discover_all(self, product: CnigProduct, bbox: BBoxWGS84) -> CnigCatalogPage:
         """Discover and deduplicate every advertised catalog page for one ROI."""
 
         page_url, product_page = self._prepare_discovery(product)
-        unique_items: dict[str, CatalogItem] = {}
+        unique_items: dict[str, CnigCatalogItem] = {}
         expected_total: int | None = None
         previous_page_ids: tuple[str, ...] | None = None
         for page_number in range(1, MAX_CATALOG_PAGES + 1):
@@ -135,7 +135,7 @@ class CNIGPortalClient:
             elif page.total_items != expected_total:
                 raise CatalogContractChanged("CNIG catalog total changed during pagination")
             if expected_total == 0:
-                return CatalogPage(0, ())
+                return CnigCatalogPage(0, ())
 
             page_ids = tuple(item.sequential_id for item in page.items)
             previous_unique_count = len(unique_items)
@@ -154,10 +154,10 @@ class CNIGPortalClient:
                     raise CatalogContractChanged(
                         "CNIG catalog returned more unique rows than advertised"
                     )
-                return CatalogPage(expected_total, tuple(unique_items.values()))
+                return CnigCatalogPage(expected_total, tuple(unique_items.values()))
         raise CatalogContractChanged("CNIG catalog pagination exceeded its safety limit")
 
-    def _prepare_discovery(self, product: DatasetProduct) -> tuple[str, ProductPage]:
+    def _prepare_discovery(self, product: CnigProduct) -> tuple[str, CnigProductPage]:
         contract = PRODUCT_CONTRACTS[product]
         page_url = BASE_URL + contract.slug
         product_html = self._request(page_url)
@@ -166,12 +166,12 @@ class CNIGPortalClient:
 
     def _request_catalog_page(
         self,
-        product: DatasetProduct,
+        product: CnigProduct,
         bbox: BBoxWGS84,
         page_url: str,
-        product_page: ProductPage,
+        product_page: CnigProductPage,
         page_number: int,
-    ) -> CatalogPage:
+    ) -> CnigCatalogPage:
         """Request one page using fields parsed from the current product form."""
 
         form = {
@@ -207,7 +207,7 @@ class CNIGPortalClient:
 
     def download_item(
         self,
-        item: CatalogItem,
+        item: CnigCatalogItem,
         cache_directory: Path,
         maximum_bytes: int = 1_073_741_824,
         progress_callback: Callable[[int, int | None], None] | None = None,

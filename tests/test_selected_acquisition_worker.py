@@ -38,7 +38,8 @@ from blender_terrain.jobs.worker import (
     prepare_confirmed_imagery,
     run_confirmed_acquisition_job,
 )
-from blender_terrain.models import DatasetProduct, ProjectedBounds
+from blender_terrain.models import ProjectedBounds
+from blender_terrain.providers.cnig_models import DatasetProduct
 from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 

@@ -29,8 +29,7 @@ from ..core.cache_inventory import clear_cache, inspect_cache
 from ..errors import BlenderTerrainError, UserInputError
 from ..io.roi_files import read_roi_file
 from ..io.roi_map_server import ROIMapSession
-from ..models import DatasetProduct
-from ..providers.spain_crs import split_spain_bbox_by_utm_zone
+from ..providers.registry import projected_work_areas
 from . import job_controller
 from .terrain_bake import bake_and_merge_terrain
 from .terrain_builder import (
@@ -289,11 +288,7 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
             elevation_limit, imagery_limit = RESOURCE_PROFILES[properties.resource_profile]
             plan = create_import_plan(
                 bounds=bounds,
-                product=(
-                    properties.product
-                    if portable_product
-                    else DatasetProduct(properties.product)
-                ),
+                product=properties.product,
                 elevation_resolution_metres=(
                     None
                     if properties.elevation_resolution == "AUTO"
@@ -333,10 +328,9 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                     else (None if catalog_product.wms is None else catalog_product.wms.crs_epsg)
                 ),
                 work_areas_override=(
-                    split_spain_bbox_by_utm_zone(bounds)
-                    if local_inspection is None
-                    and catalog_product.provider_id == "ign_cnig"
-                    else None
+                    None
+                    if local_inspection is not None
+                    else projected_work_areas(catalog_product, bounds)
                 ),
                 imagery_native_resolution_metres=(
                     0.25
@@ -513,7 +507,7 @@ class BLENDERTERRAIN_OT_check_product_availability(bpy.types.Operator):
 
     bl_idname = "blender_terrain.check_product_availability"
     bl_label = "Check Product Availability"
-    bl_description = "Check which CNIG elevation products cover the current ROI"
+    bl_description = "Check which elevation products cover the current ROI"
 
     def execute(self, context: bpy.types.Context) -> set[str]:
         properties = context.scene.blender_terrain_roi
@@ -724,7 +718,7 @@ class BLENDERTERRAIN_OT_cancel_discovery(bpy.types.Operator):
 
 
 class BLENDERTERRAIN_OT_download_data(bpy.types.Operator):
-    """Download discovered elevation and optional PNOA sources."""
+    """Download the confirmed elevation, imagery, and bathymetry sources."""
 
     bl_idname = "blender_terrain.download_data"
     bl_label = "Download Data"

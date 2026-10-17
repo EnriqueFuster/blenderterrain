@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 from blender_terrain.errors import CatalogContractChanged
-from blender_terrain.io.html_catalog_parser import parse_catalog_page, parse_product_page
-from blender_terrain.models import DatasetProduct
+from blender_terrain.providers.cnig_html import parse_catalog_page, parse_product_page
+from blender_terrain.providers.cnig_models import DatasetProduct
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "portal_html"
 

@@ -26,7 +26,7 @@ from ..core import (
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
 from ..errors import JobCancelled, RasterFormatError, UserInputError
 from ..io.png_validation import validate_png
-from ..models import DatasetProduct, ProjectedBounds
+from ..models import ProjectedBounds
 from ..providers.pnoa_planning import plan_pnoa_tiles
 from ..providers.pnoa_wms import PNOAWMSClient
 from ..providers.registry import build_raster_acquirers
@@ -64,7 +64,7 @@ def prepare_confirmed_imagery(
     ):
         raise UserInputError("Selected imagery product is not supported by this worker")
     request = plan.request.layer(DatasetKind.IMAGERY)
-    if product.id == DatasetProduct.PNOA_MA.value:
+    if product.id == "PNOA_MA":
         return _prepare_pnoa_imagery(
             selection,
             request,

@@ -264,7 +264,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
             ("PARTIALS", "Incomplete Files", "Remove interrupted .part files only"),
             ("PROCESSED", "Processed Terrain", "Remove generated elevation arrays"),
             ("JOBS", "Job History", "Remove persisted jobs, events, and worker logs"),
-            ("IMAGERY", "PNOA Imagery", "Remove cached PNOA image tiles"),
+            ("IMAGERY", "Imagery", "Remove cached image tiles"),
             ("ELEVATION", "Elevation Sources", "Remove downloaded elevation rasters"),
             ("ALL", "All Cache Data", "Remove every BlenderTerrain cache category"),
         ),
@@ -281,7 +281,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
             (
                 "CNIG",
                 "Download Official Data",
-                "Define an area and download official IGN-CNIG and PNOA data",
+                "Define an area and download compatible products available for the ROI",
             ),
             (
                 "LOCAL",

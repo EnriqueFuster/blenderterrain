@@ -8,7 +8,7 @@ from blender_terrain.core import (
     plan_texture_tiles,
 )
 from blender_terrain.core import create_import_plan as _create_import_plan
-from blender_terrain.models import DatasetProduct
+from blender_terrain.providers.cnig_models import DatasetProduct
 from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
 
 
@@ -39,8 +39,8 @@ class ImageryTilePlanningTests(unittest.TestCase):
         self.assertEqual(
             [request.filename for request in requests],
             [
-                "pnoa_epsg25830_z0_r0_c0_0p5m.png",
-                "pnoa_epsg25830_z0_r1_c0_0p5m.png",
+                "imagery_epsg25830_z0_r0_c0_0p5m.png",
+                "imagery_epsg25830_z0_r1_c0_0p5m.png",
             ],
         )
 

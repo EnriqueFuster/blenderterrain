@@ -17,8 +17,8 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
-from ..models import DatasetProduct
 from ..providers.cnig_discovery import CatalogDiscoveryProvider, discover_sources
+from ..providers.cnig_models import CnigProduct
 from ..providers.cnig_portal import CNIGPortalClient
 from ..providers.spain_crs import split_spain_bbox_by_utm_zone
 from .models import RESULT_SCHEMA_VERSION, DiscoveryJob, JobState, ProgressEvent
@@ -32,7 +32,7 @@ from .storage import (
 
 ProviderFactory = Callable[[], CatalogDiscoveryProvider]
 ELEVATION_PRODUCTS = tuple(
-    product for product in DatasetProduct if product is not DatasetProduct.PNOA_MA
+    product for product in CnigProduct if product is not CnigProduct.PNOA_MA
 )
 
 
@@ -177,14 +177,13 @@ def create_cnig_import_plan(job: DiscoveryJob) -> ImportPlan:
 
     if job.local_elevation_paths:
         raise JobFormatError("CNIG planning cannot use local elevation paths")
+    product = CnigProduct(job.product)
     native_resolution = (
-        load_bundled_catalog()
-        .product(job.product.value)
-        .capabilities.native_resolution_m
+        load_bundled_catalog().product(product.value).capabilities.native_resolution_m
     )
     return create_import_plan(
         job.bounds,
-        job.product,
+        product,
         job.elevation_resolution_metres,
         job.use_imagery,
         job.imagery_gsd_metres,

@@ -72,6 +72,6 @@ def plan_texture_tiles(
 
 
 def plan_imagery_tiles(plan: ImportPlan) -> tuple[ImageryTileRequest, ...]:
-    """Return PNOA-named tiles for compatibility with the former API."""
+    """Return texture tiles using the provider-neutral default filename prefix."""
 
-    return plan_texture_tiles(plan, "pnoa")
+    return plan_texture_tiles(plan, "imagery")

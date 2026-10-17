@@ -41,7 +41,6 @@ from ..jobs.storage import (
     write_acquisition_job,
     write_discovery_job,
 )
-from ..models import DatasetProduct
 from ..providers.copernicus_dem import GLO30_PRODUCT_ID, glo30_tiles_for_roi
 from ..providers.gebco import PRODUCT_ID as GEBCO_PRODUCT_ID
 from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
@@ -181,7 +180,7 @@ def start_discovery(context: bpy.types.Context) -> None:
 
 
 def start_delivery(context: bpy.types.Context) -> None:
-    """Launch elevation and optional PNOA delivery in a background worker."""
+    """Launch confirmed data acquisition in a background worker."""
 
     properties = context.scene.blender_terrain_roi
     if not properties.is_valid or not properties.discovery_ready:
@@ -782,7 +781,7 @@ def _job_from_properties(task_id: str, import_id: str, properties: Any) -> Disco
             task_id=task_id,
             import_id=import_id,
             bounds=region.bounds,
-            product=DatasetProduct(properties.product),
+            product=properties.product,
             elevation_resolution_metres=(
                 None
                 if properties.elevation_resolution == "AUTO"
