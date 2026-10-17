@@ -426,6 +426,7 @@ class Sentinel2Acquirer:
             "B02": self._reader_factory(scene.blue_url, range_directory / "blue"),
             "SCL": self._reader_factory(scene.scl_url, range_directory / "scl"),
         }
+        requested = _clip_to_common_raster_bounds(requested, tuple(readers.values()))
         red, exact = readers["B04"].read_bounds(requested)
         green, green_bounds = readers["B03"].read_bounds(exact)
         blue, blue_bounds = readers["B02"].read_bounds(exact)
@@ -519,6 +520,31 @@ def _intersection(left: BBoxWGS84, right: BBoxWGS84) -> BBoxWGS84 | None:
     east = min(left.east, right.east)
     north = min(left.north, right.north)
     return None if east <= west or north <= south else BBoxWGS84(west, south, east, north)
+
+
+def _clip_to_common_raster_bounds(
+    requested: ProjectedBounds,
+    readers: tuple[BandReader, ...],
+) -> ProjectedBounds:
+    """Clip a STAC footprint to the pixels shared by all required assets."""
+
+    west, south, east, north = (
+        requested.west,
+        requested.south,
+        requested.east,
+        requested.north,
+    )
+    for reader in readers:
+        if reader.georeference.epsg != requested.epsg:
+            raise RasterFormatError("Sentinel-2 assets do not share one CRS")
+        bounds = reader.georeference.bounds(reader.layout.width, reader.layout.height)
+        west = max(west, bounds[0])
+        south = max(south, bounds[1])
+        east = min(east, bounds[2])
+        north = min(north, bounds[3])
+    if east <= west or north <= south:
+        raise NoCoverageError("Sentinel-2 scene footprint has no raster pixels for the ROI")
+    return ProjectedBounds(west, south, east, north, requested.epsg)
 
 
 def _rectangles_cover(roi: BBoxWGS84, rectangles: tuple[BBoxWGS84, ...]) -> bool:

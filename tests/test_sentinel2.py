@@ -18,6 +18,7 @@ from blender_terrain.providers.sentinel2 import (
     Sentinel2Acquirer,
     Sentinel2CatalogClient,
     Sentinel2Scene,
+    _clip_to_common_raster_bounds,
     parse_sentinel2_search,
     select_sentinel2_scenes,
     sentinel2_search_body,
@@ -164,8 +165,8 @@ def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None
     exact = ProjectedBounds(600_000.0, 5_700_000.0, 600_040.0, 5_700_040.0, 32630)
 
     class Reader:
-        layout = TileLayout(4, 4, 4, 4, 0.0)
-        georeference = GeoReference(32630, 600_000.0, 5_700_040.0, 10.0, -10.0, 32630)
+        layout = TileLayout(20_000, 20_000, 256, 256, 0.0)
+        georeference = GeoReference(32630, 600_000.0, 5_800_000.0, 10.0, -10.0, 32630)
         nodata = 0.0
 
         def __init__(self, value: float, scl: bool = False) -> None:
@@ -202,6 +203,27 @@ def test_acquires_rgb_and_resamples_scene_classification(tmp_path: Path) -> None
     manifest = json.loads(result.auxiliary_paths[0].read_text(encoding="utf-8"))
     assert manifest["temporal_policy"] == policy
     assert manifest["scenes"][0]["id"] == scene.id
+
+
+def test_clips_stac_footprint_to_the_common_asset_pixels() -> None:
+    class Reader:
+        layout = TileLayout(10, 10, 10, 10, 0.0)
+
+        def __init__(self, origin_x: float) -> None:
+            self.georeference = GeoReference(32630, origin_x, 100.0, 10.0, -10.0, 32630)
+
+    clipped = _clip_to_common_raster_bounds(
+        ProjectedBounds(-10.0, -10.0, 110.0, 110.0, 32630),
+        (Reader(0.0), Reader(10.0)),
+    )
+
+    assert clipped == ProjectedBounds(10.0, 0.0, 100.0, 100.0, 32630)
+
+    with pytest.raises(NoCoverageError, match="no raster pixels"):
+        _clip_to_common_raster_bounds(
+            ProjectedBounds(200.0, 0.0, 210.0, 10.0, 32630),
+            (Reader(0.0),),
+        )
 
 
 def test_selects_two_clear_scenes_per_grid_tile_and_requires_full_coverage() -> None:

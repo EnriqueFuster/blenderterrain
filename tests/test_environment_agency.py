@@ -66,6 +66,33 @@ def test_builds_verified_environment_agency_wcs_query() -> None:
     assert query["format"] == ["image/tiff;application=geotiff"]
 
 
+def test_wcs_query_preserves_subdivided_roi_precision() -> None:
+    product = load_bundled_catalog().product("GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN")
+    bounds = BBoxWGS84(0.123456789012345, 52.1234567890123, 0.223456789012345, 52.2234567890123)
+    request = EnvironmentAgencyRequest(0, 0, bounds, 100, 100, 2048)
+
+    query = parse_qs(urlsplit(EnvironmentAgencyWCSClient(product).request_url(request)).query)
+
+    assert query["subset"] == [
+        "Lat(52.1234567890123,52.2234567890123)",
+        "Long(0.123456789012345,0.223456789012345)",
+    ]
+
+
+def test_wcs_cache_identity_includes_the_requested_area() -> None:
+    product = load_bundled_catalog().product("GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN")
+    client = EnvironmentAgencyWCSClient(product)
+    london = plan_environment_agency_requests(
+        BBoxWGS84(-0.299863, 51.406475, -0.273541, 51.420963), 2048
+    )[0]
+    norwich = plan_environment_agency_requests(
+        BBoxWGS84(1.29, 52.62, 1.292, 52.622), 2048
+    )[0]
+
+    assert client._cache_filename(london) == client._cache_filename(london)
+    assert client._cache_filename(london) != client._cache_filename(norwich)
+
+
 @pytest.mark.parametrize(("maximum_dimension", "resolution"), [(8, 1.0), (2048, 0.0)])
 def test_rejects_invalid_request_limits(maximum_dimension: int, resolution: float) -> None:
     with pytest.raises(ValueError, match="limits"):

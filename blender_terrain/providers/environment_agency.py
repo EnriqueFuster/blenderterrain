@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Callable
@@ -291,8 +292,14 @@ class EnvironmentAgencyWCSClient:
                 ("coverageId", contract.coverage_id),
                 ("subsettingCrs", subsetting_crs),
                 ("outputCrs", output_crs),
-                ("subset", f"Lat({request.bounds.south:g},{request.bounds.north:g})"),
-                ("subset", f"Long({request.bounds.west:g},{request.bounds.east:g})"),
+                (
+                    "subset",
+                    f"Lat({_coordinate(request.bounds.south)},{_coordinate(request.bounds.north)})",
+                ),
+                (
+                    "subset",
+                    f"Long({_coordinate(request.bounds.west)},{_coordinate(request.bounds.east)})",
+                ),
                 ("format", contract.format),
             ]
         )
@@ -305,7 +312,7 @@ class EnvironmentAgencyWCSClient:
         progress_callback: Callable[[int, int | None], None] | None = None,
         cancellation_requested: Callable[[], bool] = lambda: False,
     ) -> DownloadedAsset:
-        filename = f"ea_r{request.row}_c{request.column}.tif"
+        filename = self._cache_filename(request)
         maximum_bytes = max(1024 * 1024, request.width * request.height * 8)
         result = download_public_tiff(
             self.request_url(request),
@@ -317,6 +324,12 @@ class EnvironmentAgencyWCSClient:
         )
         self._validate_raster(result.path, request)
         return result
+
+    def _cache_filename(self, request: EnvironmentAgencyRequest) -> str:
+        """Key cached WCS windows by their complete provider request."""
+
+        digest = hashlib.sha256(self.request_url(request).encode("utf-8")).hexdigest()[:16]
+        return f"ea_wcs_v3_{digest}.tif"
 
     @staticmethod
     def _validate_raster(path: Path, request: EnvironmentAgencyRequest) -> None:
@@ -337,6 +350,12 @@ class EnvironmentAgencyWCSClient:
 
 def _epsg_uri(epsg: int) -> str:
     return f"http://www.opengis.net/def/crs/EPSG/0/{epsg}"
+
+
+def _coordinate(value: float) -> str:
+    """Serialize a WCS coordinate without truncating subdivided ROI bounds."""
+
+    return format(value, ".15g")
 
 
 class EnvironmentAgencyWCSAcquirer:
