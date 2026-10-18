@@ -26,11 +26,14 @@ from ..core import (
     create_import_plan,
     geographic_source_bounds,
     process_elevation_tiles,
-    process_gebco_tiles,
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
-from ..errors import JobCancelled, NoCoverageError, RasterFormatError, UserInputError
-from ..providers.registry import build_raster_acquirers, projected_work_areas
+from ..errors import JobCancelled, NoCoverageError, UserInputError
+from ..providers.registry import (
+    bathymetry_processor,
+    build_raster_acquirers,
+    projected_work_areas,
+)
 
 
 class ElevationProcessor(Protocol):
@@ -221,7 +224,6 @@ def prepare_confirmed_bathymetry(
     if (
         product.provider_id != selection.provider_id
         or product.capabilities.kind is not DatasetKind.BATHYMETRY
-        or product.id != "GEBCO_2026"
     ):
         raise UserInputError("Selected bathymetry product is not supported by this worker")
     request = plan.request.layer(DatasetKind.BATHYMETRY)
@@ -237,14 +239,8 @@ def prepare_confirmed_bathymetry(
         acquirer_factory,
         geographic_source_bounds(import_plan),
     )[0]
-    tid_path = next((path for path in acquired.auxiliary_paths if path.name == "tid.npy"), None)
-    if tid_path is None or len(acquired.paths) != 1:
-        raise RasterFormatError("GEBCO elevation and TID windows are required")
-    tiles = process_gebco_tiles(
-        acquired.paths[0],
-        tid_path,
-        import_plan,
-        processing_callback,
-        region,
-    )
+    processor = bathymetry_processor(product.id)
+    if processor is None:
+        raise UserInputError("Selected bathymetry product has no processing adapter")
+    tiles = processor(acquired, import_plan, processing_callback, region)
     return PreparedBathymetry(acquired, tiles)

@@ -667,23 +667,26 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
             )
             return
         if active.mode == "imagery_discovery":
-            sentinel = result.get("sentinel2", {})
-            if not isinstance(sentinel, dict):
-                sentinel = {}
-            count = int(sentinel.get("scene_count", 0) or 0)
-            earliest = str(sentinel.get("earliest_acquisition", ""))[:10]
-            latest = str(sentinel.get("latest_acquisition", ""))[:10]
-            minimum_cloud = float(sentinel.get("minimum_cloud_percent", 0.0) or 0.0)
-            maximum_cloud = float(sentinel.get("maximum_cloud_percent", 0.0) or 0.0)
+            discovery = result.get("imagery_discovery", {})
+            if not isinstance(discovery, dict):
+                discovery = {}
+            count = int(discovery.get("scene_count", 0) or 0)
+            earliest = str(discovery.get("earliest_acquisition", ""))[:10]
+            latest = str(discovery.get("latest_acquisition", ""))[:10]
+            minimum_cloud = float(discovery.get("minimum_cloud_percent", 0.0) or 0.0)
+            maximum_cloud = float(discovery.get("maximum_cloud_percent", 0.0) or 0.0)
+            imagery_name = load_bundled_catalog().product(
+                str(discovery.get("product_id", properties.imagery_product))
+            ).name
             properties.discovered_file_count = count
             properties.discovery_summary = (
-                f"{properties.product} elevation; Sentinel-2: {count} scene(s), "
+                f"{properties.product} elevation; {imagery_name}: {count} scene(s), "
                 f"{earliest} to {latest}, cloud {minimum_cloud:g}-{maximum_cloud:g}%"
             )
             if properties.bathymetry_mode == "GEBCO":
                 properties.discovery_summary += "; GEBCO bathymetry"
             properties.discovery_ready = True
-            properties.job_message = "Sentinel-2 coverage confirmed for the ROI"
+            properties.job_message = f"{imagery_name} coverage confirmed for the ROI"
             return
         if active.mode in {"acquisition", "local_delivery"}:
             elevation_count = len(result.get("elevation_paths", []))

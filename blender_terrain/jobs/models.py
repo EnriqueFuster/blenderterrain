@@ -14,7 +14,7 @@ from ..models import ProjectedBounds
 
 JOB_SCHEMA_VERSION = 7
 SUPPORTED_JOB_SCHEMA_VERSIONS = frozenset({6, JOB_SCHEMA_VERSION})
-RESULT_SCHEMA_VERSION = 2
+RESULT_SCHEMA_VERSION = 3
 
 
 class JobState(StrEnum):

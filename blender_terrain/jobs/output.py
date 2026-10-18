@@ -36,7 +36,7 @@ def transfer_message(transfer: TransferProgress) -> str:
         "imagery": "imagery",
         "dtm": "DTM",
         "dsm": "DSM",
-        "bathymetry": "GEBCO bathymetry",
+        "bathymetry": "bathymetry",
     }.get(transfer.kind, transfer.kind)
     position = f"{transfer.file_index + 1}/{transfer.file_count}"
     if transfer.cached:
@@ -74,6 +74,12 @@ def build_result_payload(
     bathymetry_product = (
         None if bathymetry is None else catalog.product(bathymetry.acquired.product_id)
     )
+    imagery_selection = job.plan.selections.for_kind(DatasetKind.IMAGERY)
+    unavailable_imagery_name = (
+        "Selected imagery source"
+        if imagery_selection is None
+        else catalog.product(imagery_selection.product_id).name
+    )
     source_layers = (
         ([] if elevation.acquired is None else [elevation.acquired])
         + ([] if bathymetry is None else [bathymetry.acquired])
@@ -100,7 +106,10 @@ def build_result_payload(
             else []
         )
         + (
-            ["WorldCover has no imagery for this ROI; no texture was prepared"]
+            [
+                f"{unavailable_imagery_name} has no imagery data for this ROI; "
+                "no texture was prepared"
+            ]
             if imagery_unavailable
             else []
         )
@@ -263,13 +272,13 @@ def write_processed_bathymetry(
             f"r{processed.tile.row}_c{processed.tile.column}"
         )
         elevation_path = directory / f"{stem}.npy"
-        tid_path = directory / f"{stem}_tid.npy"
+        classification_path = directory / f"{stem}_classification.npy"
         write_elevation_array(elevation_path, processed.elevation)
-        write_quality_array(tid_path, processed.tid)
+        write_quality_array(classification_path, processed.classification)
         payload.append(
             {
                 "path": str(elevation_path),
-                "tid_path": str(tid_path),
+                "classification_path": str(classification_path),
                 "bounds": asdict(processed.tile.bounds),
                 "rows": processed.tile.rows,
                 "columns": processed.tile.columns,

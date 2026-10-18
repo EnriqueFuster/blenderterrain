@@ -14,19 +14,18 @@ from ..errors import (
     ProviderUnavailableError,
     UserInputError,
 )
-from ..providers.sentinel2 import PRODUCT_ID as SENTINEL2_PRODUCT_ID
-from ..providers.sentinel2 import Sentinel2CatalogClient, Sentinel2Scene, discover_sentinel2_scenes
-from .models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
-from .storage import (
+from ..jobs.models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
+from ..jobs.storage import (
     append_progress_event,
     finish_job_error,
     is_cancellation_requested,
     read_acquisition_job,
     write_result,
 )
+from .sentinel2 import PRODUCT_ID, Sentinel2CatalogClient, Sentinel2Scene, discover_sentinel2_scenes
 
 
-def run_imagery_discovery_job(
+def run_sentinel2_discovery_job(
     job_path: Path,
     catalog_factory: Callable[[], Sentinel2CatalogClient] = Sentinel2CatalogClient,
 ) -> JobState:
@@ -45,7 +44,7 @@ def run_imagery_discovery_job(
         emit(JobState.VALIDATING, 0.05, "Validating imagery discovery request")
         job = read_acquisition_job(job_path)
         selection = job.plan.selections.for_kind(DatasetKind.IMAGERY)
-        if selection is None or selection.product_id != SENTINEL2_PRODUCT_ID:
+        if selection is None or selection.product_id != PRODUCT_ID:
             raise UserInputError("Dynamic imagery discovery requires Sentinel-2")
         if is_cancellation_requested(job_path.parent):
             raise JobCancelled("Sentinel-2 discovery was cancelled")
@@ -81,7 +80,8 @@ def _result_payload(scenes: tuple[Sentinel2Scene, ...]) -> dict[str, object]:
     return {
         "schema_version": RESULT_SCHEMA_VERSION,
         "state": JobState.COMPLETE.value,
-        "sentinel2": {
+        "imagery_discovery": {
+            "product_id": PRODUCT_ID,
             "scene_count": len(scenes),
             "scene_ids": [scene.id for scene in scenes],
             "earliest_acquisition": min(dates),

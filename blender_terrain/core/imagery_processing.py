@@ -18,8 +18,8 @@ from .imagery import plan_texture_tiles
 from .planning import ImportPlan
 from .projection import project_arrays_to_wgs84
 
-_WORLDCOVER_BLACK_REFLECTANCE = 0.02
-_WORLDCOVER_WHITE_REFLECTANCE = 0.40
+_BLACK_REFLECTANCE = 0.02
+_WHITE_REFLECTANCE = 0.40
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,25 +29,6 @@ class ProcessedImageryTile:
     width: int
     height: int
     gsd_metres: float
-
-
-def process_worldcover_imagery(
-    source_paths: tuple[Path, ...],
-    plan: ImportPlan,
-    output_directory: Path,
-    progress_callback: Callable[[int, int], None] | None = None,
-    cancellation_requested: Callable[[], bool] = lambda: False,
-) -> tuple[ProcessedImageryTile, ...]:
-    """Preserve the public WorldCover entry point and its cache filenames."""
-
-    return process_imagery_windows(
-        source_paths,
-        plan,
-        output_directory,
-        "worldcover_v2",
-        progress_callback,
-        cancellation_requested,
-    )
 
 
 def process_imagery_windows(
@@ -146,10 +127,12 @@ def _reproject_request(
             if not source_valid.any():
                 continue
             locations = np.flatnonzero(valid)[source_valid]
-            block.reshape(-1, 3)[locations] = _worldcover_rgb(rgb_linear[source_valid])
+            block.reshape(-1, 3)[locations] = _natural_colour_rgb(
+                rgb_linear[source_valid]
+            )
             block_covered.reshape(-1)[locations] = True
     if not covered.any():
-        raise NoCoverageError("WorldCover does not cover this texture tile")
+        raise NoCoverageError("Imagery source does not cover this texture tile")
     return output
 
 
@@ -165,11 +148,11 @@ def _source_coordinates(
     return np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
 
 
-def _worldcover_rgb(reflectance: NDArray[np.float32]) -> NDArray[np.uint8]:
+def _natural_colour_rgb(reflectance: NDArray[np.float32]) -> NDArray[np.uint8]:
     """Apply one fixed natural-colour stretch without introducing tile seams."""
 
-    normalized = (reflectance - _WORLDCOVER_BLACK_REFLECTANCE) / (
-        _WORLDCOVER_WHITE_REFLECTANCE - _WORLDCOVER_BLACK_REFLECTANCE
+    normalized = (reflectance - _BLACK_REFLECTANCE) / (
+        _WHITE_REFLECTANCE - _BLACK_REFLECTANCE
     )
     srgb = np.power(np.clip(normalized, 0.0, 1.0), 1.0 / 2.2)
     return np.rint(srgb * 255.0).astype(np.uint8)

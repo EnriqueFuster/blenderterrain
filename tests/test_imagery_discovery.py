@@ -15,10 +15,10 @@ from blender_terrain.catalog import (
 )
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.jobs.acquisition_job import AcquisitionJob
-from blender_terrain.jobs.imagery_discovery import run_imagery_discovery_job
 from blender_terrain.jobs.models import JobState
 from blender_terrain.jobs.storage import write_acquisition_job
 from blender_terrain.providers.sentinel2 import Sentinel2Scene
+from blender_terrain.providers.sentinel2_jobs import run_sentinel2_discovery_job
 
 
 def test_discovers_confirmed_sentinel_scenes_without_downloading_bands(tmp_path: Path) -> None:
@@ -64,11 +64,12 @@ def test_discovers_confirmed_sentinel_scenes_without_downloading_bands(tmp_path:
             )
             return (scene,)
 
-    state = run_imagery_discovery_job(job_path, lambda: Catalog())
+    state = run_sentinel2_discovery_job(job_path, lambda: Catalog())
     result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
 
     assert state is JobState.COMPLETE
-    assert result["sentinel2"] == {
+    assert result["imagery_discovery"] == {
+        "product_id": "SENTINEL2_L2A",
         "scene_count": 1,
         "scene_ids": [scene.id],
         "earliest_acquisition": scene.acquired_at,

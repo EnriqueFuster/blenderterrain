@@ -12,7 +12,6 @@ from blender_terrain.core import (
 from blender_terrain.core.bathymetry_processing import (
     ProcessedBathymetryTile,
     compose_terrain_bathymetry,
-    process_gebco_tiles,
 )
 from blender_terrain.core.elevation_processing import ProcessedElevationTile
 from blender_terrain.core.grid import GridTile
@@ -20,6 +19,7 @@ from blender_terrain.core.planning import ImportPlan
 from blender_terrain.errors import RasterFormatError
 from blender_terrain.io.elevation_window import write_elevation_window
 from blender_terrain.models import ProjectedBounds
+from blender_terrain.providers.gebco import process_gebco_tiles
 
 
 def _sources(tmp_path: Path, tid_value: float = 11.0) -> tuple[Path, Path, ImportPlan]:
@@ -57,10 +57,10 @@ def test_reprojects_bathymetry_and_tid_to_identical_terrain_grid(tmp_path: Path)
 
     assert len(outputs) == plan.terrain_tile_count
     for output in outputs:
-        assert output.elevation.shape == output.tid.shape
+        assert output.elevation.shape == output.classification.shape
         assert output.elevation.shape == (output.tile.rows + 1, output.tile.columns + 1)
-        assert output.tid.dtype == np.uint8
-        assert set(np.unique(output.tid)) == {11}
+        assert output.classification.dtype == np.uint8
+        assert set(np.unique(output.classification)) == {11}
         assert np.all(output.elevation < 0.0)
 
 
@@ -92,7 +92,7 @@ def test_bathymetry_preserves_the_polygon_roi_mask(tmp_path: Path) -> None:
 
     assert any(np.any(tile.elevation == tile.nodata) for tile in outputs)
     assert all(
-        np.array_equal(tile.elevation == tile.nodata, tile.tid == 255)
+        np.array_equal(tile.elevation == tile.nodata, tile.classification == 255)
         for tile in outputs
     )
 

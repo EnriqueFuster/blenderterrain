@@ -23,6 +23,8 @@ from ..catalog.models import DatasetKind
 from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
+from ..core.imagery_processing import ProcessedImageryTile, process_imagery_windows
+from ..core.planning import ImportPlan
 from ..core.roi import BBoxWGS84
 from ..errors import (
     JobCancelled,
@@ -48,6 +50,25 @@ _MAXIMUM_SOURCE_BYTES = 300_000_000
 _MAXIMUM_WINDOW_PIXELS = 16_777_216
 _SCENES_PER_GRID = 2
 _GRID_CODE = re.compile(r"_T(?P<code>\d{2}[A-Z]{3})_")
+
+
+def process_sentinel2_imagery(
+    source_paths: tuple[Path, ...],
+    plan: ImportPlan,
+    output_directory: Path,
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancellation_requested: Callable[[], bool] = lambda: False,
+) -> tuple[ProcessedImageryTile, ...]:
+    """Project Sentinel-2 windows onto the planned texture grid."""
+
+    return process_imagery_windows(
+        source_paths,
+        plan,
+        output_directory,
+        "sentinel2_l2a",
+        progress_callback,
+        cancellation_requested,
+    )
 
 
 def sentinel2_temporal_policy(

@@ -5,14 +5,14 @@ import pytest
 
 from blender_terrain.core import BBoxWGS84, create_import_plan, geographic_source_bounds
 from blender_terrain.core.imagery_processing import (
-    _worldcover_rgb,
+    _natural_colour_rgb,
     process_imagery_windows,
-    process_worldcover_imagery,
 )
 from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.imagery_window import write_imagery_window
 from blender_terrain.io.png_validation import validate_png
 from blender_terrain.models import ProjectedBounds
+from blender_terrain.providers.worldcover import process_worldcover_imagery
 
 
 def test_worldcover_uses_a_fixed_contrast_preserving_colour_stretch() -> None:
@@ -21,7 +21,7 @@ def test_worldcover_uses_a_fixed_contrast_preserving_colour_stretch() -> None:
         dtype=np.float32,
     )
 
-    rgb = _worldcover_rgb(reflectance)
+    rgb = _natural_colour_rgb(reflectance)
 
     assert rgb.dtype == np.uint8
     assert rgb[0].tolist() == [0, 0, 80]

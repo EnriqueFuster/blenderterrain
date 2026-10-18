@@ -15,7 +15,6 @@ def main() -> int:
         raise RuntimeError("Expected a job.json path and optional worker mode after --")
     if __package__ in (None, ""):
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from blender_terrain.jobs.imagery_discovery import run_imagery_discovery_job
     from blender_terrain.jobs.local import (
         run_local_delivery_job,
         run_local_discovery_job,
@@ -26,7 +25,6 @@ def main() -> int:
     job_path = Path(arguments[0]).resolve()
     runners: dict[str, Callable[[Path], object]] = {
         "acquisition": run_confirmed_acquisition_job,
-        "imagery_discovery": run_imagery_discovery_job,
         "local_discovery": run_local_discovery_job,
         "local_delivery": run_local_delivery_job,
         **provider_job_runners(),

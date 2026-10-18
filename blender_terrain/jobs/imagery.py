@@ -18,14 +18,16 @@ from ..core import (
     ProcessedImageryTile,
     TransferProgress,
     geographic_source_bounds,
-    process_imagery_windows,
-    process_worldcover_imagery,
 )
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer, acquire_plan_layers
 from ..errors import RasterFormatError, UserInputError
 from ..io.png_validation import validate_png
 from ..models import ProjectedBounds
-from ..providers.registry import build_raster_acquirers, direct_imagery_preparer
+from ..providers.registry import (
+    build_raster_acquirers,
+    direct_imagery_preparer,
+    imagery_processor,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,12 +73,6 @@ def prepare_confirmed_imagery(
             cancellation_requested,
         )
         return PreparedImagery(acquired, tiles)
-    if product.id not in {
-        "ESA_WORLDCOVER_S2_2021",
-        "FR_BD_ORTHO",
-        "SENTINEL2_L2A",
-    }:
-        raise UserInputError("Selected imagery product is not supported by this worker")
     imagery_plan = AcquisitionPlan(
         AcquisitionRequest(plan.request.roi, (request,), plan.request.license_profile),
         SelectionBundle((selection,)),
@@ -90,19 +86,12 @@ def prepare_confirmed_imagery(
         cancellation_requested,
         geographic_source_bounds(import_plan),
     )[0]
-    if product.id == "FR_BD_ORTHO":
+    if product.wms is not None:
         return PreparedImagery(acquired, _projected_wms_imagery_tiles(acquired))
-    if product.id == "SENTINEL2_L2A":
-        tiles = process_imagery_windows(
-            acquired.paths,
-            import_plan,
-            output_directory,
-            "sentinel2_l2a",
-            processing_callback,
-            cancellation_requested,
-        )
-        return PreparedImagery(acquired, tiles)
-    tiles = process_worldcover_imagery(
+    processor = imagery_processor(product.id)
+    if processor is None:
+        raise UserInputError("Selected imagery product has no processing adapter")
+    tiles = processor(
         acquired.paths,
         import_plan,
         output_directory,

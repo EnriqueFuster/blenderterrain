@@ -16,6 +16,8 @@ from ..catalog.models import DatasetKind
 from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
 from ..core.delivery import TransferProgress
+from ..core.imagery_processing import ProcessedImageryTile, process_imagery_windows
+from ..core.planning import ImportPlan
 from ..core.roi import BBoxWGS84
 from ..errors import JobCancelled, NoCoverageError, RasterFormatError
 from ..io.atomic import finalize_part
@@ -52,6 +54,25 @@ class WindowReader(Protocol):
 
 
 ReaderFactory = Callable[[str, Path], WindowReader]
+
+
+def process_worldcover_imagery(
+    source_paths: tuple[Path, ...],
+    plan: ImportPlan,
+    output_directory: Path,
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancellation_requested: Callable[[], bool] = lambda: False,
+) -> tuple[ProcessedImageryTile, ...]:
+    """Project WorldCover RGB windows while preserving stable cache names."""
+
+    return process_imagery_windows(
+        source_paths,
+        plan,
+        output_directory,
+        "worldcover_v2",
+        progress_callback,
+        cancellation_requested,
+    )
 
 
 class WorldCoverAcquirer:

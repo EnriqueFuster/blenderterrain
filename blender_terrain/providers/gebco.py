@@ -19,8 +19,11 @@ from numpy.typing import NDArray
 from ..catalog.models import DatasetKind
 from ..catalog.selection import LayerRequest, ProductSelection
 from ..core.acquisition import AcquiredRasterLayer
+from ..core.bathymetry_processing import ProcessedBathymetryTile
 from ..core.delivery import TransferProgress
-from ..core.roi import BBoxWGS84
+from ..core.elevation_processing import process_elevation_tiles
+from ..core.planning import ImportPlan
+from ..core.roi import BBoxWGS84, RegionOfInterest
 from ..errors import (
     DownloadIntegrityError,
     JobCancelled,
@@ -36,8 +39,71 @@ DAP_BASE = "https://dap.ceda.ac.uk/thredds/dodsC/bodc/gebco/global/gebco_2026"
 MAXIMUM_WINDOW_CELLS = 1_048_576
 MAXIMUM_RESPONSE_BYTES = 24_000_000
 TID_NODATA = 255.0
+TID_CODES = frozenset({0, *range(10, 18), *range(40, 49), *range(70, 73)})
 
 Fetcher = Callable[[str, int], bytes]
+
+
+def process_gebco_layer(
+    acquired: AcquiredRasterLayer,
+    plan: ImportPlan,
+    progress_callback: Callable[[int, int], None] | None = None,
+    region: RegionOfInterest | None = None,
+) -> tuple[ProcessedBathymetryTile, ...]:
+    """Validate and project GEBCO elevation and TID onto terrain grids."""
+
+    tid_path = next(
+        (path for path in acquired.auxiliary_paths if path.name == "tid.npy"), None
+    )
+    if acquired.product_id != PRODUCT_ID or tid_path is None or len(acquired.paths) != 1:
+        raise RasterFormatError("GEBCO elevation and TID windows are required")
+    return process_gebco_tiles(
+        acquired.paths[0], tid_path, plan, progress_callback, region
+    )
+
+
+def process_gebco_tiles(
+    elevation_path: Path,
+    tid_path: Path,
+    plan: ImportPlan,
+    progress_callback: Callable[[int, int], None] | None = None,
+    region: RegionOfInterest | None = None,
+) -> tuple[ProcessedBathymetryTile, ...]:
+    """Reproject GEBCO elevation bilinearly and TID by nearest neighbour."""
+
+    elevation = process_elevation_tiles((elevation_path,), plan, region=region)
+    quality = process_elevation_tiles(
+        (tid_path,), plan, sampling="nearest", region=region
+    )
+    if len(elevation) != len(quality):
+        raise RasterFormatError("Processed GEBCO elevation and TID tile counts differ")
+    outputs: list[ProcessedBathymetryTile] = []
+    if progress_callback is not None:
+        progress_callback(0, len(elevation))
+    for bathymetry, tid_tile in zip(elevation, quality, strict=True):
+        if bathymetry.tile != tid_tile.tile or bathymetry.zone_index != tid_tile.zone_index:
+            raise RasterFormatError("Processed GEBCO elevation and TID grids do not align")
+        raw_tid = tid_tile.data
+        valid = raw_tid != tid_tile.nodata
+        rounded = np.rint(raw_tid[valid])
+        if not np.all(raw_tid[valid] == rounded) or not set(
+            rounded.astype(int)
+        ).issubset(TID_CODES):
+            raise RasterFormatError("Processed GEBCO TID contains unknown quality codes")
+        tid = np.full(raw_tid.shape, 255, dtype=np.uint8)
+        tid[valid] = rounded.astype(np.uint8)
+        outputs.append(
+            ProcessedBathymetryTile(
+                bathymetry.zone_index,
+                bathymetry.tile,
+                bathymetry.data,
+                tid,
+                bathymetry.nodata,
+            )
+        )
+        if progress_callback is not None:
+            progress_callback(len(outputs), len(elevation))
+    return tuple(outputs)
 
 
 class GebcoAcquirer:

@@ -250,7 +250,7 @@ class DiscoveryWorkerTests(unittest.TestCase):
             )
             self.assertEqual([event["sequence"] for event in events], [0, 1, 2])
             result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
-            self.assertEqual(result["schema_version"], 2)
+            self.assertEqual(result["schema_version"], 3)
             self.assertEqual(result["state"], "COMPLETE")
             self.assertIn("task_id", result)
             self.assertIn("import_id", result)

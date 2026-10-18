@@ -151,7 +151,7 @@ def run_confirmed_acquisition_job(
             emit(
                 JobState.DOWNLOADING_ELEVATION,
                 stage_progress("bathymetry_download", 0.0),
-                "Downloading GEBCO bathymetry",
+                "Downloading selected bathymetry source",
             )
         bathymetry = prepare_confirmed_bathymetry(
             job.plan,
@@ -197,7 +197,7 @@ def run_confirmed_acquisition_job(
             emit(
                 JobState.PROCESSING_ELEVATION,
                 stage_progress("imagery_process", 1.0),
-                "WorldCover has no imagery for this ROI; continuing without texture",
+                "Selected imagery source has no data for this ROI; continuing without texture",
             )
         emit(
             JobState.PROCESSING_ELEVATION,

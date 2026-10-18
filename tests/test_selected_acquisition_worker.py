@@ -441,7 +441,7 @@ def test_worker_builds_confirmed_bathymetry_when_glo30_has_no_ocean_data(
     assert payload["bathymetry"]
     assert payload["processed_elevation"]
     assert payload["sources"][0]["product_id"] == "GEBCO_2026"
-    assert "Downloading GEBCO bathymetry" in events
+    assert "Downloading selected bathymetry source" in events
     assert "continuing without texture" in events
     assert any("has no data for this ROI" in warning for warning in payload["warnings"])
     assert any("no imagery" in warning for warning in payload["warnings"])
@@ -526,7 +526,7 @@ def test_worker_prepares_confirmed_bathymetry_without_changing_provider(
     assert prepared.acquired.product_id == "GEBCO_2026"
     assert len(prepared.tiles) == import_plan.terrain_tile_count
     assert all(np.all(tile.elevation == -50.0) for tile in prepared.tiles)
-    assert all(set(np.unique(tile.tid)) == {11} for tile in prepared.tiles)
+    assert all(set(np.unique(tile.classification)) == {11} for tile in prepared.tiles)
 
 
 def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
