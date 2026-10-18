@@ -16,6 +16,9 @@ _IMPORT_ITEMS_CACHE: list[tuple[str, str, str]] = []
 _GPKG_LAYER_ITEMS_CACHE: list[tuple[str, str, str]] = []
 _PRODUCT_ITEMS_CACHE: list[tuple[str, str, str, int, int]] = []
 _IMAGERY_ITEMS_CACHE: list[tuple[str, str, str, int, int]] = []
+_BATHYMETRY_ITEMS_CACHE: list[tuple[str, str, str, int, int]] = []
+
+
 def _product_items(
     properties: object, context: bpy.types.Context
 ) -> list[tuple[str, str, str, int, int]]:
@@ -25,9 +28,13 @@ def _product_items(
         available = set()
     products = (
         (index, product)
-        for index, product in enumerate(load_bundled_catalog().products, start=1)
+        for index, product in enumerate(
+            item
+            for item in load_bundled_catalog().products
+            if item.selectable
+            and item.capabilities.kind in {DatasetKind.DTM, DatasetKind.DSM}
+        )
         if product.selectable
-        and product.capabilities.kind in {DatasetKind.DTM, DatasetKind.DSM}
         and (not available or product.id in available)
     )
     _PRODUCT_ITEMS_CACHE[:] = [
@@ -52,15 +59,36 @@ def _imagery_product_items(
         available = set()
     items = tuple(
         (product.id, product.name, _product_description(product), 0, index)
-        for index, product in enumerate(load_bundled_catalog().products, start=1)
-        if product.selectable
-        and product.capabilities.kind is DatasetKind.IMAGERY
+        for index, product in enumerate(
+            product
+            for product in load_bundled_catalog().products
+            if product.selectable
+            and product.capabilities.kind is DatasetKind.IMAGERY
+        )
     )
     _IMAGERY_ITEMS_CACHE[:] = [item for item in items if not available or item[0] in available]
     _IMAGERY_ITEMS_CACHE.append(
         ("NONE", "No Imagery", "Create terrain without imagery", 0, 10_000)
     )
     return _IMAGERY_ITEMS_CACHE
+
+
+def _bathymetry_product_items(
+    properties: object, context: bpy.types.Context
+) -> list[tuple[str, str, str, int, int]]:
+    _BATHYMETRY_ITEMS_CACHE[:] = [
+        (product.id, product.name, _product_description(product), 0, index)
+        for index, product in enumerate(
+            product
+            for product in load_bundled_catalog().products
+            if product.selectable
+            and product.capabilities.kind is DatasetKind.BATHYMETRY
+        )
+    ]
+    _BATHYMETRY_ITEMS_CACHE.append(
+        ("NONE", "Flat Water Level", "Do not download bathymetry", 0, 10_000)
+    )
+    return _BATHYMETRY_ITEMS_CACHE
 
 
 def _product_description(product: ProductRecord) -> str:
@@ -132,10 +160,16 @@ def _data_source_changed(properties: object, context: bpy.types.Context) -> None
 def _product_changed(properties: object, context: bpy.types.Context) -> None:
     """Reset incompatible output options when the native product changes."""
 
-    if properties.product in {
-        "COPERNICUS_GLO30_2021",
-        "GEDTM30_V11",
-    } and properties.elevation_resolution not in {"AUTO", "50.0", "100.0"}:
+    try:
+        native_resolution = load_bundled_catalog().product(
+            properties.product
+        ).capabilities.native_resolution_m
+    except KeyError:
+        native_resolution = 0.0
+    if (
+        properties.elevation_resolution != "AUTO"
+        and float(properties.elevation_resolution) < native_resolution
+    ):
         properties.elevation_resolution = "AUTO"
     _invalidate_validation(properties, context)
 
@@ -356,7 +390,6 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     product: EnumProperty(
         name="Elevation Product",
         items=_product_items,
-        default=1,
         update=_product_changed,
     )
     elevation_resolution: EnumProperty(
@@ -431,21 +464,21 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
         default=0,
         update=_invalidate_validation,
     )
-    sentinel2_start_date: StringProperty(
+    imagery_start_date: StringProperty(
         name="Start Date",
         description="First acquisition date (YYYY-MM-DD); leave both dates empty for the last year",
         default="",
         update=_invalidate_validation,
     )
-    sentinel2_end_date: StringProperty(
+    imagery_end_date: StringProperty(
         name="End Date",
         description="Last acquisition date (YYYY-MM-DD); leave both dates empty for the last year",
         default="",
         update=_invalidate_validation,
     )
-    sentinel2_max_cloud: IntProperty(
+    imagery_max_cloud: IntProperty(
         name="Maximum Cloud Cover",
-        description="Maximum scene cloud cover reported by Sentinel-2 metadata",
+        description="Maximum scene cloud cover reported by the imagery provider",
         default=20,
         min=0,
         max=100,
@@ -455,19 +488,7 @@ class BLENDERTERRAIN_ROIProperties(bpy.types.PropertyGroup):
     bathymetry_mode: EnumProperty(
         name="Marine Elevation",
         description="Choose how submerged terrain is represented",
-        items=(
-            (
-                "GEBCO",
-                "GEBCO Seabed Elevation",
-                "Use GEBCO bathymetry for marine cells",
-            ),
-            (
-                "FLAT",
-                "Flat Water Level",
-                "Do not download bathymetry; submerged cells remain at shoreline level",
-            ),
-        ),
-        default="GEBCO",
+        items=_bathymetry_product_items,
         update=_invalidate_validation,
     )
     show_acquisition_section: BoolProperty(default=True, options={"HIDDEN"})

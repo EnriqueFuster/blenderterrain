@@ -41,7 +41,7 @@ def main() -> None:
         assert hasattr(bpy.types.Scene, "blender_terrain_roi")
         properties = bpy.context.scene.blender_terrain_roi
         property_rna = type(properties).bl_rna.properties
-        assert properties.bathymetry_mode == "GEBCO"
+        assert properties.bathymetry_mode == "GEBCO_2026"
         if _cycle == 0:
             assert properties.show_acquisition_section
             assert not properties.show_creation_section
@@ -98,7 +98,9 @@ def main() -> None:
         assert properties.roi_geometry_json == map_geometry
         properties.product = "MDT02"
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
-        assert properties.imagery_summary.startswith("PNOA 0.25 m:")
+        assert properties.imagery_summary.startswith(
+            "Ortofotos PNOA máxima actualidad 0.25 m:"
+        )
         original_geometry = properties.roi_geometry_json
         precise_west = float(properties.west) + 1e-10
         properties.roi_geometry_json = json.dumps(
@@ -140,7 +142,7 @@ def main() -> None:
         assert bpy.ops.blender_terrain.discover_sources() == {"FINISHED"}
         assert properties.discovery_ready
         assert "valid pixels are checked during download" in properties.job_message
-        assert "Copernicus GLO-30" in properties.discovery_summary
+        assert "Copernicus DEM GLO-30" in properties.discovery_summary
         assert "GEBCO" in properties.discovery_summary
         region = extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
             json.loads(properties.roi_geometry_json)
@@ -161,10 +163,10 @@ def main() -> None:
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         assert json.loads(properties.available_product_ids_json) == [
             "FR_RGE_ALTI_1M",
+            "GEDTM30_V11",
             "FR_MNS_CORREL_50CM",
             "COPERNICUS_GLO30_2021",
-            "GEDTM30_V11",
-        ]
+        ], properties.available_product_ids_json
         assert properties.product == "COPERNICUS_GLO30_2021"
         assert json.loads(properties.available_imagery_product_ids_json) == [
             "ESA_WORLDCOVER_S2_2021",
@@ -203,9 +205,9 @@ def main() -> None:
         assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
         assert json.loads(properties.available_product_ids_json) == [
             "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM",
+            "GEDTM30_V11",
             "GB_ENG_EA_LIDAR_COMPOSITE_1M_DSM_LAST_RETURN",
             "COPERNICUS_GLO30_2021",
-            "GEDTM30_V11",
         ]
         assert properties.product == "GB_ENG_EA_LIDAR_COMPOSITE_1M_DTM"
         assert {
@@ -221,7 +223,7 @@ def main() -> None:
             "ECW decoder unavailable",
             "Provider account required",
         }
-        assert properties.imagery_product == "SENTINEL2_L2A"
+        assert properties.imagery_product == "SENTINEL2_L2A", properties.imagery_product
         assert properties.crs_summary == "EPSG:32630"
         sentinel_plan = job_controller._acquisition_plan_from_properties(
             properties,

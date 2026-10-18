@@ -299,10 +299,8 @@ class BLENDERTERRAIN_OT_validate_roi(bpy.types.Operator):
                 ),
                 imagery_gsd_metres=(
                     None
-                    if properties.imagery_product == "ESA_WORLDCOVER_S2_2021"
-                    else (
-                        None if properties.imagery_gsd == "AUTO" else float(properties.imagery_gsd)
-                    )
+                    if properties.imagery_gsd == "AUTO"
+                    else float(properties.imagery_gsd)
                 ),
                 manual_tile_rows=(
                     properties.manual_tile_rows if properties.tiling_mode == "MANUAL" else None
@@ -420,6 +418,7 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
     """Restrict the online product selector to catalog candidates covering the ROI."""
 
     catalog = load_bundled_catalog()
+    had_imagery_candidates = properties.available_imagery_product_ids_json != "[]"
     elevation_candidates = tuple(
         candidate
         for kind in (DatasetKind.DTM, DatasetKind.DSM)
@@ -442,19 +441,29 @@ def _refresh_available_products(properties: object, bounds: BBoxWGS84) -> None:
         for candidate in imagery_candidates.unavailable
     ]
     current = properties.product
+    current_imagery = properties.imagery_product
     ordered_ids = list(dict.fromkeys(item.product.id for item in elevation_candidates))
+    selected_product = current if current in valid_ids else ordered_ids[0]
+    selected_imagery = current_imagery
+    if current_imagery not in imagery_ids | {"NONE"} or (
+        current_imagery == "NONE" and not had_imagery_candidates
+    ):
+        selected_imagery = (
+            "NONE"
+            if imagery_candidates.recommended is None
+            else imagery_candidates.recommended.product.id
+        )
     properties.internal_update = True
     try:
+        # Widen both dynamic enums before changing their value, then restrict them.
+        # This avoids transient invalid-enum states when the ROI changes country.
+        properties.available_product_ids_json = "[]"
+        properties.available_imagery_product_ids_json = "[]"
+        properties.product = selected_product
+        properties.imagery_product = selected_imagery
         properties.available_product_ids_json = json.dumps(ordered_ids)
-        properties.product = current if current in valid_ids else ordered_ids[0]
         properties.available_imagery_product_ids_json = json.dumps(sorted(imagery_ids))
         properties.unavailable_imagery_json = json.dumps(unavailable_imagery)
-        if properties.imagery_product not in imagery_ids | {"NONE"}:
-            properties.imagery_product = (
-                "NONE"
-                if imagery_candidates.recommended is None
-                else imagery_candidates.recommended.product.id
-            )
     finally:
         properties.internal_update = False
 

@@ -96,8 +96,8 @@ def test_french_roi_exposes_local_and_global_imagery() -> None:
 
     assert [candidate.product.id for candidate in candidates.valid] == [
         "FR_BD_ORTHO",
-        "ESA_WORLDCOVER_S2_2021",
         "SENTINEL2_L2A",
+        "ESA_WORLDCOVER_S2_2021",
     ]
     assert candidates.recommended is not None
     assert candidates.recommended.product.id == "FR_BD_ORTHO"
@@ -115,6 +115,8 @@ def test_english_roi_exposes_blocked_local_imagery_without_selecting_it() -> Non
         "SENTINEL2_L2A",
         "ESA_WORLDCOVER_S2_2021",
     }
+    assert candidates.recommended is not None
+    assert candidates.recommended.product.id == "SENTINEL2_L2A"
 
 
 def test_layer_kinds_are_resolved_independently() -> None:

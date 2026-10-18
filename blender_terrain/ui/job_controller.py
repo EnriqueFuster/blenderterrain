@@ -41,13 +41,12 @@ from ..jobs.storage import (
     write_acquisition_job,
     write_discovery_job,
 )
-from ..providers.copernicus_dem import GLO30_PRODUCT_ID, glo30_tiles_for_roi
-from ..providers.gebco import PRODUCT_ID as GEBCO_PRODUCT_ID
-from ..providers.gedtm30 import GEDTM30_PRODUCT_ID
-from ..providers.registry import supports_catalog_availability
-from ..providers.sentinel2 import PRODUCT_ID as SENTINEL2_PRODUCT_ID
-from ..providers.sentinel2 import sentinel2_temporal_policy
-from ..providers.worldcover import PRODUCT_ID as WORLDCOVER_PRODUCT_ID
+from ..providers.registry import (
+    imagery_temporal_policy,
+    source_discovery_summary,
+    supports_catalog_availability,
+    supports_imagery_discovery,
+)
 
 _POLL_INTERVAL_SECONDS = 0.25
 _TERMINAL_STATES = {
@@ -144,30 +143,20 @@ def start_discovery(context: bpy.types.Context) -> None:
             "Starting local raster validation",
         )
         return
-    if properties.imagery_product == SENTINEL2_PRODUCT_ID:
+    if properties.imagery_product != "NONE" and supports_imagery_discovery(
+        properties.imagery_product
+    ):
         _start_imagery_discovery_worker(context, properties)
         return
     product = load_bundled_catalog().product(properties.product)
     if not supports_catalog_availability(product.provider_id):
         region = RegionOfInterest.from_geojson_geometry(json.loads(properties.roi_geometry_json))
-        count = (
-            len(glo30_tiles_for_roi(region.bounds))
-            if properties.product == GLO30_PRODUCT_ID
-            else 0
-        )
+        count, summary = source_discovery_summary(product, region.bounds)
         properties.discovered_file_count = count
-        if properties.product == GLO30_PRODUCT_ID:
-            properties.discovery_summary = f"{count} Copernicus GLO-30 tile(s) required"
-        elif properties.product == GEDTM30_PRODUCT_ID:
-            properties.discovery_summary = "GEDTM30 elevation and uncertainty windows required"
-        else:
-            protocol = product.capabilities.acquisition_mode.value.upper()
-            properties.discovery_summary = (
-                f"{product.name} {protocol} windows required; "
-                "valid pixels are confirmed during download"
-            )
-        if properties.bathymetry_mode == "GEBCO":
-            properties.discovery_summary += "; GEBCO elevation and quality windows required"
+        properties.discovery_summary = summary
+        if properties.bathymetry_mode != "NONE":
+            bathymetry = load_bundled_catalog().product(properties.bathymetry_mode)
+            properties.discovery_summary += f"; {bathymetry.name} source windows required"
         if properties.imagery_product != "NONE":
             properties.discovery_summary += f"; {properties.imagery_product} imagery required"
         properties.discovery_ready = True
@@ -245,7 +234,7 @@ def _start_imagery_discovery_worker(context: bpy.types.Context, properties: Any)
         context,
         properties,
         "imagery_discovery",
-        "Searching Sentinel-2 scenes",
+        "Searching imagery scenes",
         job_directory,
     )
 
@@ -288,9 +277,12 @@ def _acquisition_plan_from_properties(properties: Any, region: RegionOfInterest)
         )
     ]
     candidate_sets = [discover_candidates(catalog, region.bounds, product.capabilities.kind)]
-    if properties.bathymetry_mode == "GEBCO":
-        bathymetry_product = catalog.product(GEBCO_PRODUCT_ID)
-        bathymetry_layer = LayerRequest(DatasetKind.BATHYMETRY, 463.0)
+    if properties.bathymetry_mode != "NONE":
+        bathymetry_product = catalog.product(properties.bathymetry_mode)
+        bathymetry_layer = LayerRequest(
+            DatasetKind.BATHYMETRY,
+            bathymetry_product.capabilities.native_resolution_m,
+        )
         layers.append(bathymetry_layer)
         selections.append(
             ProductSelection(
@@ -303,20 +295,12 @@ def _acquisition_plan_from_properties(properties: Any, region: RegionOfInterest)
         )
         candidate_sets.append(discover_candidates(catalog, region.bounds, DatasetKind.BATHYMETRY))
     if properties.imagery_product != "NONE":
-        is_worldcover = properties.imagery_product == WORLDCOVER_PRODUCT_ID
         imagery_product = catalog.product(properties.imagery_product)
-        temporal_policy = (
-            "2021"
-            if is_worldcover
-            else (
-                sentinel2_temporal_policy(
-                    properties.sentinel2_start_date,
-                    properties.sentinel2_end_date,
-                    properties.sentinel2_max_cloud,
-                )
-                if imagery_product.id == SENTINEL2_PRODUCT_ID
-                else None
-            )
+        temporal_policy = imagery_temporal_policy(
+            imagery_product,
+            properties.imagery_start_date,
+            properties.imagery_end_date,
+            properties.imagery_max_cloud,
         )
         imagery_layer = LayerRequest(
             DatasetKind.IMAGERY,
@@ -683,8 +667,11 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
                 f"{properties.product} elevation; {imagery_name}: {count} scene(s), "
                 f"{earliest} to {latest}, cloud {minimum_cloud:g}-{maximum_cloud:g}%"
             )
-            if properties.bathymetry_mode == "GEBCO":
-                properties.discovery_summary += "; GEBCO bathymetry"
+            if properties.bathymetry_mode != "NONE":
+                bathymetry_name = load_bundled_catalog().product(
+                    properties.bathymetry_mode
+                ).name
+                properties.discovery_summary += f"; {bathymetry_name} bathymetry"
             properties.discovery_ready = True
             properties.job_message = f"{imagery_name} coverage confirmed for the ROI"
             return
@@ -735,8 +722,11 @@ def _apply_result(active: _ActiveJob, properties: Any, result: dict[str, Any]) -
             else ", size unavailable"
         )
         parts = [f"{count} elevation source file(s){size_text}"]
-        if properties.bathymetry_mode == "GEBCO":
-            parts.append("GEBCO bathymetry")
+        if properties.bathymetry_mode != "NONE":
+            parts.append(
+                f"{load_bundled_catalog().product(properties.bathymetry_mode).name} "
+                "bathymetry"
+            )
         if properties.imagery_product != "NONE":
             parts.append(f"{properties.imagery_product} imagery")
         properties.discovery_summary = "; ".join(parts)

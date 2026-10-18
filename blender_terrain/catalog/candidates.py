@@ -121,12 +121,13 @@ def _evaluate(
     return ProductCandidate(product, coverage, tuple(reasons), explanation)
 
 
-def _rank_key(candidate: ProductCandidate) -> tuple[int, int, int, int, float, int, str]:
+def _rank_key(candidate: ProductCandidate) -> tuple[int, int, int, int, int, float, int, str]:
     product = candidate.product
     return (
         -_coverage_rank(candidate.coverage),
         -int(product.capabilities.authoritative),
         -_semantic_rank(product.capabilities.semantics),
+        -int(product.capabilities.temporal),
         -product.reliability_score,
         product.capabilities.native_resolution_m,
         product.network_cost_score,

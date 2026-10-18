@@ -8,7 +8,10 @@ import bpy
 
 from ..catalog.loader import load_bundled_catalog
 from ..catalog.models import AcquisitionMode
-from ..providers.registry import supports_catalog_availability
+from ..providers.registry import (
+    supports_catalog_availability,
+    supports_imagery_discovery,
+)
 from .terrain_controls import (
     has_selected_terrain_objects,
     import_native_subdivision_level,
@@ -164,8 +167,6 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
                     text = f"{product}: could not be checked"
                     icon = "QUESTION"
                 availability_box.label(text=text, icon=icon)
-        if properties.product in {"MDT50CM", "MDS50CM"}:
-            layout.label(text="Third-coverage availability is still incomplete", icon="INFO")
         _draw_elevation_output_settings(layout, properties)
     else:
         layout.prop(properties, "imagery_product")
@@ -179,11 +180,13 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
             and imagery_product.capabilities.acquisition_mode is AcquisitionMode.WMS
         ):
             layout.prop(properties, "imagery_gsd", text="Resolution")
-        elif properties.imagery_product == "SENTINEL2_L2A":
+        elif imagery_product is not None and supports_imagery_discovery(
+            imagery_product.id
+        ):
             dates = layout.row(align=True)
-            dates.prop(properties, "sentinel2_start_date")
-            dates.prop(properties, "sentinel2_end_date")
-            layout.prop(properties, "sentinel2_max_cloud")
+            dates.prop(properties, "imagery_start_date")
+            dates.prop(properties, "imagery_end_date")
+            layout.prop(properties, "imagery_max_cloud")
         unavailable = _unavailable_imagery_entries(properties.unavailable_imagery_json)
         if unavailable:
             alternatives = layout.box()
@@ -218,13 +221,12 @@ def _draw_online_settings(layout: bpy.types.UILayout, properties: object) -> Non
         row.label(text=f"Imagery: {properties.imagery_summary}")
         if properties.imagery_product != "NONE":
             row.label(text=f"GPU {properties.estimated_texture_gpu_mib:.1f} MiB")
-        details.label(
-            text=(
-                "Marine: GEBCO seabed"
-                if properties.bathymetry_mode == "GEBCO"
-                else "Marine: flat water level"
-            )
+        marine_name = (
+            "flat water level"
+            if properties.bathymetry_mode == "NONE"
+            else load_bundled_catalog().product(properties.bathymetry_mode).name
         )
+        details.label(text=f"Marine: {marine_name}")
         for warning in properties.planning_warning.split(" | "):
             if warning:
                 details.label(text=warning, icon="INFO")
