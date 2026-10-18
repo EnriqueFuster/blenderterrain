@@ -13,7 +13,7 @@ from blender_terrain.catalog import (
 )
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import DownloadIntegrityError, RasterFormatError
-from blender_terrain.providers.gebco import (
+from blender_terrain.providers.worldwide.gebco import (
     GebcoAcquirer,
     gebco_query_urls,
     parse_opendap_ascii,

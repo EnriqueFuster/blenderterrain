@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from blender_terrain.errors import DownloadIntegrityError, NoCoverageError, ProviderUnavailableError
-from blender_terrain.providers.british_grid import BritishGridTransform, bundled_ostn15_path
+from blender_terrain.providers.uk.british_grid import BritishGridTransform, bundled_ostn15_path
 
 
 def test_bundled_grid_transforms_cardiff():

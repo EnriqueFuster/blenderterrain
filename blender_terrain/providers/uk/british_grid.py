@@ -7,7 +7,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from ..errors import DownloadIntegrityError, NoCoverageError, ProviderUnavailableError
+from ...errors import DownloadIntegrityError, NoCoverageError, ProviderUnavailableError
 
 OSTN15_SHA256 = "5d6ed64d2119952c4c559fa1fccbc594b6520fc3ec3ef2fc10be13202c4384fa"
 
@@ -19,7 +19,7 @@ def bundled_ostn15_path() -> Path:
     The .gtg extension distinguishes transformation grids from cached raster data.
     """
 
-    package = __package__.rsplit(".", 1)[0]
+    package = __package__.rsplit(".", 2)[0]
     return Path(str(files(package).joinpath("assets", "ostn15.gtg")))
 
 

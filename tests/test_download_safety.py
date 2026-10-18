@@ -10,7 +10,7 @@ from pathlib import Path
 from blender_terrain.errors import DownloadIntegrityError
 from blender_terrain.io.atomic import finalize_part, safe_destination
 from blender_terrain.io.tiff_validation import validate_tiff_header
-from blender_terrain.providers.cnig_portal import CNIGPortalClient
+from blender_terrain.providers.spain.cnig_portal import CNIGPortalClient
 
 
 class DownloadSafetyTests(unittest.TestCase):

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.models import DatasetProduct
-from blender_terrain.providers.cnig_portal import CNIGPortalClient
+from blender_terrain.providers.spain.cnig_portal import CNIGPortalClient
 
 VALENCIA_TEST_BBOX = BBoxWGS84(west=-0.39, south=39.46, east=-0.37, north=39.48)
 

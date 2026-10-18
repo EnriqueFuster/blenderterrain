@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from ..catalog import (
+from ...catalog import (
     Catalog,
     DatasetKind,
     LayerRequest,
@@ -11,12 +11,12 @@ from ..catalog import (
     ProductSelection,
     load_bundled_catalog,
 )
-from ..core.acquisition import AcquiredRasterLayer
-from ..core.delivery import TransferProgress
-from ..core.roi import BBoxWGS84
-from ..errors import DownloadIntegrityError
-from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
-from ..io.random_access import HttpRangeReader
+from ...core.acquisition import AcquiredRasterLayer
+from ...core.delivery import TransferProgress
+from ...core.roi import BBoxWGS84
+from ...errors import DownloadIntegrityError
+from ...io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
+from ...io.random_access import HttpRangeReader
 from .british_cog import acquire_bng_windows
 from .british_grid import BritishGridTransform, bundled_ostn15_path
 

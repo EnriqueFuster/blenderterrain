@@ -21,7 +21,7 @@ from blender_terrain.io.bil32 import (
 )
 from blender_terrain.io.png_validation import write_rgb_png
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.geopf_wms import (
+from blender_terrain.providers.france.geopf_wms import (
     GeopfElevationRequest,
     GeopfWMSClient,
     plan_geopf_elevation_requests,

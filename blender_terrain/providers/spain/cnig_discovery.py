@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..core.planning import ImportPlan
-from ..core.roi import BBoxWGS84
-from ..errors import CatalogContractChanged, NoCoverageError
+from ...core.planning import ImportPlan
+from ...core.roi import BBoxWGS84
+from ...errors import CatalogContractChanged, NoCoverageError
 from .cnig_models import (
     CnigCatalogItem,
     CnigCatalogPage,

@@ -10,7 +10,7 @@ from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.io.bigtiff_tiles import GeoReference, PixelWindow, TileLayout
 from blender_terrain.io.elevation_window import ElevationWindowReader
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.gedtm30 import Gedtm30Acquirer
+from blender_terrain.providers.worldwide.gedtm30 import Gedtm30Acquirer
 
 
 class Reader:

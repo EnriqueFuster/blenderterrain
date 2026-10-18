@@ -14,7 +14,7 @@ from blender_terrain.io.bigtiff_tiles import GeoReference, TileLayout
 from blender_terrain.io.imagery_window import ImageryWindowReader
 from blender_terrain.models import ProjectedBounds
 from blender_terrain.providers.registry import build_raster_acquirers
-from blender_terrain.providers.sentinel2 import (
+from blender_terrain.providers.worldwide.sentinel2 import (
     Sentinel2Acquirer,
     Sentinel2CatalogClient,
     Sentinel2Scene,

@@ -39,8 +39,8 @@ from blender_terrain.jobs.worker import (
     run_confirmed_acquisition_job,
 )
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.cnig_models import DatasetProduct
-from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
+from blender_terrain.providers.spain.cnig_models import DatasetProduct
+from blender_terrain.providers.spain.spain_crs import split_spain_bbox_by_utm_zone
 
 
 class Acquirer:
@@ -574,7 +574,7 @@ def test_worker_prepares_confirmed_pnoa_tiles_without_global_fallback(
             return path
 
     monkeypatch.setattr(
-        "blender_terrain.providers.pnoa_imagery.PNOAWMSClient", FakePnoaClient
+        "blender_terrain.providers.spain.pnoa_imagery.PNOAWMSClient", FakePnoaClient
     )
 
     prepared = prepare_confirmed_imagery(

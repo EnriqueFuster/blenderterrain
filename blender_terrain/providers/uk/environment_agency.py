@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
-from ..catalog import (
+from ...catalog import (
     Catalog,
     DatasetKind,
     LayerRequest,
@@ -19,12 +19,12 @@ from ..catalog import (
     ProductSelection,
     load_bundled_catalog,
 )
-from ..core.acquisition import AcquiredRasterLayer
-from ..core.delivery import TransferProgress
-from ..core.roi import BBoxWGS84
-from ..errors import DownloadIntegrityError, JobCancelled, ProviderContractChanged
-from ..io.bigtiff_tiles import open_float_tile_reader
-from ..io.http_download import DownloadedAsset, download_public_tiff
+from ...core.acquisition import AcquiredRasterLayer
+from ...core.delivery import TransferProgress
+from ...core.roi import BBoxWGS84
+from ...errors import DownloadIntegrityError, JobCancelled, ProviderContractChanged
+from ...io.bigtiff_tiles import open_float_tile_reader
+from ...io.http_download import DownloadedAsset, download_public_tiff
 
 PROVIDER_ID = "environment_agency"
 _EARTH_RADIUS_METRES = 6_371_008.8

@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from ..core.crs import ProjectedWorkArea, crs_from_epsg
-from ..core.roi import BBoxWGS84
-from ..errors import NoCoverageError
+from ...core.crs import ProjectedWorkArea, crs_from_epsg
+from ...core.roi import BBoxWGS84
+from ...errors import NoCoverageError
 
 
 class TerritoryGroup(StrEnum):

@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.pnoa_wms import PNOAWMSClient
+from blender_terrain.providers.spain.pnoa_wms import PNOAWMSClient
 
 CONTROL_BOUNDS = ProjectedBounds(
     west=713500.0,

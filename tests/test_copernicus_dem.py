@@ -21,7 +21,7 @@ from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.bigtiff_tiles import ClassicTiffFloatTileReader
 from blender_terrain.io.http_download import DownloadedAsset
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.copernicus_dem import (
+from blender_terrain.providers.worldwide.copernicus_dem import (
     CopernicusGlo30Acquirer,
     glo30_tiles_for_roi,
 )
@@ -71,7 +71,7 @@ def test_acquires_confirmed_glo30_selection_into_provider_cache(
         return DownloadedAsset(path, 9, False)
 
     monkeypatch.setattr(
-        "blender_terrain.providers.copernicus_dem.download_public_tiff", download
+        "blender_terrain.providers.worldwide.copernicus_dem.download_public_tiff", download
     )
     selection = ProductSelection(
         "copernicus_dem",
@@ -102,7 +102,7 @@ def test_skips_missing_ocean_tiles_but_requires_at_least_one_source(
         raise NoCoverageError("missing ocean tile")
 
     monkeypatch.setattr(
-        "blender_terrain.providers.copernicus_dem.download_public_tiff", missing
+        "blender_terrain.providers.worldwide.copernicus_dem.download_public_tiff", missing
     )
     selection = ProductSelection(
         "copernicus_dem",

@@ -12,7 +12,7 @@ from blender_terrain.errors import DownloadIntegrityError, ProviderContractChang
 from blender_terrain.io.png_validation import validate_png
 from blender_terrain.io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.pnoa_wms import PNOAWMSClient, _validate_map_request
+from blender_terrain.providers.spain.pnoa_wms import PNOAWMSClient, _validate_map_request
 
 CAPABILITIES = b"""<?xml version="1.0"?>
 <WMS_Capabilities xmlns="http://www.opengis.net/wms" version="1.3.0">

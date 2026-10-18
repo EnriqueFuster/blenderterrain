@@ -19,7 +19,8 @@ from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import ProviderContractChanged
 from blender_terrain.io.bigtiff_tiles import open_float_tile_reader
 from blender_terrain.io.http_download import DownloadedAsset
-from blender_terrain.providers.environment_agency import (
+from blender_terrain.providers.registry import build_raster_acquirers
+from blender_terrain.providers.uk.environment_agency import (
     EA_SURVEY_SEARCH_URL,
     EnvironmentAgencyAerialDownload,
     EnvironmentAgencyAerialTile,
@@ -32,7 +33,6 @@ from blender_terrain.providers.environment_agency import (
     parse_environment_agency_aerial_search,
     plan_environment_agency_requests,
 )
-from blender_terrain.providers.registry import build_raster_acquirers
 
 
 def test_plans_bounded_native_wcs_requests() -> None:

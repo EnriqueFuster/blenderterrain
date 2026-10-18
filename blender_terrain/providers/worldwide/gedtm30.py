@@ -12,23 +12,23 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from ..catalog.models import DatasetKind
-from ..catalog.selection import LayerRequest, ProductSelection
-from ..core.acquisition import AcquiredRasterLayer
-from ..core.delivery import TransferProgress
-from ..core.roi import BBoxWGS84
-from ..errors import JobCancelled, RasterFormatError
-from ..io.atomic import finalize_part
-from ..io.bigtiff_tiles import (
+from ...catalog.models import DatasetKind
+from ...catalog.selection import LayerRequest, ProductSelection
+from ...core.acquisition import AcquiredRasterLayer
+from ...core.delivery import TransferProgress
+from ...core.roi import BBoxWGS84
+from ...errors import JobCancelled, RasterFormatError
+from ...io.atomic import finalize_part
+from ...io.bigtiff_tiles import (
     BigTiffFloatTileReader,
     GeoReference,
     PixelWindow,
     TileLayout,
     open_float_tile_reader,
 )
-from ..io.elevation_window import elevation_window_is_valid, write_elevation_window
-from ..io.random_access import HttpRangeReader
-from ..models import ProjectedBounds
+from ...io.elevation_window import elevation_window_is_valid, write_elevation_window
+from ...io.random_access import HttpRangeReader
+from ...models import ProjectedBounds
 
 GEDTM30_PRODUCT_ID = "GEDTM30_V11"
 GEDTM30_PROVIDER_ID = "openlandmap"

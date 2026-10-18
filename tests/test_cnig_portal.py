@@ -6,7 +6,7 @@ import json
 import unittest
 
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.providers.cnig_portal import _bbox_feature_collection
+from blender_terrain.providers.spain.cnig_portal import _bbox_feature_collection
 
 
 class BBoxWGS84Tests(unittest.TestCase):

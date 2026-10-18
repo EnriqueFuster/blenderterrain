@@ -19,7 +19,7 @@ from blender_terrain.core.planning import ImportPlan
 from blender_terrain.errors import RasterFormatError
 from blender_terrain.io.elevation_window import write_elevation_window
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.gebco import process_gebco_tiles
+from blender_terrain.providers.worldwide.gebco import process_gebco_tiles
 
 
 def _sources(tmp_path: Path, tid_value: float = 11.0) -> tuple[Path, Path, ImportPlan]:

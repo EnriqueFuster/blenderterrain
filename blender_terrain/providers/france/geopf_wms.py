@@ -15,7 +15,7 @@ from urllib.request import Request
 
 import numpy as np
 
-from ..catalog import (
+from ...catalog import (
     Catalog,
     DatasetKind,
     LayerRequest,
@@ -23,29 +23,29 @@ from ..catalog import (
     ProductSelection,
     load_bundled_catalog,
 )
-from ..core.acquisition import AcquiredRasterLayer
-from ..core.crs import work_area_for_crs
-from ..core.delivery import TransferProgress
-from ..core.grid import GridSpec, align_projected_grid, tile_grid
-from ..core.projection import project_work_area_bounds
-from ..core.roi import BBoxWGS84
-from ..errors import (
+from ...core.acquisition import AcquiredRasterLayer
+from ...core.crs import work_area_for_crs
+from ...core.delivery import TransferProgress
+from ...core.grid import GridSpec, align_projected_grid, tile_grid
+from ...core.projection import project_work_area_bounds
+from ...core.roi import BBoxWGS84
+from ...errors import (
     DownloadIntegrityError,
     JobCancelled,
     ProviderContractChanged,
     ProviderUnavailableError,
 )
-from ..io.atomic import finalize_part, safe_destination
-from ..io.bil32 import (
+from ...io.atomic import finalize_part, safe_destination
+from ...io.bil32 import (
     Bil32Metadata,
     Bil32WindowReader,
     validate_bil32_file,
     write_bil32_metadata,
 )
-from ..io.png_validation import validate_png
-from ..io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
-from ..io.wms_download import WMSOpener, build_wms_opener, download_wms_response
-from ..models import ProjectedBounds
+from ...io.png_validation import validate_png
+from ...io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
+from ...io.wms_download import WMSOpener, build_wms_opener, download_wms_response
+from ...models import ProjectedBounds
 
 PROVIDER_ID = "ign_france"
 TRUSTED_HOST = "data.geopf.fr"

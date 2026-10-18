@@ -7,9 +7,9 @@ from blender_terrain.core import (
     create_import_plan,
 )
 from blender_terrain.errors import CatalogContractChanged, NoCoverageError
-from blender_terrain.providers.cnig_discovery import discover_sources, select_catalog_items
-from blender_terrain.providers.cnig_models import CatalogItem, CatalogPage, DatasetProduct
-from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
+from blender_terrain.providers.spain.cnig_discovery import discover_sources, select_catalog_items
+from blender_terrain.providers.spain.cnig_models import CatalogItem, CatalogPage, DatasetProduct
+from blender_terrain.providers.spain.spain_crs import split_spain_bbox_by_utm_zone
 
 
 def item(

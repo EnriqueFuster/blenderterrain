@@ -16,8 +16,8 @@ from blender_terrain.catalog import (
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.elevation_window import ElevationWindowReader
-from blender_terrain.providers.british_grid import BritishGridTransform, bundled_ostn15_path
-from blender_terrain.providers.scottish_lidar import (
+from blender_terrain.providers.uk.british_grid import BritishGridTransform, bundled_ostn15_path
+from blender_terrain.providers.uk.scottish_lidar import (
     ScottishLidarAcquirer,
     open_scottish_lidar_reader,
 )

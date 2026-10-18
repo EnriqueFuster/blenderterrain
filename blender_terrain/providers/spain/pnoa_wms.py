@@ -8,15 +8,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from ..errors import (
+from ...errors import (
     DownloadIntegrityError,
     ProviderContractChanged,
     ProviderUnavailableError,
 )
-from ..io.atomic import finalize_part, safe_destination
-from ..io.png_validation import validate_png
-from ..io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
-from ..models import ProjectedBounds
+from ...io.atomic import finalize_part, safe_destination
+from ...io.png_validation import validate_png
+from ...io.wms_capabilities import WMSCapabilities, parse_wms_capabilities
+from ...models import ProjectedBounds
 
 WMS_URL = "https://www.ign.es/wms-inspire/pnoa-ma"
 PNOA_LAYER = "OI.OrthoimageCoverage"

@@ -15,7 +15,7 @@ from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import DownloadIntegrityError, NoCoverageError
 from blender_terrain.io.elevation_window import ElevationWindowReader
 from blender_terrain.providers.registry import build_raster_acquirers
-from blender_terrain.providers.scottish_lidar import (
+from blender_terrain.providers.uk.scottish_lidar import (
     ScottishLidarAcquirer,
     ScottishPhase1MosaicReader,
     open_scottish_lidar_reader,
@@ -71,9 +71,10 @@ def test_uses_range_reader_and_checks_asset_grid(tmp_path):
         nodata=-9999.0,
     )
     with (
-        patch("blender_terrain.providers.scottish_lidar.HttpRangeReader") as source,
+        patch("blender_terrain.providers.uk.scottish_lidar.HttpRangeReader") as source,
         patch(
-            "blender_terrain.providers.scottish_lidar.open_float_tile_reader", return_value=reader
+            "blender_terrain.providers.uk.scottish_lidar.open_float_tile_reader",
+            return_value=reader,
         ),
     ):
         assert open_scottish_lidar_reader(product, tmp_path) is reader
@@ -90,9 +91,10 @@ def test_rejects_changed_asset_grid(tmp_path):
         nodata=-9999.0,
     )
     with (
-        patch("blender_terrain.providers.scottish_lidar.HttpRangeReader"),
+        patch("blender_terrain.providers.uk.scottish_lidar.HttpRangeReader"),
         patch(
-            "blender_terrain.providers.scottish_lidar.open_float_tile_reader", return_value=reader
+            "blender_terrain.providers.uk.scottish_lidar.open_float_tile_reader",
+            return_value=reader,
         ),
         pytest.raises(DownloadIntegrityError, match="changed"),
     ):
@@ -122,9 +124,9 @@ def test_nh24_acquisition_reads_bounded_window_and_reuses_cache(tmp_path, partia
         read_window=read_window,
     )
     with (
-        patch("blender_terrain.providers.scottish_lidar.BritishGridTransform") as transform,
+        patch("blender_terrain.providers.uk.scottish_lidar.BritishGridTransform") as transform,
         patch(
-            "blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader",
+            "blender_terrain.providers.uk.scottish_lidar.open_scottish_lidar_reader",
             return_value=source,
         ) as opened,
     ):
@@ -152,7 +154,7 @@ def test_scottish_acquirer_rejects_incompatible_selection_before_network(tmp_pat
         "invalid_provider", product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
     )
     with (
-        patch("blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader") as opened,
+        patch("blender_terrain.providers.uk.scottish_lidar.open_scottish_lidar_reader") as opened,
         pytest.raises(ValueError, match="incompatible"),
     ):
         ScottishLidarAcquirer(catalog, tmp_path / "grid.tif").acquire(
@@ -186,7 +188,7 @@ def test_phase1_mosaic_reads_available_tiles_and_ignores_missing_ones(tmp_path):
         return available
 
     with patch(
-        "blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader",
+        "blender_terrain.providers.uk.scottish_lidar.open_scottish_lidar_reader",
         side_effect=open_tile,
     ):
         mosaic = ScottishPhase1MosaicReader(product, tmp_path)
@@ -210,9 +212,9 @@ def test_phase1_product_uses_sparse_mosaic_in_acquisition(tmp_path):
         read_window=lambda row, col, h, w: np.full((h, w), 18.0, dtype=np.float32),
     )
     with (
-        patch("blender_terrain.providers.scottish_lidar.BritishGridTransform") as transform,
+        patch("blender_terrain.providers.uk.scottish_lidar.BritishGridTransform") as transform,
         patch(
-            "blender_terrain.providers.scottish_lidar.ScottishPhase1MosaicReader",
+            "blender_terrain.providers.uk.scottish_lidar.ScottishPhase1MosaicReader",
             return_value=source,
         ) as mosaic,
     ):
@@ -237,7 +239,7 @@ def test_nh24_rejects_roi_outside_asset_before_network(tmp_path):
         product.provider_id, product.id, DatasetKind.DTM, SelectionMode.MANUAL, True
     )
     with (
-        patch("blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader") as opened,
+        patch("blender_terrain.providers.uk.scottish_lidar.open_scottish_lidar_reader") as opened,
         pytest.raises(NoCoverageError, match="intersect"),
     ):
         ScottishLidarAcquirer(catalog, tmp_path / "grid.tif").acquire(
@@ -264,9 +266,9 @@ def test_nh24_all_nodata_fails_on_first_and_cached_attempt(tmp_path):
         read_window=lambda row, col, h, w: np.full((h, w), -9999.0, dtype=np.float32),
     )
     with (
-        patch("blender_terrain.providers.scottish_lidar.BritishGridTransform") as transform,
+        patch("blender_terrain.providers.uk.scottish_lidar.BritishGridTransform") as transform,
         patch(
-            "blender_terrain.providers.scottish_lidar.open_scottish_lidar_reader",
+            "blender_terrain.providers.uk.scottish_lidar.open_scottish_lidar_reader",
             return_value=source,
         ) as opened,
     ):

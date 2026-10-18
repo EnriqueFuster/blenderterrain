@@ -14,7 +14,7 @@ from blender_terrain.catalog import (
 from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import DownloadIntegrityError
 from blender_terrain.io.elevation_window import ElevationWindowReader
-from blender_terrain.providers.datamap_wales import DataMapWalesAcquirer, open_wales_reader
+from blender_terrain.providers.uk.datamap_wales import DataMapWalesAcquirer, open_wales_reader
 
 
 def test_acquisition_publishes_geographic_windows_and_reuses_cache(tmp_path):
@@ -33,9 +33,9 @@ def test_acquisition_publishes_geographic_windows_and_reuses_cache(tmp_path):
         read_window=lambda row, col, h, w: np.full((h, w), 7.0, dtype=np.float32),
     )
     with (
-        patch("blender_terrain.providers.datamap_wales.BritishGridTransform") as transform,
+        patch("blender_terrain.providers.uk.datamap_wales.BritishGridTransform") as transform,
         patch(
-            "blender_terrain.providers.datamap_wales.open_wales_reader", return_value=source
+            "blender_terrain.providers.uk.datamap_wales.open_wales_reader", return_value=source
         ) as opened,
     ):
         transform.return_value.forward.side_effect = lambda x, y: (
@@ -68,9 +68,9 @@ def test_opens_only_range_backed_welsh_mosaic(tmp_path, kind):
         nodata=-9999.0,
     )
     with (
-        patch("blender_terrain.providers.datamap_wales.HttpRangeReader") as source,
+        patch("blender_terrain.providers.uk.datamap_wales.HttpRangeReader") as source,
         patch(
-            "blender_terrain.providers.datamap_wales.open_float_tile_reader", return_value=reader
+            "blender_terrain.providers.uk.datamap_wales.open_float_tile_reader", return_value=reader
         ),
     ):
         assert open_wales_reader(product, tmp_path) is reader
@@ -87,9 +87,9 @@ def test_rejects_changed_wales_grid(tmp_path):
         nodata=-9999.0,
     )
     with (
-        patch("blender_terrain.providers.datamap_wales.HttpRangeReader"),
+        patch("blender_terrain.providers.uk.datamap_wales.HttpRangeReader"),
         patch(
-            "blender_terrain.providers.datamap_wales.open_float_tile_reader", return_value=reader
+            "blender_terrain.providers.uk.datamap_wales.open_float_tile_reader", return_value=reader
         ),
         pytest.raises(DownloadIntegrityError, match="changed"),
     ):

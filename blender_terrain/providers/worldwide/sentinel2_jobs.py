@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from ..catalog import DatasetKind
-from ..errors import (
+from ...catalog import DatasetKind
+from ...errors import (
     JobCancelled,
     JobFormatError,
     NoCoverageError,
@@ -14,8 +14,8 @@ from ..errors import (
     ProviderUnavailableError,
     UserInputError,
 )
-from ..jobs.models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
-from ..jobs.storage import (
+from ...jobs.models import RESULT_SCHEMA_VERSION, JobState, ProgressEvent
+from ...jobs.storage import (
     append_progress_event,
     finish_job_error,
     is_cancellation_requested,

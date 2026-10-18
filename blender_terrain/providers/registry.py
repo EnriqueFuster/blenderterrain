@@ -18,18 +18,18 @@ from ..core import (
 from ..core.acquisition import AcquiredRasterLayer, RasterAcquirer
 from ..core.crs import ProjectedWorkArea
 from ..core.roi import BBoxWGS84
-from .cnig_acquisition import CnigElevationAcquirer
-from .copernicus_dem import CopernicusGlo30Acquirer
-from .datamap_wales import DataMapWalesAcquirer
-from .environment_agency import EnvironmentAgencyWCSAcquirer
-from .gebco import GebcoAcquirer
-from .gedtm30 import Gedtm30Acquirer
-from .geopf_wms import GeopfWMSAcquirer
-from .osni import OsniAcquirer
-from .scottish_lidar import ScottishLidarAcquirer
-from .sentinel2 import Sentinel2Acquirer
-from .spain_crs import split_spain_bbox_by_utm_zone
-from .worldcover import WorldCoverAcquirer
+from .france.geopf_wms import GeopfWMSAcquirer
+from .spain.cnig_acquisition import CnigElevationAcquirer
+from .spain.spain_crs import split_spain_bbox_by_utm_zone
+from .uk.datamap_wales import DataMapWalesAcquirer
+from .uk.environment_agency import EnvironmentAgencyWCSAcquirer
+from .uk.osni import OsniAcquirer
+from .uk.scottish_lidar import ScottishLidarAcquirer
+from .worldwide.copernicus_dem import CopernicusGlo30Acquirer
+from .worldwide.gebco import GebcoAcquirer
+from .worldwide.gedtm30 import Gedtm30Acquirer
+from .worldwide.sentinel2 import Sentinel2Acquirer
+from .worldwide.worldcover import WorldCoverAcquirer
 
 
 class DirectImageryPreparer(Protocol):
@@ -110,7 +110,7 @@ def direct_imagery_preparer(product_id: str) -> DirectImageryPreparer | None:
     """Return the provider implementation for directly projected imagery."""
 
     if product_id == "PNOA_MA":
-        from .pnoa_imagery import prepare_pnoa_imagery
+        from .spain.pnoa_imagery import prepare_pnoa_imagery
 
         return prepare_pnoa_imagery
     return None
@@ -120,11 +120,11 @@ def imagery_processor(product_id: str) -> ImageryProcessor | None:
     """Return the processing adapter declared by an imagery product."""
 
     if product_id == "ESA_WORLDCOVER_S2_2021":
-        from .worldcover import process_worldcover_imagery
+        from .worldwide.worldcover import process_worldcover_imagery
 
         return process_worldcover_imagery
     if product_id == "SENTINEL2_L2A":
-        from .sentinel2 import process_sentinel2_imagery
+        from .worldwide.sentinel2 import process_sentinel2_imagery
 
         return process_sentinel2_imagery
     return None
@@ -134,7 +134,7 @@ def bathymetry_processor(product_id: str) -> BathymetryProcessor | None:
     """Return the processing adapter declared by a bathymetry product."""
 
     if product_id == "GEBCO_2026":
-        from .gebco import process_gebco_layer
+        from .worldwide.gebco import process_gebco_layer
 
         return process_gebco_layer
     return None
@@ -161,7 +161,7 @@ def imagery_temporal_policy(
     """Build the optional temporal policy understood by an imagery provider."""
 
     if product.id == "SENTINEL2_L2A":
-        from .sentinel2 import sentinel2_temporal_policy
+        from .worldwide.sentinel2 import sentinel2_temporal_policy
 
         return sentinel2_temporal_policy(start_date, end_date, maximum_cloud)
     return product.version if not product.capabilities.temporal else None
@@ -173,7 +173,7 @@ def source_discovery_summary(
     """Describe bounded source work without exposing provider cases to the UI."""
 
     if product.id == "COPERNICUS_GLO30_2021":
-        from .copernicus_dem import glo30_tiles_for_roi
+        from .worldwide.copernicus_dem import glo30_tiles_for_roi
 
         count = len(glo30_tiles_for_roi(roi))
         return count, f"{count} {product.name} tile(s) required"
@@ -189,8 +189,8 @@ def source_discovery_summary(
 def provider_job_runners() -> dict[str, Callable[[Path], object]]:
     """Return provider-owned legacy worker modes for the shared entry point."""
 
-    from .cnig_jobs import run_cnig_availability_job, run_cnig_discovery_job
-    from .sentinel2_jobs import run_sentinel2_discovery_job
+    from .spain.cnig_jobs import run_cnig_availability_job, run_cnig_discovery_job
+    from .worldwide.sentinel2_jobs import run_sentinel2_discovery_job
 
     return {
         "provider_availability": run_cnig_availability_job,

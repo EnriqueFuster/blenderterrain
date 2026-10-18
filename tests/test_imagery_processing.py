@@ -12,7 +12,7 @@ from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.imagery_window import write_imagery_window
 from blender_terrain.io.png_validation import validate_png
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.worldcover import process_worldcover_imagery
+from blender_terrain.providers.worldwide.worldcover import process_worldcover_imagery
 
 
 def test_worldcover_uses_a_fixed_contrast_preserving_colour_stretch() -> None:

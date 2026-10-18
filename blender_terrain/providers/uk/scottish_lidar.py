@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ..catalog import (
+from ...catalog import (
     Catalog,
     CoverageMatch,
     DatasetKind,
@@ -20,17 +20,17 @@ from ..catalog import (
     ProductSelection,
     load_bundled_catalog,
 )
-from ..core.acquisition import AcquiredRasterLayer
-from ..core.delivery import TransferProgress
-from ..core.roi import BBoxWGS84
-from ..errors import DownloadIntegrityError, NoCoverageError
-from ..io.bigtiff_tiles import (
+from ...core.acquisition import AcquiredRasterLayer
+from ...core.delivery import TransferProgress
+from ...core.roi import BBoxWGS84
+from ...errors import DownloadIntegrityError, NoCoverageError
+from ...io.bigtiff_tiles import (
     BigTiffFloatTileReader,
     GeoReference,
     TileLayout,
     open_float_tile_reader,
 )
-from ..io.random_access import HttpRangeReader
+from ...io.random_access import HttpRangeReader
 from .british_cog import acquire_bng_windows
 from .british_grid import BritishGridTransform, bundled_ostn15_path
 

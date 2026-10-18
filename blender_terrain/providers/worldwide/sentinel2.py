@@ -19,14 +19,14 @@ from urllib.request import Request, build_opener
 import numpy as np
 from numpy.typing import NDArray
 
-from ..catalog.models import DatasetKind
-from ..catalog.selection import LayerRequest, ProductSelection
-from ..core.acquisition import AcquiredRasterLayer
-from ..core.delivery import TransferProgress
-from ..core.imagery_processing import ProcessedImageryTile, process_imagery_windows
-from ..core.planning import ImportPlan
-from ..core.roi import BBoxWGS84
-from ..errors import (
+from ...catalog.models import DatasetKind
+from ...catalog.selection import LayerRequest, ProductSelection
+from ...core.acquisition import AcquiredRasterLayer
+from ...core.delivery import TransferProgress
+from ...core.imagery_processing import ProcessedImageryTile, process_imagery_windows
+from ...core.planning import ImportPlan
+from ...core.roi import BBoxWGS84
+from ...errors import (
     JobCancelled,
     NoCoverageError,
     ProviderContractChanged,
@@ -34,11 +34,11 @@ from ..errors import (
     RasterFormatError,
     UserInputError,
 )
-from ..io.atomic import finalize_part
-from ..io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
-from ..io.imagery_window import imagery_window_is_valid, write_imagery_window
-from ..io.random_access import HttpRangeReader
-from ..models import ProjectedBounds
+from ...io.atomic import finalize_part
+from ...io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
+from ...io.imagery_window import imagery_window_is_valid, write_imagery_window
+from ...io.random_access import HttpRangeReader
+from ...models import ProjectedBounds
 
 PRODUCT_ID = "SENTINEL2_L2A"
 PROVIDER_ID = "sentinel2"

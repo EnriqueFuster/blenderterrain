@@ -5,7 +5,7 @@ import argparse
 import pytest
 
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.providers.gebco import gebco_query_urls
+from blender_terrain.providers.worldwide.gebco import gebco_query_urls
 from scripts.probe_global_sources import (
     _bbox,
     _content_range_total,

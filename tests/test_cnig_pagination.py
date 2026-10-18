@@ -6,8 +6,8 @@ from urllib.parse import parse_qs
 
 from blender_terrain.core import BBoxWGS84
 from blender_terrain.errors import CatalogContractChanged
-from blender_terrain.providers.cnig_models import DatasetProduct
-from blender_terrain.providers.cnig_portal import CNIGPortalClient
+from blender_terrain.providers.spain.cnig_models import DatasetProduct
+from blender_terrain.providers.spain.cnig_portal import CNIGPortalClient
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "portal_html"
 

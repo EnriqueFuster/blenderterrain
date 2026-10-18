@@ -12,7 +12,7 @@ from typing import Any
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.providers.gebco import gebco_query_urls
+from blender_terrain.providers.worldwide.gebco import gebco_query_urls
 
 USER_AGENT = "BlenderTerrain/0.4-source-probe"
 RANGE_BYTES = 65_536

@@ -16,22 +16,22 @@ from urllib.request import Request, urlopen
 import numpy as np
 from numpy.typing import NDArray
 
-from ..catalog.models import DatasetKind
-from ..catalog.selection import LayerRequest, ProductSelection
-from ..core.acquisition import AcquiredRasterLayer
-from ..core.bathymetry_processing import ProcessedBathymetryTile
-from ..core.delivery import TransferProgress
-from ..core.elevation_processing import process_elevation_tiles
-from ..core.planning import ImportPlan
-from ..core.roi import BBoxWGS84, RegionOfInterest
-from ..errors import (
+from ...catalog.models import DatasetKind
+from ...catalog.selection import LayerRequest, ProductSelection
+from ...core.acquisition import AcquiredRasterLayer
+from ...core.bathymetry_processing import ProcessedBathymetryTile
+from ...core.delivery import TransferProgress
+from ...core.elevation_processing import process_elevation_tiles
+from ...core.planning import ImportPlan
+from ...core.roi import BBoxWGS84, RegionOfInterest
+from ...errors import (
     DownloadIntegrityError,
     JobCancelled,
     ProviderUnavailableError,
     RasterFormatError,
 )
-from ..io.elevation_window import elevation_window_is_valid, write_elevation_window
-from ..models import ProjectedBounds
+from ...io.elevation_window import elevation_window_is_valid, write_elevation_window
+from ...models import ProjectedBounds
 
 PRODUCT_ID = "GEBCO_2026"
 PROVIDER_ID = "gebco"

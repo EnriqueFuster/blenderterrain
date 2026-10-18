@@ -17,7 +17,8 @@ from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.errors import ProviderUnavailableError, RasterFormatError
 from blender_terrain.io.elevation_window import ElevationWindowReader
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.osni import (
+from blender_terrain.providers.registry import build_raster_acquirers
+from blender_terrain.providers.uk.osni import (
     OSNI_CRS_EPSG,
     OsniAcquirer,
     OsniGridCell,
@@ -30,7 +31,6 @@ from blender_terrain.providers.osni import (
     read_osni_sheet,
     select_osni_sheets,
 )
-from blender_terrain.providers.registry import build_raster_acquirers
 from scripts.probe_osni_sample import main
 
 

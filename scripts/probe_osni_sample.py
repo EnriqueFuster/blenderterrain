@@ -7,7 +7,7 @@ from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
 from blender_terrain.errors import RasterFormatError
-from blender_terrain.providers.osni import iter_osni_xyz
+from blender_terrain.providers.uk.osni import iter_osni_xyz
 
 MAX_SAMPLE_BYTES = 20_000_000
 

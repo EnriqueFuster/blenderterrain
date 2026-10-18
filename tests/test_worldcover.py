@@ -11,7 +11,7 @@ from blender_terrain.errors import NoCoverageError
 from blender_terrain.io.bigtiff_tiles import GeoReference, TileLayout
 from blender_terrain.io.imagery_window import ImageryWindowReader
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.worldcover import WorldCoverAcquirer
+from blender_terrain.providers.worldwide.worldcover import WorldCoverAcquirer
 
 
 class Reader:
@@ -74,7 +74,7 @@ def test_splits_large_source_windows_without_increasing_memory_limit(
     bounds = ProjectedBounds(2.0, 48.0, 3.0, 49.0, 4326)
     reader = Reader(bounds)
     reader.georeference = GeoReference(4326, 2.0, 49.0, 0.1, -0.1, 4326)
-    monkeypatch.setattr("blender_terrain.providers.worldcover.MAXIMUM_WINDOW_PIXELS", 16)
+    monkeypatch.setattr("blender_terrain.providers.worldwide.worldcover.MAXIMUM_WINDOW_PIXELS", 16)
     acquirer = WorldCoverAcquirer(lambda url, cache: reader)
     selection = ProductSelection(
         "esa_worldcover",

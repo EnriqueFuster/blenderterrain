@@ -17,8 +17,8 @@ from blender_terrain.core.roi import BBoxWGS84
 from blender_terrain.jobs.acquisition_job import AcquisitionJob
 from blender_terrain.jobs.models import JobState
 from blender_terrain.jobs.storage import write_acquisition_job
-from blender_terrain.providers.sentinel2 import Sentinel2Scene
-from blender_terrain.providers.sentinel2_jobs import run_sentinel2_discovery_job
+from blender_terrain.providers.worldwide.sentinel2 import Sentinel2Scene
+from blender_terrain.providers.worldwide.sentinel2_jobs import run_sentinel2_discovery_job
 
 
 def test_discovers_confirmed_sentinel_scenes_without_downloading_bands(tmp_path: Path) -> None:

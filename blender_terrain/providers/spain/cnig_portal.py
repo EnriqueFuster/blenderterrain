@@ -12,19 +12,19 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
-from ..core.roi import BBoxWGS84
-from ..errors import (
+from ...core.roi import BBoxWGS84
+from ...errors import (
     CatalogContractChanged,
     DownloadAuthorizationRequired,
     DownloadIntegrityError,
     ProviderUnavailableError,
 )
-from ..io.atomic import (
+from ...io.atomic import (
     finalize_part,
     normalized_server_filename,
     safe_destination,
 )
-from ..io.tiff_validation import validate_tiff_header
+from ...io.tiff_validation import validate_tiff_header
 from .cnig_html import parse_catalog_page, parse_product_page
 from .cnig_models import CnigCatalogItem, CnigCatalogPage, CnigProduct, CnigProductPage
 

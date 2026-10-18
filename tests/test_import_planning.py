@@ -6,8 +6,8 @@ from blender_terrain.core import BBoxWGS84
 from blender_terrain.core import create_import_plan as _create_import_plan
 from blender_terrain.errors import PlanningLimitExceeded, UserInputError
 from blender_terrain.models import ProjectedBounds
-from blender_terrain.providers.cnig_models import DatasetProduct
-from blender_terrain.providers.spain_crs import split_spain_bbox_by_utm_zone
+from blender_terrain.providers.spain.cnig_models import DatasetProduct
+from blender_terrain.providers.spain.spain_crs import split_spain_bbox_by_utm_zone
 
 
 def create_import_plan(*args: object, **kwargs: object):

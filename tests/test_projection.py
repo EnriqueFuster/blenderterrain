@@ -15,7 +15,7 @@ from blender_terrain.core.projection import (
     project_work_area_bounds,
 )
 from blender_terrain.core.roi import BBoxWGS84
-from blender_terrain.providers.spain_crs import (
+from blender_terrain.providers.spain.spain_crs import (
     split_spain_bbox_by_utm_zone as split_bbox_by_utm_zone,
 )
 

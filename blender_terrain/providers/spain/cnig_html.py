@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
-from ..errors import CatalogContractChanged
+from ...errors import CatalogContractChanged
 from .cnig_models import CnigCatalogItem, CnigCatalogPage, CnigProduct, CnigProductPage
 
 

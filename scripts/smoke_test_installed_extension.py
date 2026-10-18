@@ -37,7 +37,7 @@ def main() -> None:
             from pyproj import __version__ as pyproj_version
 
             assert pyproj_version == "3.7.2"
-            british_grid = importlib.import_module(f"{package_name}.providers.british_grid")
+            british_grid = importlib.import_module(f"{package_name}.providers.uk.british_grid")
             easting, northing = british_grid.BritishGridTransform(
                 british_grid.bundled_ostn15_path()
             ).forward(-3.18, 51.48)
