@@ -98,7 +98,9 @@ def test_swiss_products_declare_verified_stac_contracts() -> None:
     assert all(product.capabilities.supports_roi_window for product in (dtm, dsm, imagery))
     assert all(product.capabilities.supports_http_range for product in (dtm, dsm, imagery))
     assert imagery.endpoint.endswith("/collections/ch.swisstopo.swissimage-dop10")
-    assert not any(product.selectable for product in (dtm, dsm, imagery))
+    assert dtm.selectable
+    assert dsm.selectable
+    assert not imagery.selectable
 
 
 def test_environment_agency_aerial_stays_disabled_without_ecw_decoder() -> None:

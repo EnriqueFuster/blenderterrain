@@ -21,6 +21,7 @@ from ..core.roi import BBoxWGS84
 from .france.geopf_wms import GeopfWMSAcquirer
 from .spain.cnig_acquisition import CnigElevationAcquirer
 from .spain.spain_crs import split_spain_bbox_by_utm_zone
+from .switzerland.swisstopo import SwisstopoElevationAcquirer
 from .uk.datamap_wales import DataMapWalesAcquirer
 from .uk.environment_agency import EnvironmentAgencyWCSAcquirer
 from .uk.osni import OsniAcquirer
@@ -88,6 +89,7 @@ def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcqui
         "scottish_remote_sensing": ScottishLidarAcquirer,
         "osni": OsniAcquirer,
         "sentinel2": Sentinel2Acquirer,
+        "swisstopo": SwisstopoElevationAcquirer,
     }
     return {
         provider_id: factories[provider_id]()
@@ -103,6 +105,10 @@ def projected_work_areas(
 
     if product.provider_id == "ign_cnig":
         return split_spain_bbox_by_utm_zone(roi)
+    if product.provider_id == "swisstopo":
+        from ..core.crs import work_area_for_crs
+
+        return (work_area_for_crs(roi, 2056),)
     return None
 
 
