@@ -51,7 +51,7 @@ SWISSIMAGE_COLLECTION = "ch.swisstopo.swissimage-dop10"
 SWISSTOPO_COLLECTIONS = frozenset(
     {SWISSALTI3D_COLLECTION, SWISSSURFACE3D_COLLECTION, SWISSIMAGE_COLLECTION}
 )
-_ASSET_HOST = "data.geo.admin.ch"
+ASSET_HOST = "data.geo.admin.ch"
 _PAGE_LIMIT = 100
 _MAXIMUM_PAGES = 20
 _MAXIMUM_ITEMS = 2_000
@@ -297,7 +297,7 @@ class SwisstopoElevationAcquirer:
             f"elevation-v1|{product.id}|{roi}|{request.target_resolution_m}".encode()
         ).hexdigest()[:20]
         target = cache_directory / selection.provider_id / product.id / key
-        projected_roi = _project_roi(roi)
+        projected_roi = project_swiss_roi(roi)
         paths: list[Path] = []
         cached_count = 0
         used: list[tuple[SwisstopoItem, SwisstopoAsset]] = []
@@ -311,7 +311,9 @@ class SwisstopoElevationAcquirer:
             if not cached:
                 reader = self._reader_factory(asset, target / "ranges" / path.stem)
                 _validate_elevation_reader(reader, asset)
-                overlap = _intersection(projected_roi, _reader_bounds(reader))
+                overlap = intersect_projected_bounds(
+                    projected_roi, raster_reader_bounds(reader)
+                )
                 if overlap is None:
                     continue
                 data, exact = reader.read_bounds(overlap)
@@ -340,7 +342,7 @@ class SwisstopoElevationAcquirer:
         if not paths:
             raise NoCoverageError(f"{product.name} has no raster cells for the ROI")
         manifest = target / "source_manifest.json"
-        _write_manifest(manifest, product.id, used)
+        write_swisstopo_manifest(manifest, product.id, used, vertical_reference="LN02")
         return AcquiredRasterLayer(
             selection.provider_id,
             product.id,
@@ -400,7 +402,7 @@ def _parse_item(
     )
 
 
-def _project_roi(roi: BBoxWGS84) -> ProjectedBounds:
+def project_swiss_roi(roi: BBoxWGS84) -> ProjectedBounds:
     transformer = Transformer.from_crs(4326, 2056, always_xy=True)
     west, south, east, north = transformer.transform_bounds(
         roi.west, roi.south, roi.east, roi.north, densify_pts=21
@@ -408,14 +410,16 @@ def _project_roi(roi: BBoxWGS84) -> ProjectedBounds:
     return ProjectedBounds(west, south, east, north, 2056)
 
 
-def _reader_bounds(reader: _ElevationReader) -> ProjectedBounds:
+def raster_reader_bounds(reader: _ElevationReader) -> ProjectedBounds:
     west, south, east, north = reader.georeference.bounds(
         reader.layout.width, reader.layout.height
     )
     return ProjectedBounds(west, south, east, north, reader.georeference.epsg)
 
 
-def _intersection(left: ProjectedBounds, right: ProjectedBounds) -> ProjectedBounds | None:
+def intersect_projected_bounds(
+    left: ProjectedBounds, right: ProjectedBounds
+) -> ProjectedBounds | None:
     if left.epsg != right.epsg:
         raise RasterFormatError("swisstopo source and requested bounds use different CRS")
     west, south = max(left.west, right.west), max(left.south, right.south)
@@ -431,7 +435,7 @@ def _remote_elevation_reader(
     source = HttpRangeReader(
         asset.url,
         cache_directory,
-        allowed_hosts=frozenset({_ASSET_HOST}),
+        allowed_hosts=frozenset({ASSET_HOST}),
         maximum_source_bytes=_MAXIMUM_SOURCE_BYTES,
         cache_key=asset.sha256,
     )
@@ -449,16 +453,17 @@ def _validate_elevation_reader(reader: _ElevationReader, asset: SwisstopoAsset) 
         raise DownloadIntegrityError("swisstopo elevation asset grid or NoData changed")
 
 
-def _write_manifest(
+def write_swisstopo_manifest(
     path: Path,
     product_id: str,
     sources: list[tuple[SwisstopoItem, SwisstopoAsset]],
+    *,
+    vertical_reference: str | None,
 ) -> None:
     payload = {
         "provider_id": "swisstopo",
         "product_id": product_id,
         "horizontal_crs": "EPSG:2056",
-        "vertical_reference": "LN02",
         "sources": [
             {
                 "item_id": item.id,
@@ -470,6 +475,8 @@ def _write_manifest(
             for item, asset in sources
         ],
     }
+    if vertical_reference is not None:
+        payload["vertical_reference"] = vertical_reference
     encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     if path.is_file() and path.read_bytes() == encoded:
         return
@@ -503,7 +510,7 @@ def _parse_asset(key: Any, value: dict[str, Any], gsd: float, epsg: int) -> Swis
         or not isinstance(media_type, str)
         or parsed is None
         or parsed.scheme != "https"
-        or parsed.hostname != _ASSET_HOST
+        or parsed.hostname != ASSET_HOST
         or parsed.username
         or parsed.password
         or parsed.query
@@ -548,7 +555,7 @@ def _valid_items_url(url: str, collection: str) -> bool:
     expected_path = f"/api/stac/v1/collections/{collection}/items"
     return (
         parsed.scheme == "https"
-        and parsed.hostname == _ASSET_HOST
+        and parsed.hostname == ASSET_HOST
         and not parsed.username
         and not parsed.password
         and parsed.path == expected_path

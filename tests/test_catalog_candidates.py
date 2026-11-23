@@ -21,6 +21,7 @@ CARDIFF = BBoxWGS84(-3.19, 51.47, -3.17, 51.49)
 EDINBURGH = BBoxWGS84(-3.20, 55.94, -3.18, 55.96)
 BELFAST = BBoxWGS84(-5.94, 54.59, -5.91, 54.61)
 NH24 = BBoxWGS84(-4.872, 57.480, -4.870, 57.482)
+ZURICH = BBoxWGS84(8.53, 47.36, 8.55, 47.38)
 
 
 def test_spanish_dtm_candidates_are_ranked_without_hiding_global_product() -> None:
@@ -101,6 +102,26 @@ def test_french_roi_exposes_local_and_global_imagery() -> None:
     ]
     assert candidates.recommended is not None
     assert candidates.recommended.product.id == "FR_BD_ORTHO"
+
+
+@pytest.mark.parametrize(
+    ("kind", "local_id", "global_id"),
+    [
+        (DatasetKind.DTM, "CH_SWISSALTI3D", "GEDTM30_V11"),
+        (DatasetKind.DSM, "CH_SWISSSURFACE3D_RASTER", "COPERNICUS_GLO30_2021"),
+        (DatasetKind.IMAGERY, "CH_SWISSIMAGE_DOP10", "SENTINEL2_L2A"),
+    ],
+)
+def test_swiss_roi_exposes_swisstopo_and_global_choices(
+    kind: DatasetKind, local_id: str, global_id: str
+) -> None:
+    candidates = discover_candidates(load_bundled_catalog(), ZURICH, kind)
+    valid_ids = [candidate.product.id for candidate in candidates.valid]
+
+    assert local_id in valid_ids
+    assert global_id in valid_ids
+    assert candidates.recommended is not None
+    assert candidates.recommended.product.id == local_id
 
 
 def test_english_roi_exposes_blocked_local_imagery_without_selecting_it() -> None:

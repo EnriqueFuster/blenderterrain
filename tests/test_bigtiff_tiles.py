@@ -4,15 +4,18 @@ import struct
 import tempfile
 import unittest
 import zlib
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 from blender_terrain.core import inspect_local_elevation, resolve_local_elevation_paths
 from blender_terrain.errors import RasterFormatError
 from blender_terrain.io.bigtiff_tiles import (
     BigTiffFloatTileReader,
     PixelWindow,
+    _decode_jpeg_tile,
     _decompress_lzw,
     open_float_tile_reader,
 )
@@ -27,6 +30,20 @@ def test_tiff_lzw_decodes_bounded_codes() -> None:
     with unittest.TestCase().assertRaisesRegex(RasterFormatError, "expected size"):
         _decompress_lzw(encoded, 3)
     assert _decompress_lzw(encoded, 2) == b"AB"
+
+
+def test_decodes_jpeg_tile_to_rgb() -> None:
+    expected = np.zeros((16, 16, 3), dtype=np.uint8)
+    expected[:, :8] = (220, 40, 20)
+    expected[:, 8:] = (20, 80, 210)
+    stream = BytesIO()
+    Image.fromarray(expected, "RGB").save(stream, "JPEG", quality=100, subsampling=0)
+
+    actual = _decode_jpeg_tile(stream.getvalue(), b"\xff\xd8\xff\xd9", 16, 16)
+
+    assert actual.shape == expected.shape
+    np.testing.assert_allclose(actual[:, :6].mean((0, 1)), expected[:, :6].mean((0, 1)), atol=3)
+    np.testing.assert_allclose(actual[:, 10:].mean((0, 1)), expected[:, 10:].mean((0, 1)), atol=3)
 
 
 class BigTiffTilesTests(unittest.TestCase):

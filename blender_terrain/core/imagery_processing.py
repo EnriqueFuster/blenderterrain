@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -38,8 +39,12 @@ def process_imagery_windows(
     filename_prefix: str,
     progress_callback: Callable[[int, int], None] | None = None,
     cancellation_requested: Callable[[], bool] = lambda: False,
+    sample_encoding: Literal["reflectance", "uint8"] = "reflectance",
 ) -> tuple[ProcessedImageryTile, ...]:
     """Reproject cached reflectance windows onto planned texture grids."""
+
+    if sample_encoding not in {"reflectance", "uint8"}:
+        raise ValueError("Imagery sample encoding is unsupported")
 
     readers = tuple(ImageryWindowReader(path) for path in source_paths)
     requests = plan_texture_tiles(plan, filename_prefix)
@@ -60,6 +65,7 @@ def process_imagery_windows(
                     request.width,
                     request.height,
                     plan.work_areas[request.zone_index].crs,
+                    sample_encoding,
                 )
             except NoCoverageError:
                 if progress_callback is not None:
@@ -84,6 +90,7 @@ def _reproject_request(
     width: int,
     height: int,
     crs: CRSInfo,
+    sample_encoding: Literal["reflectance", "uint8"],
 ) -> NDArray[np.uint8]:
     output = np.zeros((height, width, 3), dtype=np.uint8)
     covered = np.zeros((height, width), dtype=np.bool_)
@@ -127,8 +134,11 @@ def _reproject_request(
             if not source_valid.any():
                 continue
             locations = np.flatnonzero(valid)[source_valid]
-            block.reshape(-1, 3)[locations] = _natural_colour_rgb(
-                rgb_linear[source_valid]
+            valid_rgb = rgb_linear[source_valid]
+            block.reshape(-1, 3)[locations] = (
+                _natural_colour_rgb(valid_rgb)
+                if sample_encoding == "reflectance"
+                else np.rint(np.clip(valid_rgb, 0.0, 255.0)).astype(np.uint8)
             )
             block_covered.reshape(-1)[locations] = True
     if not covered.any():

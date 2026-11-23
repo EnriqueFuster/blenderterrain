@@ -21,7 +21,7 @@ from ..core.roi import BBoxWGS84
 from .france.geopf_wms import GeopfWMSAcquirer
 from .spain.cnig_acquisition import CnigElevationAcquirer
 from .spain.spain_crs import split_spain_bbox_by_utm_zone
-from .switzerland.swisstopo import SwisstopoElevationAcquirer
+from .switzerland import SwisstopoAcquirer
 from .uk.datamap_wales import DataMapWalesAcquirer
 from .uk.environment_agency import EnvironmentAgencyWCSAcquirer
 from .uk.osni import OsniAcquirer
@@ -89,7 +89,7 @@ def build_raster_acquirers(provider_ids: Iterable[str]) -> dict[str, RasterAcqui
         "scottish_remote_sensing": ScottishLidarAcquirer,
         "osni": OsniAcquirer,
         "sentinel2": Sentinel2Acquirer,
-        "swisstopo": SwisstopoElevationAcquirer,
+        "swisstopo": SwisstopoAcquirer,
     }
     return {
         provider_id: factories[provider_id]()
@@ -133,6 +133,10 @@ def imagery_processor(product_id: str) -> ImageryProcessor | None:
         from .worldwide.sentinel2 import process_sentinel2_imagery
 
         return process_sentinel2_imagery
+    if product_id == "CH_SWISSIMAGE_DOP10":
+        from .switzerland.imagery import process_swissimage_imagery
+
+        return process_swissimage_imagery
     return None
 
 

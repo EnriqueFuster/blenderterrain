@@ -77,7 +77,6 @@ def test_researched_products_are_not_selectable() -> None:
     )
 
     assert {product.jurisdiction for product in researched} == {
-        "CH",
         "GB-ENG",
         "GB-SCT",
     }
@@ -100,7 +99,7 @@ def test_swiss_products_declare_verified_stac_contracts() -> None:
     assert imagery.endpoint.endswith("/collections/ch.swisstopo.swissimage-dop10")
     assert dtm.selectable
     assert dsm.selectable
-    assert not imagery.selectable
+    assert imagery.selectable
 
 
 def test_environment_agency_aerial_stays_disabled_without_ecw_decoder() -> None:

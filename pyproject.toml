@@ -15,6 +15,7 @@ dependencies = [
   "numpy>=2.1,<2.3; python_version >= '3.13'",
   "zstandard>=0.23,<1",
   "pyproj>=3.7,<3.8",
+  "Pillow>=12.3,<13",
 ]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",

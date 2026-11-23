@@ -23,6 +23,7 @@ from blender_terrain.errors import ProviderContractChanged
 from blender_terrain.io.elevation_window import ElevationWindowReader
 from blender_terrain.models import ProjectedBounds
 from blender_terrain.providers.registry import build_raster_acquirers, projected_work_areas
+from blender_terrain.providers.switzerland import SwisstopoAcquirer
 from blender_terrain.providers.switzerland.swisstopo import (
     SWISSALTI3D_COLLECTION,
     SwisstopoAsset,
@@ -214,8 +215,9 @@ def test_swisstopo_elevation_is_registered_and_uses_lv95_work_area() -> None:
     product = load_bundled_catalog().product("CH_SWISSALTI3D")
     roi = BBoxWGS84(8.53, 47.36, 8.55, 47.38)
 
-    assert isinstance(build_raster_acquirers(["swisstopo"])["swisstopo"],
-                      SwisstopoElevationAcquirer)
+    assert isinstance(
+        build_raster_acquirers(["swisstopo"])["swisstopo"], SwisstopoAcquirer
+    )
     work_areas = projected_work_areas(product, roi)
     assert work_areas is not None
     assert len(work_areas) == 1
@@ -253,7 +255,7 @@ def test_acquires_bounded_swisstopo_elevation_window_and_reuses_cache(tmp_path: 
     roi = BBoxWGS84(8.539, 47.369, 8.540, 47.370)
 
     with patch(
-        "blender_terrain.providers.switzerland.swisstopo._project_roi",
+        "blender_terrain.providers.switzerland.swisstopo.project_swiss_roi",
         return_value=exact,
     ):
         acquired = acquirer.acquire(

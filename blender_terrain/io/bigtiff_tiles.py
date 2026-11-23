@@ -8,13 +8,14 @@ Unsupported layouts fail explicitly so they cannot yield subtly incorrect data.
 from __future__ import annotations
 
 import importlib
+import io
 import math
 import re
 import struct
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
 from numpy.typing import NDArray
@@ -24,13 +25,14 @@ from ..errors import RasterFormatError
 from ..models import ProjectedBounds
 from .random_access import LocalRandomAccessReader, RandomAccessReader
 
-_TYPE_SIZES: Final = {1: 1, 2: 1, 3: 2, 4: 4, 12: 8, 16: 8}
+_TYPE_SIZES: Final = {1: 1, 2: 1, 3: 2, 4: 4, 7: 1, 12: 8, 16: 8}
 _NUMERIC_FORMATS: Final = {1: "B", 3: "H", 4: "I", 12: "d", 16: "Q"}
 
 _IMAGE_WIDTH: Final = 256
 _IMAGE_LENGTH: Final = 257
 _BITS_PER_SAMPLE: Final = 258
 _COMPRESSION: Final = 259
+_PHOTOMETRIC: Final = 262
 _SAMPLES_PER_PIXEL: Final = 277
 _PLANAR_CONFIGURATION: Final = 284
 _PREDICTOR: Final = 317
@@ -39,6 +41,8 @@ _TILE_LENGTH: Final = 323
 _TILE_OFFSETS: Final = 324
 _TILE_BYTE_COUNTS: Final = 325
 _SAMPLE_FORMAT: Final = 339
+_JPEG_TABLES: Final = 347
+_YCBCR_SUBSAMPLING: Final = 530
 _GDAL_NODATA: Final = 42113
 _GDAL_METADATA: Final = 42112
 _MODEL_PIXEL_SCALE: Final = 33550
@@ -52,7 +56,7 @@ _GEOGRAPHIC_CRS_TYPE: Final = 2048
 _PROJECTED_CRS_TYPE: Final = 3072
 DEFAULT_FLOAT_NODATA: Final = -3.4028234663852886e38
 
-TagValue = tuple[int | float, ...] | str
+TagValue = tuple[int | float, ...] | str | bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +155,9 @@ class BigTiffFloatTileReader:
         self._samples_per_pixel = _single_value(tags, _SAMPLES_PER_PIXEL)
         self._bits_per_sample = _uniform_value(tags, _BITS_PER_SAMPLE, self._samples_per_pixel)
         self._sample_format = _uniform_value(tags, _SAMPLE_FORMAT, self._samples_per_pixel)
+        self._photometric = _single_value_or_default(tags, _PHOTOMETRIC, 1)
+        jpeg_tables = tags.get(_JPEG_TABLES)
+        self._jpeg_tables = jpeg_tables if isinstance(jpeg_tables, bytes) else None
         self._scale, self._offset = _parse_gdal_scale_offset(tags)
         self.layout = self._validate_layout(tags)
         self.georeference = _parse_georeference(tags)
@@ -195,16 +202,41 @@ class BigTiffFloatTileReader:
             * self._bits_per_sample
             // 8
         )
-        if self._compression == 1:
-            raw = compressed
-            if len(raw) != expected_bytes:
-                raise RasterFormatError("TIFF tile does not match its expected size")
-        elif self._compression == 8:
-            raw = _inflate_exact(compressed, expected_bytes)
-        elif self._compression == 5:
-            raw = _decompress_lzw(compressed, expected_bytes)
+        tile: NDArray[Any]
+        if self._compression == 7:
+            tile = _decode_jpeg_tile(
+                compressed,
+                self._jpeg_tables,
+                self.layout.tile_height,
+                self.layout.tile_width,
+            )
         else:
-            raw = _decompress_zstd(compressed, expected_bytes)
+            if self._compression == 1:
+                raw = compressed
+                if len(raw) != expected_bytes:
+                    raise RasterFormatError("TIFF tile does not match its expected size")
+            elif self._compression == 8:
+                raw = _inflate_exact(compressed, expected_bytes)
+            elif self._compression == 5:
+                raw = _decompress_lzw(compressed, expected_bytes)
+            else:
+                raw = _decompress_zstd(compressed, expected_bytes)
+            tile = self._decode_samples(raw)
+        if self._samples_per_pixel == 1 and tile.ndim == 3:
+            tile = tile[:, :, 0]
+        valid_height = min(
+            self.layout.tile_height, self.layout.height - row * self.layout.tile_height
+        )
+        valid_width = min(
+            self.layout.tile_width, self.layout.width - column * self.layout.tile_width
+        )
+        result = tile[:valid_height, :valid_width].astype(np.float32, copy=True)
+        if self._scale != 1.0 or self._offset != 0.0:
+            result *= self._scale
+            result += self._offset
+        return result
+
+    def _decode_samples(self, raw: bytes) -> NDArray[Any]:
         if self._predictor == 2:
             unsigned_type = {8: "u1", 16: "u2", 32: "u4"}[self._bits_per_sample]
             differences = np.frombuffer(
@@ -240,19 +272,7 @@ class BigTiffFloatTileReader:
                 self.layout.tile_width,
                 self._samples_per_pixel,
             )
-        if self._samples_per_pixel == 1 and tile.ndim == 3:
-            tile = tile[:, :, 0]
-        valid_height = min(
-            self.layout.tile_height, self.layout.height - row * self.layout.tile_height
-        )
-        valid_width = min(
-            self.layout.tile_width, self.layout.width - column * self.layout.tile_width
-        )
-        result = tile[:valid_height, :valid_width].astype(np.float32, copy=True)
-        if self._scale != 1.0 or self._offset != 0.0:
-            result *= self._scale
-            result += self._offset
-        return result
+        return tile
 
     def read_window(self, row: int, column: int, height: int, width: int) -> NDArray[np.float32]:
         """Return a pixel window by decoding only the tiles that intersect it."""
@@ -366,7 +386,7 @@ class BigTiffFloatTileReader:
             (3, 32),
         }:
             raise RasterFormatError("TIFF sample type is unsupported")
-        if self._compression not in {1, 5, 8, 50000}:
+        if self._compression not in {1, 5, 7, 8, 50000}:
             raise RasterFormatError("TIFF compression is unsupported")
         if self._samples_per_pixel not in {1, 3, 4}:
             raise RasterFormatError("Only one-band, RGB, and four-band TIFF images are supported")
@@ -378,6 +398,16 @@ class BigTiffFloatTileReader:
             raise RasterFormatError("Floating-point prediction cannot encode signed integers")
         if self._sample_format == 1 and self._predictor == 3:
             raise RasterFormatError("Floating-point prediction cannot encode unsigned integers")
+        if self._compression == 7 and (
+            self._samples_per_pixel != 3
+            or self._sample_format != 1
+            or self._bits_per_sample != 8
+            or self._predictor != 1
+            or self._photometric != 6
+            or self._jpeg_tables is None
+            or tags.get(_YCBCR_SUBSAMPLING) != (2, 2)
+        ):
+            raise RasterFormatError("Only tiled 8-bit YCbCr JPEG imagery is supported")
         raw_nodata = tags.get(_GDAL_NODATA)
         nodata = float(raw_nodata.rstrip("\x00")) if isinstance(raw_nodata, str) else None
         return TileLayout(width, height, tile_width, tile_height, nodata)
@@ -455,7 +485,38 @@ def open_float_tile_reader(
 def _decode_value(value_type: int, count: int, encoded: bytes, byte_order: str = "<") -> TagValue:
     if value_type == 2:
         return encoded.decode("ascii", errors="strict")
+    if value_type == 7:
+        return encoded
     return struct.unpack(f"{byte_order}{count}{_NUMERIC_FORMATS[value_type]}", encoded)
+
+
+def _decode_jpeg_tile(
+    payload: bytes,
+    tables: bytes | None,
+    height: int,
+    width: int,
+) -> NDArray[np.uint8]:
+    """Decode one TIFF JPEG tile after restoring its shared JPEG tables."""
+
+    if (
+        tables is None
+        or not tables.startswith(b"\xff\xd8")
+        or not tables.endswith(b"\xff\xd9")
+        or not payload.startswith(b"\xff\xd8")
+    ):
+        raise RasterFormatError("TIFF JPEG tables or tile stream are invalid")
+    encoded = tables[:-2] + payload[2:]
+    try:
+        from PIL import Image, UnidentifiedImageError
+
+        with Image.open(io.BytesIO(encoded)) as image:
+            image.load()
+            rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    except (OSError, ValueError, UnidentifiedImageError) as exc:
+        raise RasterFormatError("TIFF JPEG tile cannot be decoded") from exc
+    if rgb.shape != (height, width, 3):
+        raise RasterFormatError("TIFF JPEG tile dimensions changed")
+    return rgb
 
 
 def _single_value(tags: dict[int, TagValue], tag: int) -> int:

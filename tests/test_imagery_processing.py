@@ -62,6 +62,43 @@ def test_reprojects_rgbnir_window_to_planned_png(tmp_path: Path) -> None:
         assert output.bounds.epsg == plan.work_areas[0].crs.epsg
 
 
+def test_preserves_uint8_orthophoto_samples_without_reflectance_stretch(
+    tmp_path: Path,
+) -> None:
+    roi = BBoxWGS84(8.53, 47.36, 8.531, 47.361)
+    plan = create_import_plan(
+        roi,
+        "CH_SWISSALTI3D",
+        2.0,
+        True,
+        2.0,
+        native_resolution_override=0.5,
+        working_crs_epsg=2056,
+    )
+    bounds = plan.grids[0].bounds
+    source = tmp_path / "swissimage.npy"
+    write_imagery_window(
+        source,
+        np.full((64, 64, 3), (12.0, 96.0, 220.0), np.float32),
+        bounds,
+        -9999.0,
+        ("B04", "B03", "B02"),
+    )
+
+    outputs = process_imagery_windows(
+        (source,),
+        plan,
+        tmp_path / "output",
+        "swissimage",
+        sample_encoding="uint8",
+    )
+
+    from PIL import Image
+
+    pixels = np.asarray(Image.open(outputs[0].path).convert("RGB"))
+    assert np.all(pixels == (12, 96, 220))
+
+
 def test_accepts_partial_worldcover_and_rejects_an_entirely_uncovered_grid(
     tmp_path: Path,
 ) -> None:
