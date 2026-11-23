@@ -1,0 +1,2 @@
+"""Swiss national geodata providers."""
+
