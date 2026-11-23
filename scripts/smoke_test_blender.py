@@ -288,6 +288,38 @@ def main() -> None:
             "GEDTM30_V11",
             "COPERNICUS_GLO30_2021",
         } <= set(json.loads(properties.available_product_ids_json))
+        properties.available_product_ids_json = "[]"
+        properties.product = "GEDTM30_V11"
+        properties.imagery_product = "SENTINEL2_L2A"
+        properties.west = 8.53
+        properties.south = 47.36
+        properties.east = 8.54
+        properties.north = 47.37
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert {
+            "CH_SWISSALTI3D",
+            "CH_SWISSSURFACE3D_RASTER",
+            "GEDTM30_V11",
+            "COPERNICUS_GLO30_2021",
+        } <= set(json.loads(properties.available_product_ids_json))
+        assert {
+            "CH_SWISSIMAGE_DOP10",
+            "SENTINEL2_L2A",
+            "ESA_WORLDCOVER_S2_2021",
+        } <= set(json.loads(properties.available_imagery_product_ids_json))
+        properties.product = "CH_SWISSALTI3D"
+        properties.imagery_product = "CH_SWISSIMAGE_DOP10"
+        assert bpy.ops.blender_terrain.validate_roi() == {"FINISHED"}
+        assert properties.crs_summary == "EPSG:2056"
+        swiss_plan = job_controller._acquisition_plan_from_properties(
+            properties,
+            extension.blender_terrain.core.RegionOfInterest.from_geojson_geometry(
+                json.loads(properties.roi_geometry_json)
+            ),
+        )
+        assert {
+            selection.product_id for selection in swiss_plan.selections.selections
+        } == {"CH_SWISSALTI3D", "CH_SWISSIMAGE_DOP10", "GEBCO_2026"}
         properties.elevation_source = "LOCAL"
         assert properties.elevation_source == "LOCAL"
         properties.elevation_source = "ONLINE"
