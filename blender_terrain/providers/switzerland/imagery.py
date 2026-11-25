@@ -24,7 +24,12 @@ from ...core.imagery_processing import ProcessedImageryTile, process_imagery_win
 from ...core.planning import ImportPlan
 from ...core.roi import BBoxWGS84
 from ...errors import JobCancelled, NoCoverageError, RasterFormatError
-from ...io.bigtiff_tiles import BigTiffFloatTileReader, open_float_tile_reader
+from ...io.bigtiff_tiles import (
+    BigTiffFloatTileReader,
+    PixelWindow,
+    open_float_tile_reader,
+    split_pixel_window,
+)
 from ...io.imagery_window import imagery_window_is_valid, write_imagery_window
 from ...io.random_access import HttpRangeReader
 from ...models import ProjectedBounds
@@ -33,6 +38,7 @@ from .swisstopo import (
     SWISSIMAGE_COLLECTION,
     SwisstopoAsset,
     SwisstopoCatalogClient,
+    SwisstopoItem,
     intersect_projected_bounds,
     project_swiss_roi,
     raster_reader_bounds,
@@ -44,7 +50,7 @@ from .swisstopo import (
 PRODUCT_ID = "CH_SWISSIMAGE_DOP10"
 _SUPPORTED_RESOLUTIONS = frozenset({0.1, 2.0})
 _MAXIMUM_SOURCE_BYTES = 100_000_000
-_MAXIMUM_WINDOW_PIXELS = 67_108_864
+_MAXIMUM_WINDOW_PIXELS = 16_777_216
 
 
 class _ImageryReader(Protocol):
@@ -54,9 +60,9 @@ class _ImageryReader(Protocol):
     @property
     def nodata(self) -> float: ...
 
-    def read_bounds(
-        self, bounds: ProjectedBounds
-    ) -> tuple[NDArray[np.float32], ProjectedBounds]: ...
+    def read_window(
+        self, row: int, column: int, height: int, width: int
+    ) -> NDArray[np.float32]: ...
 
 
 ImageryReaderFactory = Callable[[SwisstopoAsset, Path], _ImageryReader]
@@ -123,37 +129,56 @@ class SwisstopoImageryAcquirer:
             raise NoCoverageError("SWISSIMAGE has no STAC items for the ROI")
 
         key = hashlib.sha256(
-            f"imagery-v1|{roi}|{request.target_resolution_m}".encode()
+            f"imagery-v3|{roi}|{request.target_resolution_m}".encode()
         ).hexdigest()[:20]
         target = cache_directory / selection.provider_id / product.id / key
         projected_roi = project_swiss_roi(roi)
-        paths: list[Path] = []
-        cached_count = 0
-        used = []
-        for index, item in enumerate(items):
+        tasks: list[tuple[_ImageryReader, PixelWindow, Path, int]] = []
+        used: list[tuple[SwisstopoItem, SwisstopoAsset]] = []
+        for item in items:
             if cancellation_requested():
                 raise JobCancelled("SWISSIMAGE acquisition was cancelled")
             asset = select_swisstopo_asset(item, request.target_resolution_m)
             identity = f"{item.id}|{asset.sha256}"
-            path = target / f"{hashlib.sha256(identity.encode()).hexdigest()[:20]}.npy"
+            stem = hashlib.sha256(identity.encode()).hexdigest()[:20]
+            reader = self._reader_factory(asset, target / "ranges" / stem)
+            _validate_imagery_reader(reader, asset)
+            overlap = intersect_projected_bounds(
+                projected_roi, raster_reader_bounds(reader)
+            )
+            if overlap is None:
+                continue
+            reduction = _reduction_factor(reader, asset, request.target_resolution_m)
+            source_window = _aligned_source_window(reader, overlap, reduction)
+            for part, window in enumerate(
+                split_pixel_window(
+                    source_window, _MAXIMUM_WINDOW_PIXELS, alignment=reduction
+                )
+            ):
+                tasks.append(
+                    (
+                        reader,
+                        window,
+                        target / f"{stem}_{reduction}_{part:03d}.npy",
+                        reduction,
+                    )
+                )
+            used.append((item, asset))
+
+        paths: list[Path] = []
+        cached_count = 0
+        for index, (reader, window, path, reduction) in enumerate(tasks, start=1):
+            if cancellation_requested():
+                raise JobCancelled("SWISSIMAGE acquisition was cancelled")
             cached = imagery_window_is_valid(path)
             if not cached:
-                reader = self._reader_factory(asset, target / "ranges" / path.stem)
-                _validate_imagery_reader(reader, asset)
-                overlap = intersect_projected_bounds(
-                    projected_roi, raster_reader_bounds(reader)
+                data = reader.read_window(
+                    window.row, window.column, window.height, window.width
                 )
-                if overlap is None:
-                    continue
-                window = reader.georeference.enclosing_window(overlap)
-                if window.width * window.height > _MAXIMUM_WINDOW_PIXELS:
-                    raise RasterFormatError(
-                        "SWISSIMAGE source window exceeds the pixel limit; "
-                        "use a coarser imagery resolution or smaller ROI"
-                    )
-                data, exact = reader.read_bounds(overlap)
+                exact = reader.georeference.window_bounds(window)
                 if data.dtype != np.float32 or data.ndim != 3 or data.shape[2] != 3:
                     raise RasterFormatError("SWISSIMAGE window must contain three RGB bands")
+                data = _reduce_rgb(data, reader.nodata, reduction)
                 path.unlink(missing_ok=True)
                 path.with_suffix(".npy.json").unlink(missing_ok=True)
                 write_imagery_window(
@@ -162,14 +187,13 @@ class SwisstopoImageryAcquirer:
             else:
                 cached_count += 1
             paths.append(path)
-            used.append((item, asset))
             if progress_callback is not None:
                 size = path.stat().st_size
                 progress_callback(
                     TransferProgress(
                         DatasetKind.IMAGERY.value,
                         index,
-                        len(items),
+                        len(tasks),
                         path.name,
                         size,
                         size,
@@ -214,3 +238,58 @@ def _validate_imagery_reader(reader: _ImageryReader, asset: SwisstopoAsset) -> N
         or abs(reference.pixel_height + asset.gsd) > 1e-6
     ):
         raise RasterFormatError("SWISSIMAGE asset grid changed")
+
+
+def _reduction_factor(
+    reader: _ImageryReader,
+    asset: SwisstopoAsset,
+    target_resolution_m: float | None,
+) -> int:
+    """Return an integer source reduction that never undersamples the target grid."""
+
+    if target_resolution_m is None:
+        return 1
+    factor = max(1, int(target_resolution_m / asset.gsd + 1e-9))
+    if reader.layout.width % factor or reader.layout.height % factor:
+        return 1
+    return factor
+
+
+def _aligned_source_window(
+    reader: _ImageryReader, bounds: ProjectedBounds, alignment: int
+) -> PixelWindow:
+    window = reader.georeference.enclosing_window(bounds)
+    row = window.row - window.row % alignment
+    column = window.column - window.column % alignment
+    row_end = min(
+        reader.layout.height,
+        ((window.row + window.height + alignment - 1) // alignment) * alignment,
+    )
+    column_end = min(
+        reader.layout.width,
+        ((window.column + window.width + alignment - 1) // alignment) * alignment,
+    )
+    return PixelWindow(row, column, row_end - row, column_end - column)
+
+
+def _reduce_rgb(
+    data: NDArray[np.float32], nodata: float, factor: int
+) -> NDArray[np.float32]:
+    if factor == 1:
+        return data
+    height, width, bands = data.shape
+    if height % factor or width % factor:
+        raise RasterFormatError("SWISSIMAGE reduction window is not grid-aligned")
+    blocks = data.reshape(height // factor, factor, width // factor, factor, bands)
+    valid = np.any(data != nodata, axis=2).reshape(
+        height // factor, factor, width // factor, factor
+    )
+    counts = valid.sum(axis=(1, 3))
+    reduced = np.full((height // factor, width // factor, bands), nodata, np.float32)
+    covered = counts > 0
+    for band in range(bands):
+        sums = np.asarray(
+            np.sum(blocks[..., band], axis=(1, 3), where=valid, dtype=np.float32)
+        )
+        reduced[..., band][covered] = sums[covered] / counts[covered]
+    return reduced

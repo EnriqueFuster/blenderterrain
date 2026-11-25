@@ -24,9 +24,9 @@ from ...io.atomic import finalize_part
 from ...io.bigtiff_tiles import (
     BigTiffFloatTileReader,
     GeoReference,
-    PixelWindow,
     TileLayout,
     open_float_tile_reader,
+    split_pixel_window,
 )
 from ...io.imagery_window import imagery_window_is_valid, write_imagery_window
 from ...io.random_access import HttpRangeReader
@@ -122,7 +122,9 @@ class WorldCoverAcquirer:
             except NoCoverageError:
                 continue
             source_window = reader.georeference.enclosing_window(bounds)
-            for part, window in enumerate(_split_window(source_window)):
+            for part, window in enumerate(
+                split_pixel_window(source_window, MAXIMUM_WINDOW_PIXELS)
+            ):
                 windows.append(
                     (
                         reader,
@@ -166,22 +168,6 @@ def _remote_reader(url: str, cache_directory: Path) -> BigTiffFloatTileReader:
         maximum_source_bytes=MAXIMUM_SOURCE_BYTES,
     )
     return open_float_tile_reader(source)
-
-
-def _split_window(window: PixelWindow) -> tuple[PixelWindow, ...]:
-    """Split one source window without exceeding the in-memory pixel budget."""
-
-    side = math.isqrt(MAXIMUM_WINDOW_PIXELS)
-    return tuple(
-        PixelWindow(
-            row,
-            column,
-            min(side, window.row + window.height - row),
-            min(side, window.column + window.width - column),
-        )
-        for row in range(window.row, window.row + window.height, side)
-        for column in range(window.column, window.column + window.width, side)
-    )
 
 
 def _cached_windows(directory: Path) -> tuple[Path, ...]:

@@ -142,6 +142,30 @@ class PixelWindow:
             raise ValueError("Pixel window dimensions must be positive")
 
 
+def split_pixel_window(
+    window: PixelWindow, maximum_pixels: int, alignment: int = 1
+) -> tuple[PixelWindow, ...]:
+    """Split a raster window into square parts bounded by a pixel budget."""
+
+    if maximum_pixels <= 0:
+        raise ValueError("Maximum window pixels must be positive")
+    if alignment <= 0:
+        raise ValueError("Window alignment must be positive")
+    side = (math.isqrt(maximum_pixels) // alignment) * alignment
+    if side == 0:
+        raise ValueError("Pixel budget is smaller than the required alignment")
+    return tuple(
+        PixelWindow(
+            row,
+            column,
+            min(side, window.row + window.height - row),
+            min(side, window.column + window.width - column),
+        )
+        for row in range(window.row, window.row + window.height, side)
+        for column in range(window.column, window.column + window.width, side)
+    )
+
+
 class BigTiffFloatTileReader:
     """Read supported compressed numeric samples as Float32 values."""
 

@@ -105,9 +105,12 @@ class _Opener(Protocol):
     def open(self, request: Request, timeout: float) -> _Response: ...
 
 
-class _ElevationReader(Protocol):
+class _RasterGrid(Protocol):
     georeference: Any
     layout: Any
+
+
+class _ElevationReader(_RasterGrid, Protocol):
 
     @property
     def nodata(self) -> float: ...
@@ -410,7 +413,7 @@ def project_swiss_roi(roi: BBoxWGS84) -> ProjectedBounds:
     return ProjectedBounds(west, south, east, north, 2056)
 
 
-def raster_reader_bounds(reader: _ElevationReader) -> ProjectedBounds:
+def raster_reader_bounds(reader: _RasterGrid) -> ProjectedBounds:
     west, south, east, north = reader.georeference.bounds(
         reader.layout.width, reader.layout.height
     )

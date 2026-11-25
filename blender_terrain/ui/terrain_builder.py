@@ -25,6 +25,7 @@ from ..core import (
     projected_texture_transform,
 )
 from ..errors import RasterFormatError
+from ..jobs.models import RESULT_SCHEMA_VERSION
 from ..models import ProjectedBounds
 
 SMOOTH_BY_ANGLE_MODIFIER_NAME = "Terrain Smooth by Angle"
@@ -608,7 +609,7 @@ def _read_result(path: Path) -> dict[str, Any]:
         raise RasterFormatError("Cannot read the completed delivery result") from exc
     if (
         not isinstance(payload, dict)
-        or payload.get("schema_version") != 2
+        or payload.get("schema_version") not in {2, RESULT_SCHEMA_VERSION}
         or payload.get("state") not in {"COMPLETE", "COMPLETE_WITH_WARNINGS"}
     ):
         raise RasterFormatError("Delivery result is not complete")

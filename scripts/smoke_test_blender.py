@@ -358,7 +358,7 @@ def _smoke_terrain_operator(
         result_path.write_text(
             json.dumps(
                 {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "task_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     "import_id": "12345678-1234-4234-8234-123456789abc",
                     "state": "COMPLETE",
